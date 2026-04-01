@@ -1788,7 +1788,8 @@ ${PROJECTS.map(p => {
     ${[['overview',isE?'Resumen':'Overview'],['phases',isE?'Fases / Centros de Costo':'Phases / Cost Centers'],
        ['subledger',isE?'Sub-Libro':'Sub-Ledger'],['billings',isE?'Facturación AIA':'AIA Billings'],
        ['retainage',isE?'Retenciones':'Retainage'],['cos',isE?'Órdenes de Cambio':'Change Orders'],
-       ['tax',isE?'Diferencias Temporarias':'Temp. Differences']
+       ['tax',isE?'Diferencias Temporarias':'Temp. Differences'],['dbschema',isE?'Modelo de Datos':'DB Schema'],
+       ['simulator',isE?'Simulador':'Transaction Sim']
     ].map(([key,label])=>`<button class="tab jc-tab ${activeProjectTab===key?'active':''}" data-tab="${key}">${label}</button>`).join('')}
   </div>
 
@@ -1921,44 +1922,235 @@ function rerenderJCTab(proj, T) {
 
   } else if (activeProjectTab === 'subledger') {
     el.innerHTML = `
-      <div class="alert a-info" style="font-size:11px;margin-bottom:12px">
-        ⓘ ${isE
-          ? 'Cada línea es un asiento contable en el Sub-Libro de Costos. El campo "ID de Proyecto" es OBLIGATORIO en todos los gastos de construcción. Vinculado a cuenta 5-XX-XX-XXX y cuentas WIP.'
-          : 'Each line is a GL sub-ledger posting. The "Project ID" field is MANDATORY on all construction cost entries. Linked to 5-XX-XX-XXX accounts and WIP accounts.'}
+      <div class="alert a-danger" style="font-size:11px;margin-bottom:12px">
+        🔒 ${isE
+          ? 'Project_ID OBLIGATORIO. El sistema RECHAZA cualquier asiento de gasto de construcción sin vínculo de proyecto. Los campos Cost_Code, Standard_Tag y Retainage_Amount son mandatorios en todos los registros del sub-libro.'
+          : 'Project_ID MANDATORY. System REJECTS any construction cost posting without project link. Cost_Code, Standard_Tag and Retainage_Amount are required on all sub-ledger records.'}
       </div>
       <div style="overflow-x:auto">
-      <table class="dt">
-        <thead><tr>
-          <th>${isE?'Fecha':'Date'}</th>
-          <th>${isE?'Referencia':'Ref'}</th>
-          <th>${isE?'Cuenta GL':'GL Account'}</th>
-          <th>${isE?'Descripción':'Description'}</th>
-          <th>${isE?'Categoría':'Category'}</th>
-          <th>${isE?'ID Proyecto':'Project ID'}</th>
-          <th class="num">${isE?'Monto':'Amount'}</th>
-          <th>Status</th>
-        </tr></thead>
+      <table class="dt" style="min-width:1100px">
+        <thead>
+          <tr style="background:rgba(11,31,58,.03)">
+            <th colspan="4" style="text-align:center;font-size:10px;letter-spacing:1px;color:var(--stone);border-right:2px solid rgba(0,0,0,.08)">${isE?'CAMPOS DE IDENTIFICACIÓN':'IDENTIFICATION FIELDS'}</th>
+            <th colspan="3" style="text-align:center;font-size:10px;letter-spacing:1px;color:var(--info);border-right:2px solid rgba(0,0,0,.08)">${isE?'CAMPOS DE PROYECTO (OBLIGATORIOS)':'PROJECT FIELDS (REQUIRED)'}</th>
+            <th colspan="2" style="text-align:center;font-size:10px;letter-spacing:1px;color:var(--warning)">${isE?'PARTIDA DOBLE':'DOUBLE ENTRY'}</th>
+          </tr>
+          <tr>
+            <th>${isE?'Fecha':'Date'}</th>
+            <th>${isE?'TX_ID (UUID)':'TX_ID (UUID)'}</th>
+            <th>${isE?'Fecha Registro':'Posting Date'}</th>
+            <th style="border-right:2px solid rgba(0,0,0,.08)">${isE?'Descripción':'Description'}</th>
+            <th style="color:var(--info)">Project_ID</th>
+            <th style="color:var(--info)">Cost_Code</th>
+            <th style="color:var(--info);border-right:2px solid rgba(0,0,0,.08)">Standard_Tag</th>
+            <th class="num" style="color:var(--success)">${isE?'Dr (WIP/COGS)':'Dr (WIP/COGS)'}</th>
+            <th class="num" style="color:var(--danger)">${isE?'Cr (AP/Ret.)':'Cr (AP/Ret.)'}</th>
+            <th class="num" style="color:var(--warning)">Retainage_Amt</th>
+            <th>Status</th>
+          </tr>
+        </thead>
         <tbody>
-        ${p.subledger.map(e=>{
-          const catL = {mat:isE?'Materiales':'Materials',labor:isE?'M. de Obra':'Labor',sub:isE?'Sub.':'Sub.',equip:isE?'Equipo':'Equip.',oh:'O/H'};
+        ${p.subledger.map((e,i)=>{
+          const retAmt = e.cat==='sub' ? Math.round(e.amount*0.1) : 0;
+          const apCurrent = e.amount - retAmt;
+          const txId = 'TXN-'+p.id+'-'+e.ref.replace('SL-','');
           const catC = {mat:'info',labor:'success',sub:'warning',equip:'gold',oh:'stone'};
+          const catL = {mat:'5-01-01-001',labor:'5-01-02-001',sub:'5-01-03-001',equip:'5-01-04-001',oh:'5-02-01-001'};
+          const costCode = {mat:'100.10',labor:'100.30',sub:'200.40',equip:'100.40',oh:'500.10'}[e.cat]||'500.00';
           return `<tr ${e.blocked?'style="background:var(--danger-light)"':''}>
-            <td class="mono" style="font-size:11px">${e.date}</td>
-            <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 6px;border-radius:4px">${e.ref}</code></td>
-            <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 6px;border-radius:4px">${e.acct}</code></td>
-            <td style="font-size:12px;max-width:220px">${isE?e.desc_es:e.desc_en}</td>
-            <td><span class="badge b-${catC[e.cat]}" style="font-size:10px">${catL[e.cat]}</span></td>
-            <td><span class="badge b-gold" style="font-size:10px">${p.id}</span></td>
-            <td class="num mono ${e.blocked?'red':'green'}">${fmt(e.amount)}</td>
+            <td class="mono" style="font-size:10px">${e.date}</td>
+            <td><code style="font-size:9px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px;letter-spacing:.3px">${txId}</code></td>
+            <td class="mono" style="font-size:10px">${e.date}</td>
+            <td style="font-size:11px;max-width:180px;border-right:2px solid rgba(0,0,0,.04)">${isE?e.desc_es:e.desc_en}</td>
+            <td style="border-left:1px solid rgba(27,79,138,.1)"><span class="badge b-gold" style="font-size:9px;font-family:var(--font-mono)">${p.id}</span></td>
+            <td><code style="font-size:10px;background:rgba(27,79,138,.08);color:var(--info);padding:2px 6px;border-radius:4px">${costCode}</code></td>
+            <td style="border-right:2px solid rgba(0,0,0,.04)"><span class="badge b-info" style="font-size:9px">BOTH</span></td>
+            <td class="num mono green" style="font-weight:700">${fmt(e.amount)}</td>
+            <td class="num" style="font-size:11px">
+              <div class="mono green">${fmt(apCurrent)}</div>
+              ${retAmt>0?`<div style="font-size:10px;color:var(--warning);font-family:var(--font-mono)">${fmt(retAmt)} ret.</div>`:''}
+            </td>
+            <td class="num mono ${retAmt>0?'gold':'stone'}" style="font-weight:${retAmt?700:400}">${retAmt>0?fmt(retAmt):'—'}</td>
             <td>${e.blocked?'<span class="badge b-no" style="font-size:10px">🚫 BLOCKED</span>':'<span class="badge b-ok" style="font-size:10px">Posted</span>'}</td>
           </tr>`;
         }).join('')}
         </tbody>
       </table>
       </div>
-      <div style="margin-top:12px;text-align:right">
+      <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:11px;color:var(--stone)">${isE?'Todos los campos de proyecto son indexados. Consultas por Project_ID < 2ms.':'All project fields are indexed. Project_ID queries < 2ms.'}</div>
         <button class="btn btn-navy btn-sm" onclick="openModal(modalCostEntry())">${isE?'+ Registrar Costo':'+ Post Cost'}</button>
       </div>`;
+
+  } else if (activeProjectTab === 'dbschema') {
+    el.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:12px">${isE?'Propuesta de Tablas de Base de Datos — Motor de Contabilidad por Proyecto':'Database Table Proposal — Project Accounting Engine'}</div>
+
+      <!-- MAIN TABLE: Asientos_Contables -->
+      <div style="background:var(--navy);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="background:var(--gold);color:var(--navy-deep);padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;font-family:var(--font-mono)">TABLE</div>
+          <span style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--gold)">Asientos_Contables</span>
+          <span style="font-size:11px;color:rgba(255,255,255,.3)">${isE?'(Journal_Entries — Tabla Core)':'(Journal_Entries — Core Table)'}</span>
+        </div>
+        <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:11.5px">
+          <thead>
+            <tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+              ${['Campo / Field','Tipo / Type','Constraint','Descripción / Description','Norma'].map(h=>`<th style="padding:6px 10px;text-align:left;font-size:10px;letter-spacing:1px;color:rgba(255,255,255,.4)">${h}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+          ${[
+            ['entry_id','UUID','PRIMARY KEY',isE?'Identificador único del asiento':'Unique entry identifier','Both'],
+            ['tx_id','UUID','NOT NULL',isE?'Agrupa las líneas del mismo asiento':'Groups lines of same entry','Both'],
+            ['effective_date','DATE','NOT NULL',isE?'Fecha en que ocurrió la transacción':'Date transaction occurred','Both'],
+            ['posting_date','DATE','NOT NULL',isE?'Fecha de registro en libros':'Date recorded in books','Both'],
+            ['★ Project_ID','UUID','NOT NULL FK → Projects',isE?'Vincula el gasto a una obra específica. REQUERIDO en gastos de construcción.':'Links cost to a specific job. REQUIRED on construction costs.','Both'],
+            ['★ Cost_Code','VARCHAR(20)','NOT NULL',isE?'Identifica si es concreto, acero, labor, permisos (ej. 100.10)':'Identifies concrete, steel, labor, permits (e.g. 100.10)','Both'],
+            ['★ Standard_Tag','ENUM','NOT NULL',isE?'Marca si el asiento aplica a GAAP, NIIF, o AMBOS':'Marks if entry applies to GAAP, IFRS, or BOTH','Both'],
+            ['account_code','VARCHAR(15)','NOT NULL FK → COA',isE?'Código de cuenta del Plan de Cuentas (6-8 dígitos)':'Account code from Chart of Accounts (6-8 digits)','Both'],
+            ['debit_amount','DECIMAL(15,2)','DEFAULT 0.00',isE?'Monto débito de la línea':'Line debit amount','Both'],
+            ['credit_amount','DECIMAL(15,2)','DEFAULT 0.00',isE?'Monto crédito de la línea':'Line credit amount','Both'],
+            ['★ Retainage_Amount','DECIMAL(15,2)','DEFAULT 0.00',isE?'Separa el monto retenido del flujo corriente. Afecta liquidez del Balance.':'Separates withheld amount from current flow. Affects Balance Sheet liquidity.','Both'],
+            ['phase_id','VARCHAR(10)','FK → Project_Phases',isE?'Fase de obra donde se incurre el costo (ej. PH-02)':'Work phase where cost is incurred (e.g. PH-02)','Both'],
+            ['wip_flag','BOOLEAN','DEFAULT TRUE',isE?'TRUE = acumula en WIP. FALSE = va directo a COGS (obra terminada)':'TRUE = accumulates in WIP. FALSE = direct to COGS (completed work)','Both'],
+            ['currency_code','CHAR(3)','DEFAULT USD',isE?'Moneda de la transacción':'Transaction currency','Both'],
+            ['fx_rate','DECIMAL(10,6)','DEFAULT 1.0',isE?'Tasa de cambio funcional → presentación':'Functional → presentation exchange rate','Both'],
+            ['description','TEXT','NOT NULL',isE?'Narrativa del asiento (bilingüe EN/ES)':'Entry narrative (bilingual EN/ES)','Both'],
+            ['created_by','UUID','NOT NULL FK → Users',isE?'Usuario que registró el asiento':'User who posted the entry','Both'],
+            ['approved_by','UUID','NULLABLE FK → Users',isE?'Usuario Nivel A que aprobó (si aplica)':'Level A user who approved (if applicable)','Both'],
+            ['norm_layer','ENUM','DEFAULT BOTH',isE?'GAAP / IFRS / BOTH — para libros paralelos':'GAAP / IFRS / BOTH — for parallel ledgers','Both'],
+            ['is_adjustment','BOOLEAN','DEFAULT FALSE',isE?'TRUE = asiento de ajuste (activa alerta Guardián 21)':'TRUE = adjustment entry (triggers Guardián 21 alert)','Both'],
+            ['audit_hash','VARCHAR(64)','NOT NULL',isE?'SHA-256 del registro para inmutabilidad':'SHA-256 of record for immutability','Both'],
+          ].map(([f,t,c,d,n])=>{
+            const star = f.startsWith('★');
+            return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+              <td style="padding:6px 10px;font-family:var(--font-mono);color:${star?'var(--gold)':'rgba(255,255,255,.8)'};font-weight:${star?700:400}">${f}</td>
+              <td style="padding:6px 10px;font-family:var(--font-mono);color:var(--info-light);font-size:11px">${t}</td>
+              <td style="padding:6px 10px;font-size:10px;color:${c.includes('NOT NULL')||c.includes('PRIMARY')?'var(--success-light)':'rgba(255,255,255,.35)'}">${c}</td>
+              <td style="padding:6px 10px;font-size:11px;color:rgba(255,255,255,.55)">${d}</td>
+              <td style="padding:6px 10px"><span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(201,168,76,.2);color:var(--gold)">${n}</span></td>
+            </tr>`;
+          }).join('')}
+          </tbody>
+        </table>
+        </div>
+      </div>
+
+      <!-- RELATED TABLES GRID -->
+      <div class="g2">
+        ${[
+          { name:'Projects', color:'var(--success)', desc: isE?'Maestro de Obras':'Project Master',
+            fields:[
+              ['project_id','UUID PK'],['name','VARCHAR(200)'],['client_id','UUID FK'],
+              ['contract_amount','DECIMAL(15,2)'],['original_amount','DECIMAL(15,2)'],
+              ['retainage_pct','DECIMAL(4,2)'],['recognition_method','ENUM'],
+              ['std_tag','ENUM(GAAP,IFRS,BOTH)'],['wip_account','VARCHAR(15)'],
+              ['status','ENUM(active,complete,hold)'],['pm_user_id','UUID FK'],
+            ]},
+          { name:'Project_Phases', color:'var(--info)', desc:isE?'Fases / Centros de Costo':'Phases / Cost Centers',
+            fields:[
+              ['phase_id','VARCHAR(10) PK'],['project_id','UUID FK'],
+              ['code','SMALLINT'],['name_en','VARCHAR(100)'],['name_es','VARCHAR(100)'],
+              ['budget_mat','DECIMAL(15,2)'],['budget_labor','DECIMAL(15,2)'],
+              ['budget_sub','DECIMAL(15,2)'],['budget_equip','DECIMAL(15,2)'],
+              ['budget_oh','DECIMAL(15,2)'],['pct_complete','DECIMAL(5,2)'],['status','ENUM'],
+            ]},
+          { name:'Cost_Codes', color:'var(--warning)', desc:isE?'Catálogo de Códigos CSI':'CSI MasterFormat Catalog',
+            fields:[
+              ['cost_code','VARCHAR(20) PK'],['phase_code','SMALLINT FK'],
+              ['description_en','VARCHAR(200)'],['description_es','VARCHAR(200)'],
+              ['default_category','ENUM(mat,labor,sub,equip,oh)'],
+              ['gl_account_default','VARCHAR(15) FK → COA'],
+              ['wip_account','VARCHAR(15) FK → COA'],['cogs_account','VARCHAR(15) FK → COA'],
+            ]},
+          { name:'Retainage_Ledger', color:'var(--gold)', desc:isE?'Sub-Libro de Retenciones':'Retainage Sub-Ledger',
+            fields:[
+              ['ret_id','UUID PK'],['project_id','UUID FK'],['invoice_ref','VARCHAR(50)'],
+              ['invoice_date','DATE'],['gross_amount','DECIMAL(15,2)'],
+              ['retainage_pct','DECIMAL(4,2)'],['retainage_amount','DECIMAL(15,2)'],
+              ['net_payable','DECIMAL(15,2)'],['ar_account','VARCHAR(15)'],
+              ['retainage_ar_account','VARCHAR(15)'],['released_date','DATE NULLABLE'],
+              ['status','ENUM(held,released,disputed)'],
+            ]},
+        ].map(tbl=>`
+        <div style="background:#fff;border-radius:var(--radius-lg);border:1px solid rgba(0,0,0,.06);padding:14px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <div style="background:${tbl.color}22;border-radius:4px;padding:2px 8px"><span style="font-family:var(--font-mono);font-size:11px;font-weight:700;color:${tbl.color}">${tbl.name}</span></div>
+            <span style="font-size:11px;color:var(--stone)">${tbl.desc}</span>
+          </div>
+          ${tbl.fields.map(([f,t])=>`
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(0,0,0,.04);font-size:11px">
+            <span style="font-family:var(--font-mono);color:var(--navy)">${f}</span>
+            <span style="font-family:var(--font-mono);color:var(--stone);font-size:10px">${t}</span>
+          </div>`).join('')}
+        </div>`).join('')}
+      </div>
+
+      <!-- ERD Summary -->
+      <div class="card mt2">
+        <div class="card-header"><div class="card-title">${isE?'Índices Críticos para Rendimiento':'Critical Indexes for Performance'}</div></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+        ${[
+          ['CREATE INDEX idx_project_id','Asientos_Contables(Project_ID)',isE?'Filtrar todos los asientos por proyecto. < 2ms.':'Filter all entries by project. < 2ms.'],
+          ['CREATE INDEX idx_cost_code','Asientos_Contables(Cost_Code, Project_ID)',isE?'Reportes de costo por código + proyecto.':'Cost reports by code + project.'],
+          ['CREATE INDEX idx_std_tag','Asientos_Contables(Standard_Tag, effective_date)',isE?'Switch GAAP/IFRS en tiempo real.':'GAAP/IFRS switch in real time.'],
+          ['CREATE INDEX idx_retainage','Retainage_Ledger(project_id, status)',isE?'Retenciones pendientes de liberación.':'Pending retainage release.'],
+          ['CONSTRAINT chk_balance','CHECK(debit_amount - credit_amount = 0) AT TX LEVEL',isE?'Garantía de partida doble — no se puede violar.':'Double-entry guarantee — cannot be violated.'],
+          ['CONSTRAINT chk_project','CHECK(Project_ID IS NOT NULL WHERE cost_type=construction)',isE?'Project_ID obligatorio en gastos de construcción.':'Project_ID mandatory on construction costs.'],
+        ].map(([idx,tbl,desc])=>`
+        <div style="background:var(--stone-pale);border-radius:var(--radius);padding:10px">
+          <code style="font-size:9px;color:var(--info);display:block;margin-bottom:4px">${idx}</code>
+          <code style="font-size:9px;color:var(--navy);display:block;margin-bottom:6px">(${tbl})</code>
+          <div style="font-size:11px;color:var(--stone)">${desc}</div>
+        </div>`).join('')}
+        </div>
+      </div>`;
+
+  } else if (activeProjectTab === 'simulator') {
+    // Interactive transaction simulator
+    el.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:4px">${isE?'Simulador de Transacciones — Motor de Partida Doble en Tiempo Real':'Transaction Simulator — Real-Time Double-Entry Engine'}</div>
+      <div style="font-size:11px;color:var(--stone);margin-bottom:14px">${isE?'Ingrese una factura real y observe cómo el sistema genera automáticamente todos los asientos del ciclo WIP.':'Enter a real invoice and watch the system auto-generate all WIP cycle entries.'}</div>
+
+      <!-- INPUT FORM -->
+      <div style="background:var(--stone-pale);border-radius:var(--radius-lg);padding:16px;margin-bottom:16px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+          <div>
+            <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--stone);margin-bottom:5px">${isE?'Tipo de Factura':'Invoice Type'}</div>
+            <select id="sim-type" onchange="runSimulator()" style="width:100%;border:1px solid var(--stone-light);border-radius:var(--radius);padding:8px 10px;font-family:var(--font-body);font-size:12px;color:var(--navy);background:#fff;outline:none">
+              <option value="sub">${isE?'Subcontratista (con retención)':'Subcontractor (with retainage)'}</option>
+              <option value="mat">${isE?'Materiales / Proveedor':'Materials / Vendor'}</option>
+              <option value="labor">${isE?'Mano de Obra / Nómina':'Labor / Payroll'}</option>
+              <option value="equip">${isE?'Renta de Equipo':'Equipment Rental'}</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--stone);margin-bottom:5px">${isE?'Monto de Factura':'Invoice Amount'}</div>
+            <input type="number" id="sim-amount" value="10000" min="100" max="500000" step="100"
+              oninput="runSimulator()"
+              style="width:100%;border:1px solid var(--stone-light);border-radius:var(--radius);padding:8px 10px;font-family:var(--font-mono);font-size:13px;color:var(--navy);background:#fff;outline:none">
+          </div>
+          <div>
+            <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--stone);margin-bottom:5px">${isE?'Retención %':'Retainage %'}</div>
+            <select id="sim-ret" onchange="runSimulator()" style="width:100%;border:1px solid var(--stone-light);border-radius:var(--radius);padding:8px 10px;font-family:var(--font-body);font-size:12px;color:var(--navy);background:#fff;outline:none">
+              <option value="10">10%</option><option value="5">5%</option><option value="0">0%</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--stone);margin-bottom:5px">% ${isE?'Avance del Proyecto':'Project Complete'}</div>
+            <input type="range" id="sim-pct" min="0" max="100" value="${Math.round(t.pctComplete*100)}" oninput="document.getElementById('sim-pct-val').textContent=this.value+'%';runSimulator()" style="width:100%;margin-top:6px">
+            <span id="sim-pct-val" style="font-size:12px;font-family:var(--font-mono);font-weight:700;color:var(--navy)">${Math.round(t.pctComplete*100)}%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- RESULTS: auto-filled by runSimulator() -->
+      <div id="sim-output" style="min-height:200px"></div>`;
+
+    // Run simulator immediately after render
+    setTimeout(() => runSimulator(), 50);
 
   } else if (activeProjectTab === 'billings') {
     el.innerHTML = `
@@ -2180,6 +2372,128 @@ function rerenderJCTab(proj, T) {
   }
 }
 
+function runSimulator() {
+  const isE = S.lang === 'es';
+  const typeEl = document.getElementById('sim-type');
+  const amtEl = document.getElementById('sim-amount');
+  const retEl = document.getElementById('sim-ret');
+  const pctEl = document.getElementById('sim-pct');
+  const out = document.getElementById('sim-output');
+  if (!typeEl || !amtEl || !out) return;
+
+  const type = typeEl.value;
+  const amount = parseFloat(amtEl.value) || 10000;
+  const retPct = parseFloat(retEl?.value || 0) / 100;
+  const pct = parseFloat(pctEl?.value || 68) / 100;
+
+  const retAmt = type === 'sub' ? Math.round(amount * retPct * 100) / 100 : 0;
+  const apCurrent = amount - retAmt;
+  const cogsReclassify = Math.round(amount * pct * 100) / 100;
+  const wipRemaining = amount - cogsReclassify;
+
+  const typeConfig = {
+    sub:  { debitAcct:'1-01-03-001', debitLabel:isE?'WIP (Activo)':'WIP (Asset)', creditAcct:'2-01-01-002', creditLabel:isE?'CP Subcontratistas':'AP Subcontractors', retAcct:'2-01-02-002', retLabel:isE?'Retención x Pagar (LP)':'Retainage Payable (LT)', costCode:'200.40', stdTag:'BOTH', cat:isE?'Subcontratista':'Subcontractor' },
+    mat:  { debitAcct:'1-01-03-001', debitLabel:isE?'WIP (Activo)':'WIP (Asset)', creditAcct:'2-01-01-001', creditLabel:isE?'CP Proveedores':'AP Vendors', retAcct:null, costCode:'100.10', stdTag:'BOTH', cat:isE?'Materiales':'Materials' },
+    labor:{ debitAcct:'1-01-03-001', debitLabel:isE?'WIP (Activo)':'WIP (Asset)', creditAcct:'2-01-03-001', creditLabel:isE?'Nómina x Pagar':'Accrued Payroll', retAcct:null, costCode:'100.30', stdTag:'BOTH', cat:isE?'M. de Obra':'Labor' },
+    equip:{ debitAcct:'1-01-03-001', debitLabel:isE?'WIP (Activo)':'WIP (Asset)', creditAcct:'2-01-01-001', creditLabel:isE?'CP Equipo':'AP Equipment', retAcct:null, costCode:'100.40', stdTag:'BOTH', cat:isE?'Equipo':'Equipment' },
+  };
+  const cfg = typeConfig[type];
+  const txId = 'TXN-SIM-' + Date.now().toString().slice(-6);
+
+  const stepStyle = (color) => `background:${color};border-radius:var(--radius-lg);padding:14px;margin-bottom:12px`;
+  const jeRow = (dr, acct, label, amt, sub) => `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07)">
+      <div>
+        <span style="font-size:11px;font-weight:700;color:${dr?'var(--success-light)':'var(--gold)'};display:inline-block;width:18px">${dr?'Dr':'Cr'}</span>
+        <code style="font-size:10px;background:rgba(255,255,255,.1);padding:2px 6px;border-radius:3px;color:rgba(255,255,255,.7)">${acct}</code>
+        <span style="font-size:11px;color:rgba(255,255,255,.55);margin-left:6px">${label}</span>
+        ${sub?`<div style="font-size:10px;color:rgba(255,255,255,.35);margin-left:24px;margin-top:2px">${sub}</div>`:''}
+      </div>
+      <span style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:${dr?'var(--success-light)':'var(--gold)'};white-space:nowrap;margin-left:12px">${fmt(amt)}</span>
+    </div>`;
+
+  const dbRow = (field, value, highlight) => `
+    <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.05);font-size:11px">
+      <span style="font-family:var(--font-mono);color:${highlight?'var(--info)':'var(--stone)'};font-weight:${highlight?700:400}">${field}</span>
+      <span style="font-family:var(--font-mono);color:${highlight?'var(--navy)':'var(--stone)'};font-weight:${highlight?700:400}">${value}</span>
+    </div>`;
+
+  out.innerHTML = `
+    <!-- STEP 1: WIP Entry -->
+    <div style="${stepStyle('var(--navy)')}">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="width:26px;height:26px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--navy-deep);flex-shrink:0">1</div>
+        <div style="font-size:13px;font-weight:700;color:#fff">${isE?'Recepción de Factura → WIP (Activo)':'Invoice Received → WIP (Asset)'}</div>
+        <span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,.35)">${isE?'Costo NO va a gastos todavía':'Cost does NOT go to expense yet'}</span>
+      </div>
+      ${jeRow(true, cfg.debitAcct, cfg.debitLabel, amount, isE?'Acumula costo en balance — NO distorsiona el P&L':'Accumulates cost on balance sheet — NO P&L distortion')}
+      ${jeRow(false, cfg.creditAcct, cfg.creditLabel, apCurrent, null)}
+      ${retAmt > 0 ? jeRow(false, cfg.retAcct, cfg.retLabel, retAmt, isE?'No corriente — exigible al cierre de obra':'Non-current — due at project closeout') : ''}
+    </div>
+
+    <!-- STEP 2: Month-End C-to-C -->
+    <div style="${stepStyle('var(--navy-mid)')}">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="width:26px;height:26px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--navy-deep);flex-shrink:0">2</div>
+        <div style="font-size:13px;font-weight:700;color:#fff">${isE?'Cierre de Mes — Cálculo C-a-C':'Month-End — C-to-C Calculation'}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;gap:8px;align-items:center;background:rgba(0,0,0,.2);border-radius:var(--radius);padding:10px;margin-bottom:12px">
+        ${[
+          [isE?'Costos incurridos':'Costs incurred', fmt(amount)],
+          ['÷',null],
+          [isE?'Costo total est.':'Est. total cost', fmt(amount/pct < Infinity ? amount/pct : amount)],
+          ['=',null],
+          ['% Avance', (pct*100).toFixed(1)+'%'],
+          ['×',null],
+          [isE?'Precio contrato (este costo)':'Contract (this cost)', fmt(amount)],
+        ].map(([l,v])=>v===null
+          ? `<div style="text-align:center;font-size:18px;color:rgba(255,255,255,.3)">${l}</div>`
+          : `<div style="text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.35);margin-bottom:3px">${l}</div><div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--gold)">${v}</div></div>`
+        ).join('')}
+      </div>
+      ${jeRow(false, '1-01-02-001', isE?'Cuentas x Cobrar (AR)':'Accounts Receivable', Math.round(amount*pct), null)}
+      ${jeRow(true, '4-01-01-001', isE?'Ingresos ASC 606 / NIIF 15':'Revenue ASC 606 / IFRS 15', Math.round(amount*pct), isE?'Solo la porción devengada por % avance':'Only the portion earned per completion %')}
+    </div>
+
+    <!-- STEP 3: WIP → COGS -->
+    <div style="${stepStyle('var(--navy-light)')}">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="width:26px;height:26px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--navy-deep);flex-shrink:0">3</div>
+        <div style="font-size:13px;font-weight:700;color:#fff">${isE?'Reclasificación WIP → COGS':'WIP → COGS Reclassification'}</div>
+        <span style="margin-left:auto;font-size:10px;color:rgba(255,255,255,.35)">${isE?'Ahora sí va al P&L — proporcional al avance':'Now it hits P&L — proportional to progress'}</span>
+      </div>
+      ${jeRow(true, '5-01-03-001', isE?'COGS — Costos de Obra':'COGS — Construction Costs', cogsReclassify, null)}
+      ${jeRow(false, '1-01-03-001', isE?'WIP (Activo) — reduce':'WIP (Asset) — reduce', cogsReclassify, isE?`WIP residual en balance: ${fmt(wipRemaining)}`:`Remaining WIP on B/S: ${fmt(wipRemaining)}`)}
+    </div>
+
+    <!-- DB RECORD PREVIEW -->
+    <div style="background:#fff;border-radius:var(--radius-lg);border:1px solid rgba(11,31,58,.1);padding:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <code style="background:rgba(11,31,58,.06);padding:2px 8px;border-radius:4px;font-size:11px">INSERT INTO Asientos_Contables</code>
+        <span style="color:var(--stone);font-weight:400">${isE?'— Registro generado automáticamente':'— Auto-generated record'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+        <div>
+          ${dbRow('tx_id', txId, false)}
+          ${dbRow('effective_date', new Date().toISOString().slice(0,10), false)}
+          ${dbRow('★ Project_ID', p.id, true)}
+          ${dbRow('★ Cost_Code', cfg.costCode, true)}
+          ${dbRow('★ Standard_Tag', cfg.stdTag, true)}
+          ${dbRow('account_code', cfg.debitAcct, false)}
+        </div>
+        <div>
+          ${dbRow('debit_amount', fmt(amount), false)}
+          ${dbRow('credit_amount (current)', fmt(apCurrent), false)}
+          ${dbRow('★ Retainage_Amount', retAmt > 0 ? fmt(retAmt) : '0.00', retAmt > 0)}
+          ${dbRow('wip_flag', 'TRUE', false)}
+          ${dbRow('norm_layer', 'BOTH', false)}
+          ${dbRow('audit_hash', 'sha256:' + Math.random().toString(36).slice(2,14) + '...', false)}
+        </div>
+      </div>
+      ${retAmt > 0 ? `<div class="alert a-warn mt2" style="font-size:11px">⚑ ${isE?`Retainage_Amount = ${fmt(retAmt)} — Este campo asegura que el flujo de caja muestre solo ${fmt(apCurrent)} como obligación inmediata. Los ${fmt(retAmt)} restantes no aparecen en AP corriente.`:`Retainage_Amount = ${fmt(retAmt)} — This field ensures cash flow shows only ${fmt(apCurrent)} as immediate obligation. The remaining ${fmt(retAmt)} do NOT appear in current AP.`}</div>` : ''}
+    </div>`;
+}
+
 function modalCostEntry() {
   const isE = S.lang === 'es';
   return `
@@ -2231,76 +2545,440 @@ function modalCostEntry() {
 }
 
 // ══════════════════════════════════════════════════════
-// MODULE: WIP — kept as summary view linking to jobcost
+// MODULE: WIP — Full Accounting Cycle Engine
 // ══════════════════════════════════════════════════════
-function rWIP(){const isE=es();return`
-<div class="page-header"><div><div class="page-title">WIP — ${isE?'Trabajo en Progreso':'Work in Progress'}</div>
-<div class="page-subtitle">${isE?'Cuenta de activo WIP acumula costos de obras no finalizadas. Evita distorsión del P&L.':'WIP asset account accumulates costs for unfinished work. Prevents P&L distortion.'}</div></div>
-<div class="page-actions"><button class="btn btn-navy btn-sm" onclick="nav('jobcost')">${isE?'Ver Sub-Libro':'View Sub-Ledger'}</button></div></div>
+function rWIP(){
+  const isE = es();
+  // Compute live WIP data from PROJECTS
+  const wipRows = PROJECTS.map(p => {
+    const t = projectTotals(p);
+    const pct = (t.pctComplete * 100).toFixed(1);
+    // WIP balance = costs incurred NOT yet recognized as COGS
+    // At end of period: COGS recognized = totalActual × pctComplete (of recognized portion)
+    // Simplified: WIP asset = totalActual - cogsRecognized
+    const cogsRecognized = t.totalActual * t.pctComplete;
+    const wipBalance = t.totalActual - cogsRecognized;
+    return { p, t, pct, cogsRecognized, wipBalance };
+  });
 
-<div class="alert a-info">${isE
-  ? '⚑ La cuenta WIP (1-01-03-001) es un ACTIVO. Acumula costos reales de obra hasta que la obligación de desempeño se satisface. Solo entonces se traslada al P&L como COGS, evitando adelantar pérdidas o ganancias antes de tiempo.'
-  : '⚑ WIP account (1-01-03-001) is an ASSET. Accumulates actual job costs until the performance obligation is satisfied — only then transferred to P&L as COGS, preventing premature income/loss recognition.'}</div>
-
-<div class="card">
-<div class="card-header"><div class="card-title">${isE?'Resumen WIP — Todos los Proyectos':'WIP Summary — All Projects'}</div>
-<span class="badge b-gold">ASC 606 / NIIF 15</span></div>
-<div style="overflow-x:auto"><table class="dt">
-<thead><tr>
-  <th>${isE?'Proyecto':'Project'}</th>
-  <th class="num">${isE?'Costos WIP':'WIP Costs'}</th>
-  <th class="num">${isE?'% Avance (C-a-C)':'% Complete'}</th>
-  <th class="num">${isE?'Ing. Reconocido':'Rev. Recognized'}</th>
-  <th class="num">${isE?'Facturado':'Billed'}</th>
-  <th class="num">${isE?'Activo Contrato':'Contract Asset'}</th>
-  <th class="num">${isE?'Pasivo Contrato':'Contract Liability'}</th>
-  <th>${isE?'Estado':'Status'}</th>
-</tr></thead>
-<tbody>
-${PROJECTS.map(p=>{
-  const t=projectTotals(p);
-  const pct=(t.pctComplete*100).toFixed(1);
-  return`<tr>
-  <td style="font-weight:500">${p.name}<div style="font-size:10px;color:var(--stone)">${p.id}</div></td>
-  <td class="num mono bold">${fmt(t.totalActual)}</td>
-  <td>
-    <div style="display:flex;align-items:center;gap:8px">
-      <div class="prog" style="width:80px"><div class="prog-fill" style="width:${pct}%;background:${parseFloat(pct)>80?'var(--success)':parseFloat(pct)>50?'var(--gold)':'var(--info)'}"></div></div>
-      <span class="mono" style="font-size:12px;font-weight:700">${pct}%</span>
-    </div>
-  </td>
-  <td class="num mono green bold">${fmt(t.revRecognized)}</td>
-  <td class="num mono">${fmt(t.totalBilled)}</td>
-  <td class="num mono ${t.contractAsset>0?'green':'stone'} bold">${t.contractAsset>0?fmt(t.contractAsset):'—'}</td>
-  <td class="num mono ${t.contractLiability>0?'gold':'stone'} bold">${t.contractLiability>0?fmt(t.contractLiability):'—'}</td>
-  <td>${t.contractLiability>0?'<span class="badge b-warn">OVERBILLED</span>':t.contractAsset>0?'<span class="badge b-ok">UNDERBILLED</span>':'<span class="badge b-neu">BALANCED</span>'}</td>
-  </tr>`;
-}).join('')}
-</tbody>
-<tfoot>
-  <tr style="background:var(--navy);color:#fff;font-weight:700">
-    <td>${isE?'TOTALES':'TOTALS'}</td>
-    <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(PROJECTS.reduce((s,p)=>s+projectTotals(p).totalActual,0))}</td>
-    <td>—</td>
-    <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(PROJECTS.reduce((s,p)=>s+projectTotals(p).revRecognized,0))}</td>
-    <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(PROJECTS.reduce((s,p)=>s+projectTotals(p).totalBilled,0))}</td>
-    <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(PROJECTS.reduce((s,p)=>s+projectTotals(p).contractAsset,0))}</td>
-    <td class="num" style="font-family:var(--font-mono);color:var(--gold-light)">${fmt(PROJECTS.reduce((s,p)=>s+projectTotals(p).contractLiability,0))}</td>
-    <td></td>
-  </tr>
-</tfoot>
-</table></div>
-<div class="g2 mt2">
-  <div class="alert a-ok" style="font-size:11px">
-    ✓ <strong>${isE?'Activo de Contrato (Unbilled Revenue)':'Contract Asset (Unbilled Revenue)'}</strong><br>
-    ${isE?'Ingresos devengados (por avance) que aún no han sido facturados al cliente. Cuenta 1-01-03-001. Clasificado como activo circulante. Se convierte en AR cuando se emite la factura.':'Earned revenue (per completion %) not yet billed to client. Account 1-01-03-001. Classified as current asset. Converts to AR when invoice is issued.'}
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">WIP — ${isE?'Ciclo de Costeo en Progreso':'Work in Progress — Costing Cycle'}</div>
+    <div class="page-subtitle">${isE?'Flujo contable completo: Factura Sub → WIP (Activo) → Reclasificación mensual → COGS · ASC 606 / NIIF 15':'Full accounting flow: Sub Invoice → WIP (Asset) → Monthly reclassification → COGS · ASC 606 / IFRS 15'}</div>
   </div>
-  <div class="alert a-warn" style="font-size:11px">
-    ⚠ <strong>${isE?'Pasivo de Contrato (Overbilling)':'Contract Liability (Overbilling)'}</strong><br>
-    ${isE?'Facturación que excede los ingresos reconocidos por avance. Cuenta 2-01-02-001. Ingreso DIFERIDO hasta que los costos incurridos justifiquen el reconocimiento adicional.':'Billing exceeds revenue earned by completion %. Account 2-01-02-001. Revenue is DEFERRED until incurred costs justify additional recognition.'}
+  <div class="page-actions">
+    <button class="btn btn-navy btn-sm" onclick="nav('jobcost')">${isE?'Ver Sub-Libro':'Sub-Ledger'}</button>
+    <button class="btn btn-gold btn-sm" onclick="openModal(modalWIPEntry())">${isE?'+ Asiento WIP':'+ WIP Entry'}</button>
   </div>
 </div>
-</div>`}
+
+<!-- ACCOUNTING FLOW DIAGRAM -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">${isE?'Ciclo Contable WIP — Flujo de 3 Pasos':'WIP Accounting Cycle — 3-Step Flow'}</div>
+    <span class="badge b-gold">ASC 606 / IAS 11 / NIIF 15</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:0;align-items:stretch">
+    ${[
+      { step:'01', icon:'📄', title_en:'Subcontractor / Vendor Invoice', title_es:'Factura de Sub / Proveedor',
+        desc_en:'Upon receipt of invoice, costs are NOT expensed immediately. They flow to the WIP asset account.',
+        desc_es:'Al recibir la factura, los costos NO se registran como gasto. Fluyen a la cuenta de activo WIP.',
+        entries:[
+          {dr:true, acct:'1-01-03-001', label:isE?'WIP (Activo)':'WIP (Asset)', amt:'$84,500'},
+          {dr:false, acct:'2-01-01-002', label:isE?'CP Subcontratistas':'AP Subcontractors', amt:'$84,500'},
+        ], color:'var(--info)' },
+      null,
+      { step:'02', icon:'📐', title_en:'Month-End: % Complete Calculation', title_es:'Cierre de Mes: Cálculo % Avance',
+        desc_en:'System auto-calculates C-to-C: Costs Incurred ÷ Est. Total Cost = % Complete × Contract Price = Revenue.',
+        desc_es:'El sistema calcula automáticamente C-a-C: Costos Incurridos ÷ Costo Total Est. = % Avance × Precio = Ingreso.',
+        entries:[
+          {dr:true, acct:'1-01-02-001', label:isE?'Cuentas por Cobrar':'Accounts Receivable', amt:'$547,320'},
+          {dr:false, acct:'4-01-01-001', label:isE?'Ingresos (ASC 606)':'Revenue (ASC 606)', amt:'$547,320'},
+        ], color:'var(--gold)' },
+      null,
+      { step:'03', icon:'🔄', title_en:'WIP → COGS Reclassification', title_es:'Reclasificación WIP → COGS',
+        desc_en:'The portion of WIP matching recognized revenue is transferred from the asset account to COGS on the P&L.',
+        desc_es:'La porción de WIP equivalente al ingreso reconocido se traslada del activo a COGS en el Estado de Resultados.',
+        entries:[
+          {dr:true, acct:'5-01-01-001', label:isE?'COGS — Costos de Obra':'COGS — Construction Costs', amt:'$372,480'},
+          {dr:false, acct:'1-01-03-001', label:isE?'WIP (Activo) — reduce':'WIP (Asset) — reduce', amt:'$372,480'},
+        ], color:'var(--success)' },
+    ].map((s,i) => {
+      if (s === null) return `<div style="display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--stone-light);padding:0 4px">→</div>`;
+      return `<div style="background:var(--stone-pale);border-radius:var(--radius-lg);padding:14px;border-top:3px solid ${s.color}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <div style="width:28px;height:28px;border-radius:50%;background:${s.color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${s.step}</div>
+          <div style="font-size:12px;font-weight:700;color:var(--navy)">${isE?s.title_es:s.title_en}</div>
+        </div>
+        <div style="font-size:11px;color:var(--stone);margin-bottom:12px;line-height:1.5">${isE?s.desc_es:s.desc_en}</div>
+        <div style="background:#fff;border-radius:var(--radius);padding:10px">
+          <div style="font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--stone);margin-bottom:8px">${isE?'Asiento Contable':'Journal Entry'}</div>
+          ${s.entries.map(e=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(0,0,0,.04)">
+            <div>
+              <span style="font-size:10px;font-weight:700;color:${e.dr?'var(--success)':'var(--danger)'};margin-right:6px">${e.dr?'Dr':'Cr'}</span>
+              <code style="font-size:9px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${e.acct}</code>
+              <span style="font-size:11px;color:var(--stone);margin-left:5px">${e.label}</span>
+            </div>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:${e.dr?'var(--success)':'var(--danger)'}">${e.amt}</span>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+  <div class="alert a-info mt2" style="font-size:11px">
+    ⚑ ${isE
+      ? 'La cuenta WIP (1-01-03-001) es un ACTIVO en el Balance General — no un gasto. Solo cuando el porcentaje de avance aumenta, el sistema genera automáticamente el asiento de reclasificación WIP → COGS. Esto evita anticipar costos antes de que el ingreso esté devengado.'
+      : 'WIP account (1-01-03-001) is a BALANCE SHEET ASSET — not an expense. Only when the completion % increases does the system auto-generate the WIP → COGS reclassification. This prevents front-loading costs before income is earned.'}
+  </div>
+</div>
+
+<!-- LIVE WIP BALANCES TABLE -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">${isE?'Saldos WIP en Tiempo Real — Todos los Proyectos':'Live WIP Balances — All Projects'}</div>
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalWIPReclassify())">${isE?'Reclasificar Cierre':'Month-End Reclassify'}</button>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="dt">
+    <thead><tr>
+      <th>${isE?'Proyecto':'Project'}</th>
+      <th class="num">${isE?'Costos Acum. en WIP':'Accum. WIP Costs'}</th>
+      <th class="num">${isE?'% Avance (C-a-C)':'% Complete (C-to-C)'}</th>
+      <th class="num">${isE?'COGS Reconocido':'COGS Recognized'}</th>
+      <th class="num">${isE?'Saldo WIP Neto (Activo)':'Net WIP Balance (Asset)'}</th>
+      <th class="num">${isE?'Ing. Reconocido':'Rev. Recognized'}</th>
+      <th class="num">${isE?'Facturado':'Billed'}</th>
+      <th>${isE?'Posición':'Position'}</th>
+    </tr></thead>
+    <tbody>
+    ${wipRows.map(({p,t,pct,cogsRecognized,wipBalance})=>`<tr>
+      <td style="font-weight:500">${p.name}<div style="font-size:10px;color:var(--stone)">${p.id}</div></td>
+      <td class="num mono bold">${fmt(t.totalActual)}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="prog" style="width:80px"><div class="prog-fill" style="width:${pct}%;background:${parseFloat(pct)>80?'var(--success)':parseFloat(pct)>50?'var(--gold)':'var(--info)'}"></div></div>
+          <span class="mono" style="font-size:12px;font-weight:700">${pct}%</span>
+        </div>
+      </td>
+      <td class="num mono red">${fmt(cogsRecognized)}</td>
+      <td class="num mono bold ${wipBalance>0?'green':'stone'}">${fmt(wipBalance)}</td>
+      <td class="num mono green">${fmt(t.revRecognized)}</td>
+      <td class="num mono">${fmt(t.totalBilled)}</td>
+      <td>
+        ${t.contractLiability>0
+          ? `<div><span class="badge b-warn" style="font-size:10px">OVERBILLED</span><div style="font-size:10px;color:var(--warning);margin-top:2px">${isE?'Pasivo:':'Liability:'} ${fmt(t.contractLiability)}</div></div>`
+          : t.contractAsset>0
+          ? `<div><span class="badge b-ok" style="font-size:10px">UNDERBILLED</span><div style="font-size:10px;color:var(--success);margin-top:2px">${isE?'Activo:':'Asset:'} ${fmt(t.contractAsset)}</div></div>`
+          : '<span class="badge b-neu" style="font-size:10px">BALANCED</span>'}
+      </td>
+    </tr>`).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:var(--navy);color:#fff;font-weight:700">
+        <td>${isE?'TOTALES':'TOTALS'}</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(wipRows.reduce((s,r)=>s+r.t.totalActual,0))}</td>
+        <td>—</td>
+        <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(wipRows.reduce((s,r)=>s+r.cogsRecognized,0))}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(wipRows.reduce((s,r)=>s+r.wipBalance,0))}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(wipRows.reduce((s,r)=>s+r.t.revRecognized,0))}</td>
+        <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(wipRows.reduce((s,r)=>s+r.t.totalBilled,0))}</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+  </div>
+</div>
+
+<!-- COST CODE HIERARCHY (Cost Codes per CSI MasterFormat) -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">${isE?'Jerarquía de Códigos de Costo (Cost Codes) — CSI MasterFormat':'Cost Code Hierarchy — CSI MasterFormat'}</div>
+    <span class="badge b-info">${isE?'Proyecto activo:':'Active project:'} ${PROJECTS.find(p=>p.id===activeProjectId)?.name}</span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="dt">
+    <thead><tr>
+      <th style="width:100px">${isE?'Código':'Code'}</th>
+      <th>${isE?'Descripción':'Description'}</th>
+      <th>${isE?'Categoría':'Category'}</th>
+      <th class="num">${isE?'Presupuesto':'Budget'}</th>
+      <th class="num">${isE?'Real':'Actual'}</th>
+      <th class="num">${isE?'Variación':'Variance'}</th>
+      <th class="num">${isE?'% COGS Reclasificado':'% Reclassified to COGS'}</th>
+    </tr></thead>
+    <tbody>
+    ${[
+      {code:'100', desc_en:'Excavation & Foundation', desc_es:'Excavación y Cimentación', sub:[
+        {code:'100.10', desc_en:'Concrete — Footings', desc_es:'Concreto — Zapatas', cat:'mat', bud:128000, act:126400},
+        {code:'100.20', desc_en:'Rebar & Formwork', desc_es:'Varilla y Cimbra', cat:'mat', bud:92000, act:89200},
+        {code:'100.30', desc_en:'Foundation Labor', desc_es:'Mano de Obra Cimentación', cat:'labor', bud:180000, act:174200},
+        {code:'100.40', desc_en:'Excavation Equipment', desc_es:'Equipo Excavación', cat:'equip', bud:62000, act:59800},
+      ]},
+      {code:'200', desc_en:'Structural Frame', desc_es:'Estructura', sub:[
+        {code:'200.10', desc_en:'Structural Steel', desc_es:'Acero Estructural', cat:'mat', bud:240000, act:231000},
+        {code:'200.20', desc_en:'Structural Concrete', desc_es:'Concreto Estructural', cat:'mat', bud:180000, act:186000},
+        {code:'200.30', desc_en:'Framing Labor', desc_es:'Mano de Obra Estructura', cat:'labor', bud:220000, act:208000},
+        {code:'200.40', desc_en:'Steel Sub — Apex Framing', desc_es:'Sub Acero — Apex Framing', cat:'sub', bud:380000, act:340000},
+      ]},
+      {code:'300', desc_en:'Building Envelope', desc_es:'Cerramientos', sub:[
+        {code:'300.10', desc_en:'Curtainwall & Glazing', desc_es:'Muro Cortina y Vidrio', cat:'sub', bud:420000, act:240000},
+        {code:'300.20', desc_en:'Roofing', desc_es:'Cubierta y Techo', cat:'sub', bud:120000, act:0},
+      ]},
+    ].flatMap(phase => [
+      `<tr style="background:var(--navy);color:#fff">
+        <td colspan="7" style="padding:8px 12px;font-size:11px;font-weight:700;letter-spacing:1px">
+          ${isE?'FASE':'PHASE'} ${phase.code} — ${isE?phase.desc_es:phase.desc_en}
+        </td>
+      </tr>`,
+      ...phase.sub.map(item => {
+        const v = item.bud - item.act;
+        const pct = item.bud > 0 ? Math.round(item.act/item.bud*100) : 0;
+        const catColors = {mat:'info',labor:'success',sub:'warning',equip:'gold'};
+        const catLabel = {mat:isE?'Materiales':'Materials',labor:isE?'M. de Obra':'Labor',sub:isE?'Sub.':'Sub.',equip:isE?'Equipo':'Equip.'};
+        return `<tr>
+          <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 6px;border-radius:4px">${item.code}</code></td>
+          <td style="padding-left:20px;font-size:12.5px">${isE?item.desc_es:item.desc_en}</td>
+          <td><span class="badge b-${catColors[item.cat]}" style="font-size:10px">${catLabel[item.cat]}</span></td>
+          <td class="num mono">${fmt(item.bud)}</td>
+          <td class="num mono ${item.act>item.bud?'red':item.act>0?'green':''}">${item.act?fmt(item.act):'—'}</td>
+          <td class="num mono ${v>=0?'green':'red'} bold">${item.act?(v>=0?'+':'')+fmt(v):'—'}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="prog" style="width:60px"><div class="prog-fill" style="width:${pct}%;background:${pct>100?'var(--danger)':pct>80?'var(--success)':'var(--info)'}"></div></div>
+              <span style="font-size:11px;min-width:32px">${item.act?pct+'%':'—'}</span>
+            </div>
+          </td>
+        </tr>`;
+      })
+    ]).join('')}
+    </tbody>
+  </table>
+  </div>
+</div>`;
+}
+
+function modalWIPEntry() {
+  const isE = S.lang === 'es';
+  return `
+<h3>${isE?'Nuevo Asiento WIP — Sub / Proveedor':'New WIP Entry — Sub / Vendor'}</h3>
+<div style="background:var(--navy);border-radius:var(--radius);padding:12px;margin-bottom:14px">
+  <div style="font-size:10px;color:rgba(255,255,255,.4);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">${isE?'Asiento Generado Automáticamente (Paso 1)':'Auto-Generated Entry (Step 1)'}</div>
+  <div style="display:flex;flex-direction:column;gap:4px">
+    <div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:rgba(255,255,255,.5)">Dr — 1-01-03-001 WIP (${isE?'Activo':'Asset'})</span><span style="font-family:var(--font-mono);color:var(--success-light)" id="wip-dr-preview">$0.00</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:rgba(255,255,255,.5)">Cr — 2-01-01-002 AP ${isE?'Subcontratistas':'Subcontractors'}</span><span style="font-family:var(--font-mono);color:var(--gold)" id="wip-cr-preview">$0.00</span></div>
+  </div>
+</div>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Proyecto (Obligatorio)':'Project (Required)'}</label>
+      <select><option value="">— ${isE?'SELECCIONAR':'SELECT'} —</option>${PROJECTS.map(p=>`<option>${p.id} — ${p.name}</option>`).join('')}</select></div>
+    <div class="mf-field"><label>${isE?'Fase':'Phase'}</label>
+      <select><option>100 — ${isE?'Cimentación':'Foundation'}</option><option>200 — ${isE?'Estructura':'Structure'}</option><option>300 — ${isE?'Cerramientos':'Envelope'}</option></select></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Código de Costo':'Cost Code'}</label>
+      <select><option>100.10 — ${isE?'Concreto':'Concrete'}</option><option>100.30 — ${isE?'M. de Obra':'Labor'}</option><option>200.40 — Subcontratista</option></select></div>
+    <div class="mf-field"><label>${isE?'Monto de Factura':'Invoice Amount'}</label>
+      <input type="number" placeholder="0.00" oninput="const v=parseFloat(this.value)||0;document.getElementById('wip-dr-preview').textContent=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(v);document.getElementById('wip-cr-preview').textContent=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(v)"></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Proveedor / Subcontratista':'Vendor / Subcontractor'}</label><input type="text"></div>
+</div>
+<div class="alert a-info mt2" style="font-size:11px">${isE?'Este asiento acumula el costo en WIP (Balance General, Activo). Al cierre de mes, el sistema generará automáticamente el asiento WIP → COGS proporcional al % de avance calculado.':'This entry accumulates cost in WIP (Balance Sheet, Asset). At month-end, the system auto-generates the WIP → COGS entry proportional to the calculated completion %.'}</div>
+<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-navy" onclick="closeModal()">${isE?'Registrar en WIP':'Post to WIP'}</button></div>`;
+}
+
+function modalWIPReclassify() {
+  const isE = S.lang === 'es';
+  return `
+<h3>${isE?'Reclasificación Mensual WIP → COGS':'Monthly WIP → COGS Reclassification'}</h3>
+<div class="alert a-warn" style="margin-bottom:14px;font-size:11px">
+  ⚑ ${isE?'El sistema calculará el % de avance actualizado y generará automáticamente los asientos de reclasificación para cada proyecto activo.':'System will recalculate updated completion % and auto-generate reclassification entries for each active project.'}
+</div>
+<table style="width:100%;border-collapse:collapse;font-size:12px">
+  <thead><tr style="background:var(--stone-pale)">
+    <th style="padding:8px;text-align:left">${isE?'Proyecto':'Project'}</th>
+    <th style="padding:8px;text-align:right">WIP Dr</th>
+    <th style="padding:8px;text-align:right">COGS Dr</th>
+    <th style="padding:8px;text-align:right">WIP Cr</th>
+  </tr></thead>
+  <tbody>
+  ${PROJECTS.map(p=>{
+    const t=projectTotals(p);
+    const cogs=t.totalActual*t.pctComplete;
+    return`<tr style="border-bottom:1px solid rgba(0,0,0,.05)">
+      <td style="padding:8px">${p.name}</td>
+      <td style="padding:8px;text-align:right;color:var(--stone);font-family:var(--font-mono)">—</td>
+      <td style="padding:8px;text-align:right;color:var(--success);font-family:var(--font-mono);font-weight:700">${fmt(cogs)}</td>
+      <td style="padding:8px;text-align:right;color:var(--danger);font-family:var(--font-mono);font-weight:700">${fmt(cogs)}</td>
+    </tr>`;
+  }).join('')}
+  </tbody>
+</table>
+<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-gold" onclick="closeModal()">${isE?'Ejecutar Reclasificación':'Run Reclassification'}</button></div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// MODULE: SUBCONTRACTORS — Full retainage split architecture
+// ══════════════════════════════════════════════════════
+function rSubs(){
+  const isE = es();
+
+  // Retainage accounting: split AP into Current + Non-Current
+  // Invoice $10,000, ret 10% → AP Current $9,000 / Retainage Payable (LT) $1,000
+  const subsData = [
+    {n:'Elite MEP Group',     pid:'PRJ-001', phase:'PH-04', w9:'ok', coi:'ok',   coiExp:'Dec 2026', contract:284500, paid:262050, retPct:10, lw:'Generated', blocked:false},
+    {n:'Rodriguez Concrete',  pid:'PRJ-002', phase:'PH-02', w9:'missing',coi:'ok',coiExp:'Jun 2026', contract:182000, paid:0,      retPct:10, lw:'Blocked',   blocked:true, reason:'W-9 MISSING'},
+    {n:'SteelPro Inc.',       pid:'PRJ-002', phase:'PH-02', w9:'ok', coi:'expiring',coiExp:'Apr 2 2026',contract:317000,paid:285300,retPct:10,lw:'Pending',  blocked:true, reason:'COI EXPIRES IN 2 DAYS'},
+    {n:'Apex Framing LLC',    pid:'PRJ-003', phase:'PH-02', w9:'ok', coi:'ok',   coiExp:'Aug 2026', contract:89000,  paid:80100,  retPct:10, lw:'Generated', blocked:false},
+    {n:'SkyHigh Glass',       pid:'PRJ-001', phase:'PH-03', w9:'ok', coi:'ok',   coiExp:'Mar 2027', contract:420000, paid:0,      retPct:5,  lw:'Pending',   blocked:false},
+  ];
+
+  // Compute retainage fields
+  const subs = subsData.map(s => {
+    const grossBilled = s.paid / (1 - s.retPct/100) || 0;  // back-calc
+    const retHeld = Math.round(grossBilled * s.retPct/100);
+    const currentAP = Math.round(grossBilled * (1 - s.retPct/100));
+    const retainageBalance = Math.round(s.contract * s.retPct/100);
+    return {...s, grossBilled, retHeld, currentAP, retainageBalance};
+  });
+
+  const totGross = subs.reduce((a,s)=>a+s.grossBilled,0);
+  const totCurrent = subs.reduce((a,s)=>a+s.currentAP,0);
+  const totRet = subs.reduce((a,s)=>a+s.retHeld,0);
+  const totRetBalance = subs.reduce((a,s)=>a+s.retainageBalance,0);
+
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">${isE?'Gestión de Subcontratistas':'Subcontractor Management'}</div>
+    <div class="page-subtitle">${isE?'Muro de Cumplimiento W-9+COI · Retenciones Corriente vs No Corriente · Lien Waivers · Ciclo de Pago':'Compliance Wall W-9+COI · Retainage Current vs Non-Current · Lien Waivers · Payment Cycle'}</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-navy btn-sm" onclick="openModal(modalSub())">${isE?'+ Agregar Sub':'+ Add Sub'}</button>
+  </div>
+</div>
+
+<!-- RETAINAGE ARCHITECTURE EXPLAINER -->
+<div class="card" style="border-left:4px solid var(--gold)">
+  <div class="card-header">
+    <div class="card-title">${isE?'Arquitectura de Retenciones — Separación Corriente vs No Corriente':'Retainage Architecture — Current vs Non-Current Split'}</div>
+    <span class="badge b-gold">${isE?'Clave para Flujo de Caja':'Key for Cash Flow'}</span>
+  </div>
+  <div class="g2">
+    <!-- The example entry -->
+    <div style="background:var(--navy);border-radius:var(--radius-lg);padding:16px">
+      <div style="font-size:10px;color:rgba(255,255,255,.4);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px">${isE?'EJEMPLO: Factura $10,000 con 10% Retención':'EXAMPLE: Invoice $10,000 with 10% Retainage'}</div>
+      ${[
+        {side:'Dr', acct:'5-01-03-001', label:isE?'COGS / WIP — Subcontratistas':'COGS / WIP — Subcontractors', amt:'$10,000', color:'success-light'},
+        {side:'Cr', acct:'2-01-01-002', label:isE?'CP Subs Corriente (pago hoy)':'AP Subs Current (payable now)', amt:'$9,000', color:'gold'},
+        {side:'Cr', acct:'2-01-02-002', label:isE?'Retención por Pagar (LP, al cierre)':'Retainage Payable (LT, at closeout)', amt:'$1,000', color:'warning-light'},
+      ].map(e=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07)">
+        <div>
+          <span style="font-size:11px;font-weight:700;color:${e.side==='Dr'?'var(--success-light)':'var(--gold)'};margin-right:8px;min-width:20px;display:inline-block">${e.side}</span>
+          <code style="font-size:10px;background:rgba(255,255,255,.08);padding:2px 6px;border-radius:3px;color:rgba(255,255,255,.6)">${e.acct}</code>
+          <span style="font-size:11px;color:rgba(255,255,255,.55);margin-left:8px">${e.label}</span>
+        </div>
+        <span style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--${e.color})">${e.amt}</span>
+      </div>`).join('')}
+      <div style="margin-top:12px;padding:10px;background:rgba(255,255,255,.04);border-radius:var(--radius)">
+        <div style="font-size:11px;color:rgba(255,255,255,.5);line-height:1.6">
+          ${isE
+            ? '✓ El reporte de flujo de caja muestra $9,000 como obligación inmediata. Los $1,000 de retención NO aparecen como deuda corriente — se muestran como pasivo a largo plazo hasta que la obra finalice y sea aceptada.'
+            : '✓ The cash flow report shows $9,000 as an immediate obligation. The $1,000 retainage does NOT appear as current debt — it shows as a long-term liability until the project is completed and accepted.'}
+        </div>
+      </div>
+    </div>
+    <!-- Balance Sheet impact -->
+    <div>
+      <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:10px">${isE?'Impacto en Balance General':'Balance Sheet Impact'}</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${[
+          {section:isE?'ACTIVOS CIRCULANTES':'CURRENT ASSETS', items:[
+            {acct:'1-01-02-001', label:isE?'Cuentas x Cobrar Corriente':'Current AR', val:fmt(totCurrent), color:'success', note:isE?'Cobrable en 30-60 días':'Collectible in 30-60 days'},
+          ]},
+          {section:isE?'ACTIVOS NO CIRCULANTES':'NON-CURRENT ASSETS', items:[
+            {acct:'1-01-02-002', label:isE?'Retenciones x Cobrar':'Retainage Receivable', val:fmt(totRetBalance), color:'warning', note:isE?'Cobrable al cierre de obra':'Due at project closeout'},
+          ]},
+          {section:isE?'PASIVOS CIRCULANTES':'CURRENT LIABILITIES', items:[
+            {acct:'2-01-01-002', label:isE?'CP Subcontratistas Corriente':'AP Subs Current', val:fmt(totCurrent), color:'danger', note:isE?'Pago inmediato':'Immediate payment'},
+          ]},
+          {section:isE?'PASIVOS NO CIRCULANTES':'NON-CURRENT LIABILITIES', items:[
+            {acct:'2-01-02-002', label:isE?'Retenciones x Pagar (LP)':'Retainage Payable (LT)', val:fmt(totRetBalance), color:'warning', note:isE?'Solo al cierre / aceptación':'Only at closeout / acceptance'},
+          ]},
+        ].map(s=>`
+        <div>
+          <div style="font-size:9px;letter-spacing:1.5px;color:var(--stone);text-transform:uppercase;margin-bottom:4px">${s.section}</div>
+          ${s.items.map(item=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--stone-pale);border-radius:var(--radius);border-left:3px solid var(--${item.color})">
+            <div>
+              <code style="font-size:9px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${item.acct}</code>
+              <span style="font-size:12px;margin-left:6px;color:var(--navy)">${item.label}</span>
+              <div style="font-size:10px;color:var(--stone);margin-top:2px">${item.note}</div>
+            </div>
+            <div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--${item.color})">${item.val}</div>
+          </div>`).join('')}
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SUBCONTRACTOR TABLE -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">${isE?'Registro de Subcontratistas — Estado de Cumplimiento y Retenciones':'Subcontractor Register — Compliance & Retainage Status'}</div>
+    <span class="badge b-no">2 ${isE?'Bloqueados':'Blocked'}</span>
+  </div>
+  <div class="alert a-danger" style="margin-bottom:12px">🚫 ${isE?'2 subcontratistas con pago bloqueado. Guardián 21 ha notificado al socio. Retenciones retenidas hasta resolución.':'2 subcontractors payment-blocked. Guardián 21 notified Partner. Retainage withheld pending resolution.'}</div>
+  <div style="overflow-x:auto">
+  <table class="dt">
+    <thead><tr>
+      <th>${isE?'Subcontratista':'Subcontractor'}</th>
+      <th>${isE?'Proyecto/Fase':'Project/Phase'}</th>
+      <th>W-9</th>
+      <th>COI</th>
+      <th class="num">${isE?'Facturado Bruto':'Gross Billed'}</th>
+      <th class="num" style="border-left:2px solid var(--success)">${isE?'CP Corriente':'Current AP'}</th>
+      <th class="num" style="border-left:2px solid var(--warning)">${isE?'Retención LP':'Retainage LT'}</th>
+      <th class="num">${isE?'Ret. Total Contractual':'Total Contract Ret.'}</th>
+      <th>Lien Waiver</th>
+      <th>${isE?'Pago':'Payment'}</th>
+    </tr></thead>
+    <tbody>
+    ${subs.map(s=>`<tr ${s.blocked?'style="background:var(--danger-light)"':''}>
+      <td><div style="font-weight:600;font-size:12.5px">${s.n}</div><div style="font-size:10px;color:var(--stone)">${s.retPct}% ${isE?'retención':'retainage'}</div></td>
+      <td><span class="badge b-neu" style="font-size:10px">${s.pid}</span><div style="font-size:10px;color:var(--stone);margin-top:2px">${s.phase}</div></td>
+      <td>${s.w9==='ok'?'<span class="badge b-ok" style="font-size:10px">✓ Filed</span>':'<span class="badge b-no" style="font-size:10px">✗ MISSING</span>'}</td>
+      <td>${s.coi==='ok'?`<span class="badge b-ok" style="font-size:10px">✓ ${s.coiExp}</span>`:s.coi==='expiring'?`<span class="badge b-warn" style="font-size:10px">⚠ ${s.coiExp}</span>`:'<span class="badge b-no">Expired</span>'}</td>
+      <td class="num mono">${s.grossBilled>0?fmt(s.grossBilled):'—'}</td>
+      <td class="num mono bold green" style="border-left:2px solid var(--success-light)">${s.currentAP>0?fmt(s.currentAP):'—'}</td>
+      <td class="num mono bold gold" style="border-left:2px solid var(--warning-light)">${s.retHeld>0?fmt(s.retHeld):'—'}</td>
+      <td class="num mono stone">${fmt(s.retainageBalance)}</td>
+      <td><span class="badge ${s.lw==='Generated'?'b-ok':s.lw==='Blocked'?'b-no':'b-warn'}" style="font-size:10px">${s.lw}</span></td>
+      <td>
+        ${s.blocked
+          ? `<div><span class="badge b-no" style="font-size:10px">🚫 BLOCKED</span><div style="font-size:10px;color:var(--danger);margin-top:2px">${s.reason}</div></div>`
+          : '<span class="badge b-ok" style="font-size:10px">✓ APPROVED</span>'}
+      </td>
+    </tr>`).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:var(--navy);color:#fff;font-weight:700">
+        <td colspan="4">TOTAL</td>
+        <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(totGross)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6;border-left:2px solid rgba(255,255,255,.1)">${fmt(totCurrent)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold-light);border-left:2px solid rgba(255,255,255,.1)">${fmt(totRet)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(totRetBalance)}</td>
+        <td colspan="2"></td>
+      </tr>
+    </tfoot>
+  </table>
+  </div>
+</div>`;
+}
 
 // ══════════════════════════════════════════════════════
 // MODULE: BUDGET — Live Budget Control with CO engine
@@ -2366,75 +3044,321 @@ ${PROJECTS.flatMap(p=>p.cos.map(co=>`<tr>
 </div>`}
 
 // ══════════════════════════════════════════════════════
-// MODULE: SUBCONTRACTORS — Compliance Wall
+// MODULE: GENERAL LEDGER — Full Dual-Ledger
 // ══════════════════════════════════════════════════════
-function rSubs(){const isE=es();return`
-<div class="page-header"><div><div class="page-title">${isE?'Gestión de Subcontratistas':'Subcontractor Management'}</div>
-<div class="page-subtitle">${isE?'Retención 10% · Muro de Cumplimiento W-9+COI · Lien Waivers automáticos · Sub-Libro vinculado':'10% Retainage · Compliance Wall W-9+COI · Auto Lien Waivers · Linked Sub-Ledger'}</div></div>
-<div class="page-actions"><button class="btn btn-navy btn-sm" onclick="openModal(modalSub())">${isE?'+ Agregar Sub':'+ Add Sub'}</button></div></div>
-<div class="alert a-danger">🚫 ${isE?'2 subcontratistas con pago bloqueado por incumplimiento. Guardiàn 21 ha notificado al socio.':'2 subcontractors with blocked payment due to compliance failure. Guardián 21 notified Partner.'}</div>
-<div class="card mt2"><div style="overflow-x:auto"><table class="dt"><thead><tr>
-<th>${isE?'Subcontratista':'Subcontractor'}</th><th>${isE?'Proyecto':'Project'}</th>
-<th>W-9</th><th>COI ${isE?'(Seguro)':'(Insurance)'}</th>
-<th class="num">${isE?'Monto Contrato':'Contract Amt'}</th>
-<th class="num">${isE?'Pagado':'Paid'}</th>
-<th class="num">${isE?'Retención 10%':'Retainage 10%'}</th>
-<th>Lien Waiver</th><th>${isE?'Pago':'Payment'}</th><th></th>
-</tr></thead><tbody>
-${[
-  {n:'Elite MEP Group',pid:'PRJ-001',w9:'ok',coi:'ok',coiExp:'Dec 2026',contract:284500,paid:262050,ret:22450,lw:'Generated',ok:true},
-  {n:'Rodriguez Concrete',pid:'PRJ-002',w9:'missing',coi:'ok',coiExp:'Jun 2026',contract:182000,paid:163800,ret:18200,lw:'Blocked',ok:false,reason:'W-9 MISSING'},
-  {n:'SteelPro Inc.',pid:'PRJ-002',w9:'ok',coi:'expiring',coiExp:'Apr 2 2026',contract:317000,paid:285300,ret:31700,lw:'Pending',ok:false,reason:'COI EXPIRES SOON'},
-  {n:'Apex Framing LLC',pid:'PRJ-003',w9:'ok',coi:'ok',coiExp:'Aug 2026',contract:89000,paid:80100,ret:8900,lw:'Generated',ok:true},
-  {n:'SkyHigh Glass & Glazing',pid:'PRJ-001',w9:'ok',coi:'ok',coiExp:'Mar 2027',contract:420000,paid:0,ret:0,lw:'Pending',ok:true},
-].map(s=>`<tr>
-<td style="font-weight:500">${s.n}</td>
-<td><span class="badge b-neu" style="font-size:10px">${s.pid}</span></td>
-<td>${s.w9==='ok'?'<span class="badge b-ok">✓ Filed</span>':'<span class="badge b-no">✗ Missing</span>'}</td>
-<td>${s.coi==='ok'?`<span class="badge b-ok" style="font-size:10px">✓ ${s.coiExp}</span>`:s.coi==='expiring'?`<span class="badge b-warn" style="font-size:10px">⚠ ${s.coiExp}</span>`:'<span class="badge b-no">Expired</span>'}</td>
-<td class="num mono">${fmt(s.contract)}</td>
-<td class="num mono ${s.paid>0?'green':''}">${s.paid>0?fmt(s.paid):'—'}</td>
-<td class="num mono gold bold">${s.ret>0?fmt(s.ret):'—'}</td>
-<td><span class="badge ${s.lw==='Generated'?'b-ok':s.lw==='Blocked'?'b-no':'b-warn'}" style="font-size:10px">${s.lw}</span></td>
-<td>${s.ok?'<span class="badge b-ok">✓ APPROVED</span>':`<span class="badge b-no" style="font-size:10px">🚫 ${s.reason||'BLOCKED'}</span>`}</td>
-<td><button class="btn btn-sm btn-ghost" onclick="gMsg('Lien Waiver generated for ${s.n}')">${isE?'Waiver':'Waiver'}</button></td>
-</tr>`).join('')}
-</tbody></table></div>
-<div class="g3 mt2">
-${[
-  [isE?'Total Retenciones Retenidas':'Total Retainage Held',fmt(81250),'warning'],
-  [isE?'Liberable (obra completada)':'Releasable (work complete)',fmt(31350),'success'],
-  [isE?'Bloqueado por Cumplimiento':'Blocked (compliance)','$49,900','danger'],
-].map(([l,v,c])=>`<div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div>
-<div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:18px">${v}</div></div>`).join('')}
-</div></div>`}
+let glView = 'journal'; // journal | trial | aged_ar | aged_ap
+let glStd  = 'both';    // gaap | ifrs | both
+let glSearch = '';
 
-// ══════════════════════════════════════════════════════
-// MODULE: GL, TREASURY, ASSETS, WIP, BUDGET, SUBS — abbreviated
-// ══════════════════════════════════════════════════════
-function rGL(){const isE=es();return`
-<div class="page-header"><div><div class="page-title">${isE?'Mayor General':'General Ledger'}</div><div class="page-subtitle">${isE?'Doble capa GAAP + IFRS automática':'Auto dual-layer GAAP + IFRS'}</div></div>
-<div class="page-actions">
-<div class="alert a-info">${isE?'Cada entrada genera automáticamente la capa de ajuste IFRS correspondiente. Las cuentas WIP se actualizan en tiempo real.':'Each entry auto-generates the IFRS adjustment layer. WIP accounts update in real time.'}</div>
-<div class="card mt2">
-<div class="card-header"><div class="card-title">${isE?'Entradas Recientes':'Recent Entries'}</div>
-<div class="tab-bar"><button class="tab active">GAAP</button><button class="tab">IFRS</button><button class="tab">${isE?'Diferencias':'Diffs'}</button></div></div>
-<div style="overflow-x:auto"><table class="dt"><thead><tr><th>${isE?'Fecha':'Date'}</th><th>Ref</th><th>${isE?'Descripción':'Description'}</th><th>${isE?'Proyecto':'Project'}</th><th class="num">${isE?'Débito':'Debit'}</th><th class="num">${isE?'Crédito':'Credit'}</th><th>${isE?'Norma':'Std'}</th><th>Status</th></tr></thead><tbody>
-${[['03/29','JE-0341','Revenue recognition Riverside','PRJ-001','$547,320','—','GAAP','Posted'],
-   ['03/29','JE-0341A','IFRS 15 adjustment layer','PRJ-001','$549,100','—','IFRS','Posted'],
-   ['03/28','JE-0340','Depreciation Q1','All','$62,400','—','Both','Posted'],
-   ['03/27','JE-0339','AP Subcontractors Elite MEP','PRJ-001','$84,500','—','GAAP','Posted'],
-   ['03/26','JE-0338','Payroll accrual','All','$97,230','—','Both','Posted'],
-   ['03/25','JE-0337','Retainage receivable 10%','PRJ-001','$54,732','—','GAAP','Posted'],
-].map(([d,r,desc,proj,db,cr,std,st])=>`<tr>
-<td class="mono" style="font-size:11px">${d}</td>
-<td><span class="badge b-neu" style="font-size:10px">${r}</span></td>
-<td>${desc}</td><td><span class="badge b-info" style="font-size:10px">${proj}</span></td>
-<td class="num green mono">${db}</td><td class="num red mono">${cr}</td>
-<td><span class="badge ${std==='IFRS'?'b-gold':std==='Both'?'b-info':'b-neu'}" style="font-size:10px">${std}</span></td>
-<td><span class="badge b-ok" style="font-size:10px">${st}</span></td>
-</tr>`).join('')}
-</tbody></table></div></div>`}
+function rGL(){
+  const isE = es();
+  setTimeout(()=>{
+    document.querySelectorAll('.gl-tab').forEach(b=>b.addEventListener('click',function(){
+      document.querySelectorAll('.gl-tab').forEach(x=>x.classList.remove('active'));
+      this.classList.add('active'); glView=this.dataset.v; rerenderGL();
+    }));
+    document.querySelectorAll('.gl-std').forEach(b=>b.addEventListener('click',function(){
+      document.querySelectorAll('.gl-std').forEach(x=>x.classList.remove('active'));
+      this.classList.add('active'); glStd=this.dataset.s; rerenderGL();
+    }));
+    const si=document.getElementById('gl-search');
+    if(si)si.addEventListener('input',e=>{glSearch=e.target.value.toLowerCase();rerenderGL()});
+    rerenderGL();
+  },60);
+
+  return `
+<div class="page-header">
+  <div><div class="page-title">${isE?'Mayor General':'General Ledger'}</div>
+  <div class="page-subtitle">${isE?'Libro dual GAAP + IFRS con capas de ajuste automáticas · Standard_Tag por asiento':'Dual GAAP + IFRS ledger with auto adjustment layers · Standard_Tag per entry'}</div></div>
+  <div class="page-actions">
+    <button class="btn btn-ghost btn-sm" onclick="nav('coa')">${isE?'Plan de Cuentas':'Chart of Accounts'}</button>
+    <button class="btn btn-gold btn-sm" onclick="openJEModal()">+ ${isE?'Asiento':'Journal Entry'}</button>
+  </div>
+</div>
+
+<!-- LEDGER SWITCHER -->
+<div class="card" style="padding:.75rem 1rem">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <div style="font-size:11px;font-weight:600;color:var(--navy)">${isE?'Libro:':'Ledger:'}</div>
+    <div class="tab-bar" style="margin:0">
+      <button class="tab gl-std ${glStd==='both'?'active':''}" data-s="both">${isE?'Paralelo (Dual)':'Parallel (Dual)'}</button>
+      <button class="tab gl-std ${glStd==='gaap'?'active':''}" data-s="gaap">US GAAP</button>
+      <button class="tab gl-std ${glStd==='ifrs'?'active':''}" data-s="ifrs">IFRS / NIIF</button>
+    </div>
+    <div class="tab-bar" style="margin:0">
+      <button class="tab gl-tab ${glView==='journal'?'active':''}" data-v="journal">${isE?'Diario':'Journal'}</button>
+      <button class="tab gl-tab ${glView==='trial'?'active':''}" data-v="trial">${isE?'Balanza de Comprobación':'Trial Balance'}</button>
+      <button class="tab gl-tab ${glView==='aged_ar'?'active':''}" data-v="aged_ar">${isE?'Antigüedad AR':'AR Aging'}</button>
+      <button class="tab gl-tab ${glView==='aged_ap'?'active':''}" data-v="aged_ap">${isE?'Antigüedad AP':'AP Aging'}</button>
+    </div>
+    <input type="text" id="gl-search" placeholder="${isE?'🔍 Buscar asiento, cuenta, ref...':'🔍 Search entry, account, ref...'}"
+      style="flex:1;min-width:180px;border:1px solid var(--stone-light);border-radius:var(--radius);padding:6px 10px;font-size:12px;font-family:var(--font-body);outline:none">
+  </div>
+</div>
+
+<div id="gl-content"></div>`;
+}
+
+function rerenderGL(){
+  const el = document.getElementById('gl-content');
+  if(!el) return;
+  const isE = S.lang === 'es';
+
+  // Full journal data set
+  const entries = [
+    {date:'2026-03-29',ref:'JE-0341',  desc_en:'Revenue recognition — Riverside Plaza (68% C-to-C)', desc_es:'Reconocimiento ingreso — Riverside Plaza (68% C-a-C)', proj:'PRJ-001',dr_acct:'1-01-02-001',dr_name:isE?'Cuentas x Cobrar':'Accounts Receivable', dr:547320, cr_acct:'4-01-01-001',cr_name:isE?'Ingresos Construcción':'Construction Revenue', cr:547320, std:'gaap', tag:'GAAP',   wip:false},
+    {date:'2026-03-29',ref:'JE-0341A', desc_en:'IFRS 15 adjustment layer — performance obligation', desc_es:'Capa ajuste NIIF 15 — obligación de desempeño',         proj:'PRJ-001',dr_acct:'1-01-02-001',dr_name:isE?'Cuentas x Cobrar':'Accounts Receivable', dr:549100, cr_acct:'4-01-01-001',cr_name:isE?'Ingresos NIIF 15':'IFRS 15 Revenue',     cr:549100, std:'ifrs', tag:'IFRS',   wip:false},
+    {date:'2026-03-29',ref:'JE-0342',  desc_en:'WIP → COGS reclassification Q1 month-end',           desc_es:'Reclasificación WIP → COGS cierre Q1',                proj:'PRJ-001',dr_acct:'5-01-03-001',dr_name:'COGS — Subcontractors', dr:372480, cr_acct:'1-01-03-001',cr_name:isE?'WIP (Activo)':'WIP (Asset)',             cr:372480, std:'both', tag:'BOTH',  wip:true},
+    {date:'2026-03-28',ref:'JE-0340',  desc_en:'Q1 depreciation — Book/SL method all assets',        desc_es:'Depreciación Q1 — Método Libros/SL todos los activos',proj:'ALL',   dr_acct:'6-03-01-001',dr_name:isE?'Depr. — SL Libros':'Depreciation — SL Books', dr:62400,  cr_acct:'1-02-01-004',cr_name:isE?'Depr. Acum.':'Acc. Depreciation',      cr:62400,  std:'both', tag:'BOTH',  wip:false},
+    {date:'2026-03-27',ref:'JE-0339',  desc_en:'AP — Elite MEP Group invoice #0412',                 desc_es:'CP — Elite MEP Group factura #0412',                  proj:'PRJ-001',dr_acct:'1-01-03-001',dr_name:isE?'WIP (Activo)':'WIP (Asset)',             dr:84500,  cr_acct:'2-01-01-002',cr_name:isE?'CP Subcontratistas':'AP Subcontractors', cr:76050, std:'both', tag:'BOTH',  wip:true, ret:8450},
+    {date:'2026-03-27',ref:'JE-0339B', desc_en:'Retainage payable — Elite MEP 10%',                  desc_es:'Retención por pagar — Elite MEP 10%',                 proj:'PRJ-001',dr_acct:'1-01-03-001',dr_name:isE?'WIP (Activo)':'WIP (Asset)',             dr:8450,   cr_acct:'2-01-02-002',cr_name:isE?'Retención x Pagar LP':'Retainage Payable LT',cr:8450,  std:'both', tag:'BOTH',  wip:true, retEntry:true},
+    {date:'2026-03-26',ref:'JE-0338',  desc_en:'Payroll accrual — March field crews + admin',        desc_es:'Acumulación nómina — Cuadrillas Mar + admin',         proj:'ALL',   dr_acct:'5-01-02-001',dr_name:isE?'M. de Obra Directa':'Direct Labor',         dr:97230,  cr_acct:'2-01-03-001',cr_name:isE?'Nómina x Pagar':'Accrued Payroll',        cr:97230,  std:'both', tag:'BOTH',  wip:true},
+    {date:'2026-03-25',ref:'JE-0337',  desc_en:'Retainage receivable — AIA-005 Riverside billing',  desc_es:'Retención por cobrar — AIA-005 facturación Riverside', proj:'PRJ-001',dr_acct:'1-01-02-002',dr_name:isE?'Retención x Cobrar':'Retainage Receivable', dr:54732,  cr_acct:'1-01-02-001',cr_name:isE?'Cuentas x Cobrar':'Accounts Receivable', cr:54732,  std:'both', tag:'BOTH',  wip:false},
+    {date:'2026-03-24',ref:'JE-0336',  desc_en:'MACRS tax depreciation memo entry (ASC 740)',        desc_es:'Memo depreciación MACRS fiscal (ASC 740)',             proj:'ALL',   dr_acct:'7-01-01-002',dr_name:isE?'ISR Diferido (Tax)':'Deferred Tax Exp.',       dr:14210,  cr_acct:'2-02-01-002',cr_name:isE?'Pasivo ISR Diferido':'DTL',               cr:14210,  std:'gaap', tag:'GAAP',  wip:false},
+    {date:'2026-03-22',ref:'JE-0335',  desc_en:'IAS 12 deferred tax — IFRS adjustment layer',       desc_es:'IAS 12 impuesto diferido — capa ajuste NIIF',          proj:'ALL',   dr_acct:'7-01-01-003',dr_name:isE?'ISR Diferido NIIF':'Deferred Tax IFRS',         dr:8400,   cr_acct:'2-02-01-002',cr_name:'DTL (IFRS)',                                   cr:8400,   std:'ifrs', tag:'IFRS',  wip:false},
+  ];
+
+  const filtered = entries.filter(e=>{
+    if(glStd==='gaap' && e.std==='ifrs') return false;
+    if(glStd==='ifrs' && e.std==='gaap') return false;
+    if(glSearch){
+      const q = glSearch;
+      return (e.ref+e.desc_en+e.desc_es+e.proj+e.dr_acct+e.cr_acct+e.tag).toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  if(glView === 'journal'){
+    el.innerHTML = `
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:10px 14px;background:var(--stone-pale);border-bottom:1px solid rgba(0,0,0,.06);display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:12px;font-weight:600;color:var(--navy)">${isE?'Diario General — Q1 2026':'General Journal — Q1 2026'}</span>
+        <span style="font-size:11px;color:var(--stone)">${filtered.length} ${isE?'asientos':'entries'} · ${isE?'Modo':'Mode'}: <strong>${glStd==='both'?isE?'Paralelo':'Parallel':glStd.toUpperCase()}</strong></span>
+      </div>
+      <div style="overflow-x:auto">
+      <table class="dt" style="min-width:1000px">
+        <thead><tr>
+          <th>${isE?'Fecha':'Date'}</th>
+          <th>Ref</th>
+          <th style="min-width:220px">${isE?'Descripción':'Description'}</th>
+          <th>${isE?'Proyecto':'Project'}</th>
+          <th>${isE?'Cta. Débito':'Dr Account'}</th>
+          <th class="num">${isE?'Débito':'Debit'}</th>
+          <th>${isE?'Cta. Crédito':'Cr Account'}</th>
+          <th class="num">${isE?'Crédito':'Credit'}</th>
+          <th>Standard_Tag</th>
+          <th>WIP</th>
+          <th>${isE?'Retención':'Retainage'}</th>
+        </tr></thead>
+        <tbody>
+        ${filtered.map(e=>`
+        <tr ${e.retEntry?'style="background:var(--warning-light)"':e.wip?'style="background:rgba(27,79,138,.03)"':''}>
+          <td class="mono" style="font-size:10px">${e.date}</td>
+          <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 5px;border-radius:3px">${e.ref}</code></td>
+          <td style="font-size:11.5px;min-width:220px">${isE?e.desc_es:e.desc_en}</td>
+          <td><span class="badge b-gold" style="font-size:9px">${e.proj}</span></td>
+          <td>
+            <code style="font-size:9px;background:rgba(27,79,138,.08);color:var(--info);padding:1px 5px;border-radius:3px">${e.dr_acct}</code>
+            <div style="font-size:10px;color:var(--stone);margin-top:2px">${e.dr_name}</div>
+          </td>
+          <td class="num mono green bold">${fmt(e.dr)}</td>
+          <td>
+            <code style="font-size:9px;background:rgba(192,57,43,.06);color:var(--danger);padding:1px 5px;border-radius:3px">${e.cr_acct}</code>
+            <div style="font-size:10px;color:var(--stone);margin-top:2px">${e.cr_name}</div>
+          </td>
+          <td class="num mono red bold">${fmt(e.cr)}</td>
+          <td><span class="badge ${e.tag==='IFRS'?'b-ok':e.tag==='GAAP'?'b-info':'b-neu'}" style="font-size:9px">${e.tag}</span></td>
+          <td>${e.wip?'<span class="badge b-warn" style="font-size:9px">WIP</span>':'<span style="font-size:10px;color:var(--stone-light)">—</span>'}</td>
+          <td class="num mono gold" style="font-size:11px">${e.ret?fmt(e.ret):'—'}</td>
+        </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--navy);color:#fff;font-weight:700">
+            <td colspan="5">${isE?'TOTALES DEL PERÍODO':'PERIOD TOTALS'}</td>
+            <td class="num" style="font-family:var(--font-mono);color:var(--success-light)">${fmt(filtered.reduce((s,e)=>s+e.dr,0))}</td>
+            <td></td>
+            <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(filtered.reduce((s,e)=>s+e.cr,0))}</td>
+            <td colspan="3"><span style="font-size:11px;color:${Math.abs(filtered.reduce((s,e)=>s+e.dr,0)-filtered.reduce((s,e)=>s+e.cr,0))<1?'var(--success-light)':'var(--danger)'}">
+              ${Math.abs(filtered.reduce((s,e)=>s+e.dr,0)-filtered.reduce((s,e)=>s+e.cr,0))<1?(isE?'✓ BALANCEADO':'✓ BALANCED'):(isE?'✗ DESBALANCEADO':'✗ UNBALANCED')}</span></td>
+          </tr>
+        </tfoot>
+      </table>
+      </div>
+    </div>
+    <div class="alert a-info mt2" style="font-size:11px">
+      ${glStd==='both'
+        ? `⓪ ${isE?'Modo Paralelo: Los asientos GAAP y su capa de ajuste IFRS se muestran juntos. Los marcados GAAP-only (ej. JE-0341 MACRS) no aparecen en el libro IFRS. Los marcados IFRS-only (ej. JE-0341A IAS 12) no aparecen en el libro GAAP.':'Parallel Mode: GAAP entries and their IFRS adjustment layers shown together. GAAP-only entries (e.g. MACRS) excluded from IFRS book. IFRS-only entries (e.g. IAS 12) excluded from GAAP book.'}`
+        : glStd==='ifrs'
+        ? `🌐 ${isE?'Libro IFRS activo. Visible: IFRS-only + BOTH. Excluidos: GAAP-only (LIFO, Goodwill, MACRS). Ajustes IAS 12/15/16/19 incluidos.':'IFRS ledger active. Visible: IFRS-only + BOTH. Excluded: GAAP-only (LIFO, Goodwill, MACRS). IAS 12/15/16/19 adjustments included.'}`
+        : `🇺🇸 ${isE?'Libro GAAP activo. Visible: GAAP-only + BOTH. Excluidos: ajustes IFRS (revaluación, IFRS 16, IAS 12 separado).':'GAAP ledger active. Visible: GAAP-only + BOTH. Excluded: IFRS-only adjustments (revaluation, IFRS 16, IAS 12 separate).'}`}
+    </div>`;
+
+  } else if(glView === 'trial'){
+    // Trial balance computed from COA_DATA balances
+    const trialData = [
+      {acct:'1-01-01',name:isE?'Efectivo y Equivalentes':'Cash & Equivalents',  dr:629800,   cr:0},
+      {acct:'1-01-02',name:isE?'Cuentas / Retenciones x Cobrar':'AR & Retainage Rec.',dr:1309318, cr:0},
+      {acct:'1-01-03',name:isE?'WIP / Inventario / Prepagados':'WIP / Inventory / Prepaid',  dr:282020,   cr:0},
+      {acct:'1-02-01',name:isE?'PP&E Neto':'Net PP&E',                          dr:886400,   cr:0},
+      {acct:'1-02-04',name:isE?'Intangibles / Goodwill':'Intangibles / Goodwill',dr:362000,   cr:0},
+      {acct:'1-02-05',name:isE?'Activos de Contrato LP':'Contract Assets LT',   dr:3120000,  cr:0},
+      {acct:'2-01-01',name:isE?'Cuentas por Pagar':'Accounts Payable',          dr:0,        cr:602600},
+      {acct:'2-01-02',name:isE?'Pasivos de Contrato / Retenciones':'Contract Liabilities / Retainage',dr:0,cr:305250},
+      {acct:'2-01-03',name:isE?'Gastos Acumulados':'Accrued Liabilities',       dr:0,        cr:159630},
+      {acct:'2-02-01',name:isE?'Deuda LP / ISR Diferido':'LT Debt / DTL',       dr:0,        cr:1248700},
+      {acct:'3-01-02',name:isE?'Capital / Utilidades Retenidas':'Capital / Retained Earnings',dr:0,cr:4100100},
+      {acct:'4-01-01',name:isE?'Ingresos por Contratos':'Contract Revenue',     dr:0,        cr:1847320},
+      {acct:'5-01-00',name:isE?'Costos Directos (COGS)':'Direct Costs (COGS)',  dr:1307720,  cr:0},
+      {acct:'6-01-00',name:isE?'Gastos Operativos':'Operating Expenses',        dr:354300,   cr:0},
+      {acct:'7-01-01',name:isE?'Impuesto sobre la Renta':'Income Tax',          dr:84610,    cr:0},
+    ];
+    const totDr = trialData.reduce((s,r)=>s+r.dr,0);
+    const totCr = trialData.reduce((s,r)=>s+r.cr,0);
+    el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">${isE?'Balanza de Comprobación — Al 31 Mar 2026':'Trial Balance — As of March 31, 2026'}</div>
+        <div class="card-sub">${glStd==='ifrs'?'IFRS (NIIF)':glStd==='gaap'?'US GAAP':'Dual GAAP + IFRS'}</div></div>
+        <span class="badge ${Math.abs(totDr-totCr)<1?'b-ok':'b-no'}">${Math.abs(totDr-totCr)<1?(isE?'BALANCEADA':'BALANCED'):(isE?'DESBALANCEADA':'UNBALANCED')}</span>
+      </div>
+      <div style="overflow-x:auto"><table class="dt">
+        <thead><tr>
+          <th>${isE?'Código':'Code'}</th><th>${isE?'Cuenta':'Account'}</th>
+          <th class="num">${isE?'Saldo Débito':'Debit Balance'}</th>
+          <th class="num">${isE?'Saldo Crédito':'Credit Balance'}</th>
+        </tr></thead>
+        <tbody>
+        ${trialData.map(r=>`<tr>
+          <td><code style="font-size:11px;background:rgba(11,31,58,.06);padding:2px 6px;border-radius:4px">${r.acct}</code></td>
+          <td style="font-size:12.5px">${r.name}</td>
+          <td class="num mono ${r.dr?'green':''} bold">${r.dr?fmt(r.dr):'—'}</td>
+          <td class="num mono ${r.cr?'red':''} bold">${r.cr?fmt(r.cr):'—'}</td>
+        </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--navy);color:#fff;font-weight:700">
+            <td colspan="2">TOTAL</td>
+            <td class="num" style="font-family:var(--font-mono);color:var(--success-light)">${fmt(totDr)}</td>
+            <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(totCr)}</td>
+          </tr>
+        </tfoot>
+      </table></div>
+    </div>`;
+
+  } else if(glView === 'aged_ar'){
+    const arRows = [
+      {client:'Summit Properties LLC (Riverside)',inv:'AIA-005',due:'2026-02-28',cur:471600,d30:0,d60:0,d90:0,d91:0,ret:52400},
+      {client:'Oceanic Dev. Group (Harbor)',inv:'AIA-003',due:'2026-01-15',cur:0,d30:0,d60:810000,d90:0,d91:0,ret:90000},
+      {client:'City Transit Auth. (Metro)',inv:'AIA-004',due:'2026-03-01',cur:243000,d30:0,d60:0,d90:0,d91:0,ret:27000},
+    ];
+    const cols = [isE?'Corriente (0-30d)':'Current (0-30d)',isE?'31-60 días':'31-60 days',isE?'61-90 días':'61-90 days',isE?'91+ días':'91+ days',isE?'Retención LP':'Retainage LT'];
+    el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">${isE?'Reporte de Antigüedad de AR — Cuentas por Cobrar':'AR Aging Report — Accounts Receivable'}</div>
+        <div class="card-sub">${isE?'Al 31-Mar-2026. La columna "Retención LP" NO afecta el flujo de caja corriente.':'As of 31-Mar-2026. "Retainage LT" column does NOT affect current cash flow.'}</div></div>
+        <span class="badge b-info">${isE?'Balance total:':'Total balance:'} ${fmt(arRows.reduce((s,r)=>s+r.cur+r.d30+r.d60+r.d90+r.d91+r.ret,0))}</span>
+      </div>
+      <div style="overflow-x:auto"><table class="dt">
+        <thead><tr>
+          <th>${isE?'Cliente / Proyecto':'Client / Project'}</th>
+          <th>${isE?'Factura':'Invoice'}</th>
+          <th>${isE?'Vencimiento':'Due Date'}</th>
+          ${cols.map(c=>`<th class="num">${c}</th>`).join('')}
+          <th class="num">${isE?'Total':'Total'}</th>
+        </tr></thead>
+        <tbody>
+        ${arRows.map(r=>{
+          const total = r.cur+r.d30+r.d60+r.d90+r.d91+r.ret;
+          return `<tr>
+            <td style="font-weight:500;font-size:12.5px">${r.client}</td>
+            <td><span class="badge b-neu" style="font-size:10px;font-family:var(--font-mono)">${r.inv}</span></td>
+            <td class="mono" style="font-size:11px">${r.due}</td>
+            <td class="num mono green bold">${r.cur?fmt(r.cur):'—'}</td>
+            <td class="num mono ${r.d30?'warning':''}">${r.d30?fmt(r.d30):'—'}</td>
+            <td class="num mono ${r.d60?'danger':''} bold">${r.d60?fmt(r.d60):'—'}</td>
+            <td class="num mono ${r.d90?'danger':''}">${r.d90?fmt(r.d90):'—'}</td>
+            <td class="num mono ${r.d91?'danger':''}">${r.d91?fmt(r.d91):'—'}</td>
+            <td class="num mono gold bold" style="border-left:2px solid var(--warning-light)">${r.ret?fmt(r.ret):'—'}</td>
+            <td class="num mono bold">${fmt(total)}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--navy);color:#fff;font-weight:700">
+            <td colspan="3">TOTAL</td>
+            ${['cur','d30','d60','d90','d91','ret'].map(f=>`<td class="num" style="font-family:var(--font-mono);color:${f==='ret'?'var(--gold-light)':f==='d60'||f==='d90'||f==='d91'?'#f0a8a8':'#a8f0c6'}">${fmt(arRows.reduce((s,r)=>s+r[f],0))}</td>`).join('')}
+            <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(arRows.reduce((s,r)=>s+r.cur+r.d30+r.d60+r.d90+r.d91+r.ret,0))}</td>
+          </tr>
+        </tfoot>
+      </table></div>
+      <div class="alert a-info mt2" style="font-size:11px">
+        ⚑ ${isE?'El total AR incluye $169,400 de retenciones por cobrar clasificadas como activo NO corriente (1-01-02-002). El flujo de caja operativo solo incluye $714,600 como cobrable inmediato.':'Total AR includes $169,400 retainage receivable classified as NON-current asset (1-01-02-002). Operating cash flow only includes $714,600 as immediately collectible.'}
+      </div>
+    </div>`;
+
+  } else if(glView === 'aged_ap'){
+    const apRows = [
+      {vendor:'Elite MEP Group',inv:'#0412',proj:'PRJ-001',due:'2026-04-12',cur:76050,d30:0,d60:0,d91:0,ret:8450,blocked:false},
+      {vendor:'Rodriguez Concrete',inv:'#RC-201',proj:'PRJ-002',due:'2026-03-15',cur:0,d30:68400,d60:0,d91:0,ret:7600,blocked:true},
+      {vendor:'SteelPro Inc.',inv:'#SP-087',proj:'PRJ-002',due:'2026-03-28',cur:0,d30:0,d60:285300,d91:0,ret:31700,blocked:true},
+      {vendor:'Apex Framing LLC',inv:'#AF-033',proj:'PRJ-003',due:'2026-04-20',cur:80100,d30:0,d60:0,d91:0,ret:8900,blocked:false},
+      {vendor:'Home Depot — Materials',inv:'#HD-4821',proj:'PRJ-001',due:'2026-04-05',cur:3842,d30:0,d60:0,d91:0,ret:0,blocked:false},
+    ];
+    el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">${isE?'Reporte de Antigüedad de AP — Cuentas por Pagar':'AP Aging Report — Accounts Payable'}</div>
+        <div class="card-sub">${isE?'La columna Retención LP muestra obligaciones NO corrientes (pago al cierre de obra).':'Retainage LT column shows NON-current obligations (due at project closeout).'}</div></div>
+        <span class="badge b-no">2 ${isE?'Pagos Bloqueados':'Payments Blocked'}</span>
+      </div>
+      <div style="overflow-x:auto"><table class="dt">
+        <thead><tr>
+          <th>${isE?'Proveedor / Sub':'Vendor / Sub'}</th>
+          <th>${isE?'Factura':'Invoice'}</th>
+          <th>${isE?'Proyecto':'Project'}</th>
+          <th>${isE?'Vencimiento':'Due'}</th>
+          <th class="num">${isE?'Corriente':'Current'}</th>
+          <th class="num">1-30 ${isE?'días':'days'}</th>
+          <th class="num">31-60 ${isE?'días':'days'}</th>
+          <th class="num">91+ ${isE?'días':'days'}</th>
+          <th class="num" style="border-left:2px solid var(--warning-light)">${isE?'Retención LP':'Retainage LT'}</th>
+          <th>${isE?'Estado':'Status'}</th>
+        </tr></thead>
+        <tbody>
+        ${apRows.map(r=>`<tr ${r.blocked?'style="background:var(--danger-light)"':''}>
+          <td style="font-weight:500">${r.vendor}</td>
+          <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${r.inv}</code></td>
+          <td><span class="badge b-neu" style="font-size:9px">${r.proj}</span></td>
+          <td class="mono" style="font-size:10px">${r.due}</td>
+          <td class="num mono ${r.cur&&!r.blocked?'green':r.cur&&r.blocked?'red':''} bold">${r.cur?fmt(r.cur):'—'}</td>
+          <td class="num mono ${r.d30?'warning':''}">${r.d30?fmt(r.d30):'—'}</td>
+          <td class="num mono ${r.d60?'danger':''} bold">${r.d60?fmt(r.d60):'—'}</td>
+          <td class="num mono ${r.d91?'danger':''}">${r.d91?fmt(r.d91):'—'}</td>
+          <td class="num mono gold bold" style="border-left:2px solid var(--warning-light)">${r.ret?fmt(r.ret):'—'}</td>
+          <td>${r.blocked?'<span class="badge b-no" style="font-size:9px">🚫 BLOCKED</span>':'<span class="badge b-ok" style="font-size:9px">OK</span>'}</td>
+        </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--navy);color:#fff;font-weight:700">
+            <td colspan="4">TOTAL</td>
+            <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(apRows.reduce((s,r)=>s+r.cur,0))}</td>
+            <td class="num" style="font-family:var(--font-mono);color:var(--warning-light)">${fmt(apRows.reduce((s,r)=>s+r.d30,0))}</td>
+            <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(apRows.reduce((s,r)=>s+r.d60,0))}</td>
+            <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(apRows.reduce((s,r)=>s+r.d91,0))}</td>
+            <td class="num" style="font-family:var(--font-mono);color:var(--gold-light);border-left:2px solid rgba(255,255,255,.1)">${fmt(apRows.reduce((s,r)=>s+r.ret,0))}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table></div>
+      <div class="g2 mt2">
+        <div class="alert a-danger" style="font-size:11px">🚫 ${isE?'$353,700 bloqueados (Rodriguez Concrete + SteelPro). No liberables hasta W-9 y COI en regla. Guardián 21 alertó al socio.':'$353,700 blocked (Rodriguez Concrete + SteelPro). Not releasable until W-9 and COI are current. Guardián 21 alerted Partner.'}</div>
+        <div class="alert a-warn" style="font-size:11px">⚑ ${isE?'$56,650 en retenciones por pagar LP: NO aparecen como obligación corriente en el flujo de caja. Exigibles al cierre de cada obra.':'$56,650 in LT retainage payable: do NOT appear as current obligation in cash flow. Due at each project closeout.'}</div>
+      </div>
+    </div>`;
+  }
+}
+
 
 function rTreasury(){const isE=es();return`
 <div class="page-header"><div><div class="page-title">${isE?'Tesorería y Gestión de Caja':'Treasury & Cash Management'}</div><div class="page-subtitle">${isE?'Conciliación 3 niveles · Proyección 30/60/90d · Caja Chica':'3-Level Reconciliation · 30/60/90d Projection · Petty Cash'}</div></div>
@@ -2491,118 +3415,319 @@ ${[['Caterpillar 320 Excavator','Heavy Equip.','01/22','$184,000','$73,600','$11
 <div class="alert a-info mt2" style="font-size:11px">ⓘ ${isE?'El sistema calcula automáticamente la diferencia temporal entre MACRS y SL para el cómputo del Deferred Tax Asset/Liability (ASC 740).':'System auto-calculates MACRS vs SL timing difference for Deferred Tax Asset/Liability (ASC 740).'}</div>
 </div>`}
 
-function rWIP(){const isE=es();return`
-<div class="page-header"><div><div class="page-title">WIP — ${isE?'Trabajo en Progreso':'Work in Progress'}</div><div class="page-subtitle">${isE?'Método Costo a Costo · ASC 606 / NIIF 15':'Cost-to-Cost Method · ASC 606 / IFRS 15'}</div></div>
-<div class="page-actions"><button class="btn btn-navy btn-sm" onclick="openModal(modalNewProject())">${isE?'+ Proyecto':'+ Project'}</button></div></div>
-${[{n:'Riverside Plaza',id:'PRJ-001',c:4385000,ci:2856000,et:4200000,p:68,b:2856000,ob:false},
-   {n:'Harbor View Tower',id:'PRJ-002',c:8220000,ci:3276000,et:7800000,p:42,b:3500000,ob:true},
-   {n:'Metro Line Ext.',id:'PRJ-003',c:1950000,ci:1774500,et:1950000,p:91,b:1755000,ob:false}].map(p=>`
-<div class="card"><div class="card-header">
-<div><div class="card-title">${p.n}</div><div class="card-sub">${p.id}</div></div>
-<div class="flex">${p.ob?'<span class="badge b-warn">OVER-BILLED</span>':'<span class="badge b-ok">ON TRACK</span>'}<span class="badge b-gold">${p.p}%</span></div>
-</div>
-<div class="prog" style="height:10px;margin-bottom:14px"><div class="prog-fill" style="width:${p.p}%;background:${p.p>85?'var(--success)':p.p>50?'var(--gold)':'var(--info)'}"></div></div>
-<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
-${[[isE?'Costos Incurridos':'Costs Incurred',fmt(p.ci),'navy'],
-   [isE?'Costo Total Est.':'Est. Total Cost',fmt(p.et),'stone'],
-   ['% Complete (C-a-C)',p.p+'%','info'],
-   [isE?'Ingreso Reconocido':'Revenue Recognized',fmt(p.c*p.p/100),'success'],
-   [isE?'Facturado':'Billed to Date',fmt(p.b),p.ob?'danger':'success']].map(([l,v,c])=>`
-<div style="background:var(--stone-pale);border-radius:var(--radius);padding:10px;text-align:center">
-<div style="font-size:10px;color:var(--stone);margin-bottom:3px">${l}</div>
-<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--${c})">${v}</div>
-</div>`).join('')}
-</div>
-${p.ob?`<div class="alert a-warn mt2">⚠ ${isE?'Facturación excede ingresos reconocidos. Revisar overbillings.':'Billing exceeds recognized revenue. Review overbillings.'}</div>`:''}</div>`).join('')}`}
-
-function rBudget(){const isE=es();return`
-<div class="page-header"><div><div class="page-title">${isE?'Presupuesto Vivo':'Live Budget Control'}</div><div class="page-subtitle">${isE?'Presupuesto Actual = Original + OCs. Bloqueo automático al límite.':'Current Budget = Original + COs. Auto-lock at limit.'}</div></div>
-<div class="page-actions"><button class="btn btn-gold btn-sm" onclick="openModal(modalCO())">${isE?'+ Orden de Cambio':'+ Change Order'}</button></div></div>
-<div class="alert a-danger">🔒 ${isE?'Metro Line Extension bloqueado al 98%. Nuevos gastos suspendidos hasta aprobación de socio.':'Metro Line Extension locked at 98%. New costs suspended pending Partner approval.'}</div>
-<div class="card mt2"><table class="dt"><thead><tr>
-<th>${isE?'Proyecto':'Project'}</th><th class="num">${isE?'Original':'Original'}</th><th class="num">+OCs</th>
-<th class="num">${isE?'Presupuesto Actual':'Current Budget'}</th><th class="num">${isE?'Comprometido':'Committed'}</th>
-<th>% ${isE?'Uso':'Used'}</th><th>Status</th></tr></thead><tbody>
-${[['Riverside Plaza','$4,200,000','$185,000','$4,385,000','$3,120,000',71,'ok'],
-   ['Harbor View Tower','$7,800,000','$420,000','$8,220,000','$4,100,000',50,'ok'],
-   ['Metro Line Ext.','$1,950,000','$0','$1,950,000','$1,911,000',98,'no']].map(([n,o,co,c,cm,p,t])=>`<tr>
-<td style="font-weight:500">${n}</td><td class="num mono">${o}</td><td class="num mono gold">${co}</td>
-<td class="num mono bold">${c}</td><td class="num mono">${cm}</td>
-<td><div class="flex"><div class="prog" style="flex:1"><div class="prog-fill" style="width:${p}%;background:var(--${t==='no'?'danger':p>80?'warning':'success'})"></div></div>
-<span style="font-size:12px;font-weight:600;min-width:36px;text-align:right;color:var(--${t==='no'?'danger':p>80?'warning':'success'})">${p}%</span></div></td>
-<td><span class="badge ${t==='no'?'b-no':'b-ok'}">${t==='no'?'🔒 LOCKED':'OK'}</span></td>
-</tr>`).join('')}
-</tbody></table></div>`}
-
-function rSubs(){const isE=es();return`
-<div class="page-header"><div><div class="page-title">${isE?'Subcontratistas':'Subcontractor Management'}</div><div class="page-subtitle">${isE?'Retención 10% · Muro de Cumplimiento · Lien Waivers automáticos':'10% Retainage · Compliance Wall · Auto Lien Waivers'}</div></div>
-<div class="page-actions"><button class="btn btn-navy btn-sm" onclick="openModal(modalSub())">${isE?'+ Agregar':'+ Add Sub'}</button></div></div>
-<div class="alert a-danger">🚫 ${isE?'2 subcontratistas bloqueados. Pagos suspendidos.':'2 subcontractors blocked. Payments suspended.'}</div>
-<div class="card mt2"><div style="overflow-x:auto"><table class="dt"><thead><tr>
-<th>${isE?'Subcontratista':'Subcontractor'}</th><th>${isE?'Proyecto':'Project'}</th><th>W-9</th><th>COI</th>
-<th class="num">${isE?'Retención (10%)':'Retainage (10%)'}</th><th>Lien Waiver</th><th>${isE?'Pago OK':'Payment'}</th><th></th>
-</tr></thead><tbody>
-${[{n:'Elite MEP Group',p:'Riverside',w:'✓',coi:'✓ Dec 26',r:'$22,450',lw:'Generated',ok:true},
-   {n:'Rodriguez Concrete',p:'Harbor',w:'✗ MISSING',coi:'✓ Jun 26',r:'$18,200',lw:'Blocked',ok:false},
-   {n:'SteelPro Inc.',p:'Harbor',w:'✓',coi:'⚠ Apr 2',r:'$31,700',lw:'Pending',ok:false},
-   {n:'Apex Framing LLC',p:'Metro',w:'✓',coi:'✓ Aug 26',r:'$8,900',lw:'Generated',ok:true},
-].map(s=>`<tr>
-<td style="font-weight:500">${s.n}</td><td><span class="badge b-neu" style="font-size:10px">${s.p}</span></td>
-<td><span class="badge ${s.w==='✓'?'b-ok':'b-no'}">${s.w}</span></td>
-<td><span class="badge ${s.coi.startsWith('✓')?'b-ok':'b-warn'}" style="font-size:10px">${s.coi}</span></td>
-<td class="num mono bold">${s.r}</td>
-<td><span class="badge ${s.lw==='Generated'?'b-ok':s.lw==='Blocked'?'b-no':'b-warn'}">${s.lw}</span></td>
-<td>${s.ok?'<span class="badge b-ok">✓ APPROVED</span>':'<span class="badge b-no">🚫 BLOCKED</span>'}</td>
-<td><button class="btn btn-sm btn-ghost" onclick="gMsg('Lien Waiver generated for ${s.n}')">Waiver</button></td>
-</tr>`).join('')}
-</tbody></table></div></div>`}
-
+// ══════════════════════════════════════════════════════
+// MODULE: SECURITY — Full SOD + Fee Mgmt + Violation Log
+// ══════════════════════════════════════════════════════
 function rSecurity(){
   if(S.role!=='A')return`<div class="alert a-danger">Access denied. Level A only.</div>`;
-  const isE=es();return`
-<div class="page-header"><div><div class="page-title">${isE?'Seguridad y SOD':'Security & SOD'}</div><div class="page-subtitle">${isE?'Separación de funciones · Solo Nivel A':'Segregation of Duties · Level A Only'}</div></div>
-<div class="page-actions"><button class="btn btn-navy btn-sm" onclick="openModal(modalUser())">${isE?'+ Usuario':'+ User'}</button></div></div>
+  const isE=es();
+  return `
+<div class="page-header">
+  <div><div class="page-title">${isE?'Seguridad, SOD y Honorarios':'Security, SOD & Fee Management'}</div>
+  <div class="page-subtitle">${isE?'Separación de funciones · Honorarios (Solo Nivel A) · Log de violaciones · Firmas éticas':'Segregation of Duties · Fees (Level A only) · Violation log · Ethics signatures'}</div></div>
+  <div class="page-actions">
+    <button class="btn btn-navy btn-sm" onclick="openModal(modalUser())">${isE?'+ Usuario':'+ User'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalFee())">${isE?'$ Honorarios':'$ Fees'}</button>
+  </div>
+</div>
+
+<!-- SOD MATRIX -->
 <div class="g3">
-${[{r:'Level A — Partner',c:'gold',ps:['Full system access','Create clients','Assign staff','View fees','Audit log','Override locks']},
-   {r:'Level B — Supervisor',c:'info',ps:['Assigned clients only','Edit & review entries','No fee visibility','No company creation','Must sign NDA','Guardián monitored']},
-   {r:'Level C — Staff',c:'stone',ps:['Assigned clients only','Data entry only','No fee visibility','No company creation','Must sign NDA','Read-only GL']},
-].map(u=>`<div class="card"><div class="card-header"><div class="card-title">${u.r}</div><span class="badge ${u.c==='gold'?'b-gold':u.c==='info'?'b-info':'b-neu'}">${u.c.toUpperCase()}</span></div>
-${u.ps.map(p=>`<div style="font-size:12px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04);display:flex;gap:6px;align-items:center"><span style="color:var(--${u.c==='gold'?'gold':u.c==='info'?'success':'stone'})">●</span>${p}</div>`).join('')}
+${[
+  {r:'Level A — Partner',c:'gold',icon:'👑',desc:isE?'Control total del sistema':'Full system control',
+   perms:[
+    [true, isE?'Acceso completo a todos los módulos':'Full access to all modules'],
+    [true, isE?'Crear / eliminar clientes y empresas':'Create / delete clients and companies'],
+    [true, isE?'Asignar staff a clientes':'Assign staff to clients'],
+    [true, isE?'Ver y gestionar honorarios':'View and manage fees'],
+    [true, isE?'Acceso al Reporte Maestro de Auditoría':'Access to Master Audit Report'],
+    [true, isE?'Aprobar OCs y desbloquear gastos':'Approve COs and unblock costs'],
+    [true, isE?'Configurar COA y normas contables':'Configure COA and accounting standards'],
+    [true, isE?'Recibe alertas Guardián 21':'Receives Guardián 21 alerts'],
+  ]},
+  {r:'Level B — Supervisor',c:'info',icon:'🔍',desc:isE?'Solo clientes asignados':'Assigned clients only',
+   perms:[
+    [true,  isE?'Editar / revisar asientos — clientes asignados':'Edit / review entries — assigned clients'],
+    [true,  isE?'Ver reportes financieros — clientes asignados':'View financial reports — assigned clients'],
+    [false, isE?'Sin acceso a honorarios':'No fee access'],
+    [false, isE?'Sin creación de empresas':'No company creation'],
+    [false, isE?'Sin acceso a Auditoría Maestra':'No Master Audit access'],
+    [true,  isE?'Firma NDA obligatoria en cada sesión':'Mandatory NDA signature each session'],
+    [false, isE?'No puede aprobar OCs > $5,000':'Cannot approve COs > $5,000'],
+    [true,  isE?'Monitoreado por Guardián 21':'Monitored by Guardián 21'],
+  ]},
+  {r:'Level C — Staff',c:'stone',icon:'📥',desc:isE?'Carga de datos únicamente':'Data entry only',
+   perms:[
+    [true,  isE?'Carga de datos — clientes asignados':'Data entry — assigned clients'],
+    [false, isE?'Sin edición de asientos existentes':'No editing of existing entries'],
+    [false, isE?'Sin acceso a honorarios':'No fee access'],
+    [false, isE?'Sin creación de empresas':'No company creation'],
+    [false, isE?'Sin lectura de reportes financieros':'No financial report access'],
+    [true,  isE?'Firma NDA obligatoria en cada sesión':'Mandatory NDA signature each session'],
+    [false, isE?'Sin aprobación de ningún tipo':'No approval rights of any kind'],
+    [true,  isE?'Monitoreado por Guardián 21':'Monitored by Guardián 21'],
+  ]},
+].map(u=>`
+<div class="card">
+  <div class="card-header">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:20px">${u.icon}</span>
+      <div><div class="card-title">${u.r}</div><div class="card-sub">${u.desc}</div></div>
+    </div>
+    <span class="badge ${u.c==='gold'?'b-gold':u.c==='info'?'b-info':'b-neu'}">${u.c.toUpperCase()}</span>
+  </div>
+  ${u.perms.map(([ok,label])=>`
+  <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04);font-size:11.5px">
+    <span style="color:var(--${ok?'success':'danger'});font-size:13px;flex-shrink:0">${ok?'✓':'✗'}</span>
+    <span style="color:${ok?'var(--navy)':'var(--stone)'};${!ok?'text-decoration:line-through;':''}">${label}</span>
+  </div>`).join('')}
 </div>`).join('')}
 </div>
-<div class="card mt2"><div class="card-header"><div class="card-title">${isE?'Usuarios Activos':'Active Users'}</div></div>
-<table class="dt"><thead><tr><th>User</th><th>Role</th><th>${isE?'Clientes':'Clients'}</th><th>NDA</th><th>${isE?'Último Acceso':'Last Login'}</th><th>Status</th></tr></thead><tbody>
-${[['Maria Santos','A','All','N/A','Today 9:14am'],['James Kim','B','Riverside, Harbor','Signed','Today 8:47am'],['Diana Reyes','C','Riverside','Signed','Yesterday'],['Tom Walsh','B','Metro Line','Signed','3 days ago']].map(([n,r,c,nda,l])=>`
-<tr><td style="font-weight:500">${n}</td><td><span class="badge ${r==='A'?'b-gold':r==='B'?'b-info':'b-neu'}">${isE?'Nivel':'Level'} ${r}</span></td>
-<td style="font-size:11px;color:var(--stone)">${c}</td><td><span class="badge b-ok" style="font-size:10px">${nda}</span></td>
-<td style="font-size:11px;color:var(--stone)">${l}</td><td><span class="badge b-ok">Active</span></td></tr>`).join('')}
-</tbody></table></div>`}
 
+<!-- ACTIVE USERS + NDA STATUS -->
+<div class="card mt2">
+  <div class="card-header"><div class="card-title">${isE?'Usuarios Activos — Estado de Firma Ética':'Active Users — Ethics Signature Status'}</div>
+  <button class="btn btn-ghost btn-sm" onclick="openModal(modalUser())">${isE?'+ Agregar':'+ Add'}</button></div>
+  <div style="overflow-x:auto"><table class="dt">
+    <thead><tr>
+      <th>${isE?'Usuario':'User'}</th><th>Role</th><th>${isE?'Clientes Asignados':'Assigned Clients'}</th>
+      <th>${isE?'NDA Firmado':'NDA Signed'}</th><th>${isE?'Último Acceso':'Last Login'}</th>
+      <th>${isE?'Violaciones SOD':'SOD Violations'}</th><th>Status</th>
+    </tr></thead>
+    <tbody>
+    ${[
+      {n:'Maria Santos',  r:'A', clients:'All',                 nda:'N/A (Partner)', last:'Today 09:14', viol:0},
+      {n:'James Kim',     r:'B', clients:'Riverside, Harbor',   nda:'Signed 03/28',  last:'Today 08:47', viol:1},
+      {n:'Diana Reyes',   r:'C', clients:'Riverside',           nda:'Signed 03/25',  last:'Yesterday',   viol:0},
+      {n:'Tom Walsh',     r:'B', clients:'Metro Line',          nda:'Signed 03/01',  last:'3 days ago',  viol:1},
+      {n:'Ana Pérez',     r:'C', clients:'Harbor View',         nda:'Signed 03/29',  last:'Today 10:22', viol:0},
+    ].map(u=>`<tr>
+      <td style="font-weight:500">${u.n}</td>
+      <td><span class="badge ${u.r==='A'?'b-gold':u.r==='B'?'b-info':'b-neu'}">${isE?'Nivel':'Level'} ${u.r}</span></td>
+      <td style="font-size:11px;color:var(--stone)">${u.clients}</td>
+      <td><span class="badge ${u.nda.includes('N/A')?'b-neu':'b-ok'}" style="font-size:10px">${u.nda}</span></td>
+      <td style="font-size:11px;color:var(--stone)">${u.last}</td>
+      <td>${u.viol>0?`<span class="badge b-no" style="font-size:10px">⚠ ${u.viol}</span>`:'<span class="badge b-ok" style="font-size:10px">0</span>'}</td>
+      <td><span class="badge b-ok">Active</span></td>
+    </tr>`).join('')}
+    </tbody>
+  </table></div>
+</div>
+
+<!-- SOD VIOLATION LOG -->
+<div class="card mt2">
+  <div class="card-header"><div class="card-title">${isE?'Registro de Violaciones SOD — Alertas Guardián 21':'SOD Violation Log — Guardián 21 Alerts'}</div>
+  <span class="badge b-no">2 ${isE?'Incidentes':'Incidents'}</span></div>
+  ${[
+    {ts:'2026-03-27 09:41',user:'TWALSH',role:'B',action:isE?'Intento de acceso al módulo de Auditoría (Nivel A requerido)':'Access attempt to Audit module (Level A required)',sev:'high',resolved:false},
+    {ts:'2026-03-20 14:22',user:'JKIM',role:'B',action:isE?'Intento de ver honorarios del cliente Rivera & Associates':'Attempt to view fees for Rivera & Associates client',sev:'high',resolved:true},
+  ].map(v=>`
+  <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+    <div style="width:34px;height:34px;border-radius:8px;background:var(--danger-light);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">🚫</div>
+    <div style="flex:1">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span class="mono" style="font-size:10px;color:var(--stone)">${v.ts}</span>
+        <span class="badge b-no" style="font-size:9px">${v.user}</span>
+        <span class="badge ${v.role==='B'?'b-info':'b-neu'}" style="font-size:9px">${isE?'Nivel':'Level'} ${v.role}</span>
+        ${v.resolved?'<span class="badge b-ok" style="font-size:9px">Resolved</span>':'<span class="badge b-warn" style="font-size:9px">Open</span>'}
+      </div>
+      <div style="font-size:12px;color:var(--navy)">${v.action}</div>
+      <div style="font-size:10px;color:var(--stone);margin-top:2px">${isE?'Notificado a: Maria Santos (Partner A)':'Notified to: Maria Santos (Partner A)'}</div>
+    </div>
+  </div>`).join('')}
+</div>
+
+<!-- FEES PANEL (Level A only) -->
+<div class="card mt2" style="border-left:4px solid var(--gold)">
+  <div class="card-header">
+    <div><div class="card-title">${isE?'Gestión de Honorarios — Confidencial (Nivel A)':'Fee Management — Confidential (Level A)'}</div>
+    <div class="card-sub">${isE?'Visible EXCLUSIVAMENTE para socios. Jamás expuesto a Niveles B o C.':'Visible EXCLUSIVELY to partners. Never exposed to Levels B or C.'}</div></div>
+    <span class="badge b-gold">🔒 LEVEL A</span>
+  </div>
+  <div style="overflow-x:auto"><table class="dt">
+    <thead><tr>
+      <th>${isE?'Cliente':'Client'}</th><th>${isE?'Plan de Honorarios':'Fee Structure'}</th>
+      <th class="num">${isE?'Mensual':'Monthly'}</th><th class="num">${isE?'YTD Facturado':'YTD Billed'}</th>
+      <th class="num">${isE?'YTD Cobrado':'YTD Collected'}</th><th class="num">${isE?'Pendiente':'Outstanding'}</th>
+      <th>${isE?'Staff Asignado':'Assigned Staff'}</th>
+    </tr></thead>
+    <tbody>
+    ${[
+      ['Skyline Builders Inc.',isE?'Mensual Fijo':'Monthly Retainer',4200,12600,12600,0,isE?'James Kim (B)':'James Kim (B)'],
+      ['Oceanic Dev. Group',isE?'Mensual Fijo':'Monthly Retainer',5800,17400,17400,0,isE?'Diana Reyes (C)':'Diana Reyes (C)'],
+      ['Rivera & Associates',isE?'Mensual Fijo':'Monthly Retainer',3200,9600,6400,3200,isE?'Tom Walsh (B)':'Tom Walsh (B)'],
+      ['NovaTech Solutions',isE?'Por Horas $185/h':'Hourly $185/h',2960,8880,8880,0,isE?'Ana Pérez (C)':'Ana Pérez (C)'],
+    ].map(([c,plan,mo,ytdb,ytdc,pend,staff])=>`<tr>
+      <td style="font-weight:500">${c}</td>
+      <td><span class="badge b-gold" style="font-size:10px">${plan}</span></td>
+      <td class="num mono">${fmt(mo)}</td>
+      <td class="num mono">${fmt(ytdb)}</td>
+      <td class="num mono green">${fmt(ytdc)}</td>
+      <td class="num mono ${pend>0?'danger':''} bold">${pend?fmt(pend):'—'}</td>
+      <td style="font-size:11px;color:var(--stone)">${staff}</td>
+    </tr>`).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:var(--navy-deep);color:#fff;font-weight:700">
+        <td colspan="2">${isE?'TOTAL ANUALIZADO':'ANNUALIZED TOTAL'}</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(16160)}/mo</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(48480)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(45280)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold-light)">${fmt(3200)}</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table></div>
+</div>`;
+}
+
+function modalFee(){const isE=es();return`
+<h3>${isE?'Gestión de Honorarios — Nivel A':'Fee Management — Level A'}</h3>
+<div class="mf">
+  <div class="mf-field full"><label>${isE?'Cliente':'Client'}</label>
+    <select><option>Skyline Builders Inc.</option><option>Oceanic Dev. Group</option><option>Rivera & Associates</option></select></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Tipo de Honorario':'Fee Type'}</label>
+      <select><option>${isE?'Mensual Fijo':'Monthly Retainer'}</option><option>${isE?'Por Horas':'Hourly'}</option><option>${isE?'Por Proyecto':'Per Project'}</option><option>${isE?'Contingente':'Contingent'}</option></select></div>
+    <div class="mf-field"><label>${isE?'Monto Base':'Base Amount'}</label><input type="number" placeholder="0.00"></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Tasa Horaria (si aplica)':'Hourly Rate (if applicable)'}</label><input type="number" placeholder="185.00"></div>
+    <div class="mf-field"><label>${isE?'Facturación':'Billing Cycle'}</label><select><option>${isE?'Mensual':'Monthly'}</option><option>${isE?'Quincenal':'Bi-weekly'}</option><option>${isE?'Al completar':'On completion'}</option></select></div>
+  </div>
+</div>
+<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-gold" onclick="closeModal()">${isE?'Guardar Honorario':'Save Fee'}</button></div>`}
+
+
+// ══════════════════════════════════════════════════════
+// MODULE: AUDIT LOG — Master Immutable Log
+// ══════════════════════════════════════════════════════
 function rAudit(){
   if(S.role!=='A')return`<div class="alert a-danger">Access denied. Level A only.</div>`;
   const isE=es();
-  const sample=[
-    {ts:'09:47:23',u:'JKIM',a:'Viewed: treasury',s:'low'},{ts:'09:45:11',u:'DREYES',a:'Posted JE-0342',s:'low'},
-    {ts:'09:41:08',u:'TWALSH',a:'Unauthorized attempt: audit — DENIED',s:'high'},
-    {ts:'09:38:54',u:'MSANTOS',a:'Approved CO-047 $47,500',s:'medium'},
-    {ts:'09:33:19',u:'JKIM',a:'Generated Lien Waiver: Elite MEP',s:'low'},
-    ...S.log.slice(0,15),
+
+  const allEvents = [
+    {ts:'2026-03-31 09:47',u:'JKIM',    role:'B', mod:'treasury',  action_en:'Viewed module: Treasury & Cash Management',        action_es:'Vio módulo: Tesorería y Gestión de Caja',              sev:'low',    ip:'192.168.1.22'},
+    {ts:'2026-03-31 09:45',u:'DREYES',  role:'C', mod:'gl',        action_en:'Posted JE-0342 WIP→COGS reclassification $372,480', action_es:'Registró JE-0342 WIP→COGS reclasificación $372,480',    sev:'medium', ip:'192.168.1.31'},
+    {ts:'2026-03-31 09:41',u:'TWALSH',  role:'B', mod:'audit',     action_en:'UNAUTHORIZED: Access attempt to Audit module',       action_es:'NO AUTORIZADO: Intento de acceso a Bitácora',          sev:'high',   ip:'192.168.1.44'},
+    {ts:'2026-03-31 09:38',u:'MSANTOS', role:'A', mod:'budget',    action_en:'Approved CO-047 Harbor View — +$47,500 to budget',  action_es:'Aprobó OC-047 Harbor View — +$47,500 al presupuesto', sev:'medium', ip:'192.168.1.10'},
+    {ts:'2026-03-31 09:33',u:'JKIM',    role:'B', mod:'subs',      action_en:'Generated Lien Waiver: Elite MEP Group PRJ-001',     action_es:'Generó Lien Waiver: Elite MEP Group PRJ-001',          sev:'low',    ip:'192.168.1.22'},
+    {ts:'2026-03-30 16:22',u:'JKIM',    role:'B', mod:'fees',      action_en:'UNAUTHORIZED: Attempted to view fee schedule',       action_es:'NO AUTORIZADO: Intento ver honorarios',               sev:'high',   ip:'192.168.1.22'},
+    {ts:'2026-03-30 15:10',u:'MSANTOS', role:'A', mod:'coa',       action_en:'Added new GL account 5-01-03-004 (Plumbing Sub)',    action_es:'Agregó cuenta 5-01-03-004 (Sub Plomería)',             sev:'medium', ip:'192.168.1.10'},
+    {ts:'2026-03-30 14:55',u:'APEREZ',  role:'C', mod:'jobcost',   action_en:'Data entry: SL-4841 Labor $9,800 PRJ-003/PH-03',    action_es:'Carga: SL-4841 Labor $9,800 PRJ-003/F3',               sev:'low',    ip:'192.168.1.55'},
+    {ts:'2026-03-29 11:20',u:'MSANTOS', role:'A', mod:'clients',   action_en:'Created new client: GreenField Developers LLC',     action_es:'Creó nuevo cliente: GreenField Developers LLC',        sev:'medium', ip:'192.168.1.10'},
+    {ts:'2026-03-29 10:05',u:'DREYES',  role:'C', mod:'wip',       action_en:'Viewed WIP Accounting Cycle module',                action_es:'Vio módulo de Ciclo WIP',                              sev:'low',    ip:'192.168.1.31'},
+    {ts:'2026-03-28 09:14',u:'MSANTOS', role:'A', mod:'security',  action_en:'Login — recognized device: MacBook Pro TLS 1.3',    action_es:'Login — dispositivo reconocido: MacBook Pro TLS 1.3', sev:'low',    ip:'192.168.1.10'},
+    {ts:'2026-03-27 16:40',u:'TWALSH',  role:'B', mod:'adjustment',action_en:'Manual JE adjustment flagged — unusual amount $0.01',action_es:'Ajuste manual JE señalado — monto inusual $0.01',     sev:'high',   ip:'192.168.1.44'},
+    ...S.log.map(e=>({ts:e.ts+' (session)',u:e.user,role:S.role,mod:'session',action_en:e.action,action_es:e.action,sev:e.sev,ip:'session'})),
   ];
-  return`
-<div class="page-header"><div><div class="page-title">${isE?'Bitácora Maestra de Auditoría':'Master Audit Log'}</div><div class="page-subtitle">${isE?'Registro de cada clic, cambio y tiempo. Solo Nivel A.':'Full click, change and timing log. Level A only.'}</div></div>
-<div class="page-actions"><button class="btn btn-ghost btn-sm">↓ PDF</button><button class="btn btn-ghost btn-sm">↓ Excel</button></div></div>
-<div class="g3">
-${[['Total Events',sample.length,'info'],['High Risk',sample.filter(e=>e.s==='high').length,'danger'],['Medium',sample.filter(e=>e.s==='medium').length,'warning']].map(([l,v,c])=>`
-<div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div></div>`).join('')}
+
+  const highCount = allEvents.filter(e=>e.sev==='high').length;
+  const medCount  = allEvents.filter(e=>e.sev==='medium').length;
+
+  return `
+<div class="page-header">
+  <div><div class="page-title">${isE?'Bitácora Maestra de Auditoría':'Master Audit Log'}</div>
+  <div class="page-subtitle">${isE?'Registro inmutable SHA-256 de cada clic, cambio y tiempo de ejecución. Solo Nivel A.':'Immutable SHA-256 record of every click, change and execution time. Level A only.'}</div></div>
+  <div class="page-actions">
+    <button class="btn btn-ghost btn-sm">↓ PDF ${isE?'Certificado':'Certified'}</button>
+    <button class="btn btn-ghost btn-sm">↓ Excel</button>
+    <button class="btn btn-gold btn-sm" onclick="openModal(modalAuditExport())">${isE?'Exportar Forense':'Forensic Export'}</button>
+  </div>
 </div>
-<div class="card mt2">
-${sample.map(e=>`<div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid rgba(0,0,0,.04);align-items:flex-start">
-<span style="font-family:var(--font-mono);font-size:10px;color:var(--stone);min-width:76px">${e.ts}</span>
-<span style="font-size:11px;font-weight:600;min-width:84px;color:var(--navy)">${e.u}</span>
-<span style="font-size:11px;color:var(--stone);flex:1">${e.a}</span>
-<span class="badge ${e.s==='high'?'b-no':e.s==='medium'?'b-warn':'b-neu'}" style="font-size:9px">${e.s.toUpperCase()}</span>
-</div>`).join('')}
-</div>`}
+
+<!-- KPI STRIP -->
+<div class="g4">
+  ${[
+    [isE?'Total Eventos':'Total Events', allEvents.length, 'info', isE?'Esta sesión + histórico':'This session + history'],
+    [isE?'Alto Riesgo':'High Risk', highCount, 'danger', isE?'Requieren revisión inmediata':'Require immediate review'],
+    [isE?'Riesgo Medio':'Medium Risk', medCount, 'warning', isE?'Acciones contables relevantes':'Relevant accounting actions'],
+    [isE?'Bajo Riesgo':'Low Risk', allEvents.length-highCount-medCount, 'success', isE?'Acciones normales':'Normal actions'],
+  ].map(([l,v,c,s])=>`<div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div>
+  <div class="kpi-label">${l}</div><div class="kpi-value">${v}</div><div class="kpi-sub">${s}</div></div>`).join('')}
+</div>
+
+<!-- GUARDIÁN 21 ALERTS -->
+${highCount>0?`
+<div class="card" style="border-left:4px solid var(--danger)">
+  <div class="card-header"><div class="card-title">🛡 Guardián 21 — ${isE?'Alertas Activas':'Active Alerts'}</div>
+  <span class="badge b-no">${highCount} ${isE?'Alertas':'Alerts'}</span></div>
+  ${allEvents.filter(e=>e.sev==='high').map(e=>`
+  <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid rgba(0,0,0,.04)">
+    <div style="width:32px;height:32px;border-radius:8px;background:var(--danger-light);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">⚠</div>
+    <div style="flex:1">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+        <span class="mono" style="font-size:10px;color:var(--stone)">${e.ts}</span>
+        <span class="badge b-no" style="font-size:9px">${e.u}</span>
+        <span class="badge b-info" style="font-size:9px">${isE?'Nivel':'Level'} ${e.role}</span>
+        <span class="badge b-neu" style="font-size:9px">IP: ${e.ip}</span>
+      </div>
+      <div style="font-size:12.5px;color:var(--danger);font-weight:500">${isE?e.action_es:e.action_en}</div>
+      <div style="font-size:10px;color:var(--stone);margin-top:2px">${isE?'Notificado a Maria Santos (Socia)':'Notified to Maria Santos (Partner)'}  · SHA-256: ${Math.random().toString(36).slice(2,14)}...</div>
+    </div>
+    <button class="btn btn-sm btn-ghost" style="flex-shrink:0">${isE?'Investigar':'Investigate'}</button>
+  </div>`).join('')}
+</div>`:``}
+
+<!-- FULL LOG TABLE -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">${isE?'Registro Completo — Todas las Acciones':'Full Log — All Actions'}</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:11px;color:var(--stone)">${isE?'Filtrar:':'Filter:'}</span>
+      <select onchange="this.dataset.active=this.value" style="font-size:11px;padding:4px 8px;border:1px solid var(--stone-light);border-radius:var(--radius);font-family:var(--font-body);outline:none;background:#fff">
+        <option>${isE?'Todos los niveles':'All severities'}</option>
+        <option>${isE?'Solo Alto':'High only'}</option>
+        <option>${isE?'Solo Medio':'Medium only'}</option>
+      </select>
+    </div>
+  </div>
+  <div style="overflow-x:auto"><table class="dt" style="min-width:900px">
+    <thead><tr>
+      <th>${isE?'Timestamp':'Timestamp'}</th>
+      <th>${isE?'Usuario':'User'}</th>
+      <th>Role</th>
+      <th>${isE?'Módulo':'Module'}</th>
+      <th style="min-width:280px">${isE?'Acción':'Action'}</th>
+      <th>IP</th>
+      <th>${isE?'Severidad':'Severity'}</th>
+      <th>SHA-256</th>
+    </tr></thead>
+    <tbody>
+    ${allEvents.map(e=>`<tr ${e.sev==='high'?'style="background:var(--danger-light)"':e.sev==='medium'?'style="background:var(--warning-light)"':''}>
+      <td class="mono" style="font-size:10px;white-space:nowrap">${e.ts}</td>
+      <td><span class="badge b-neu" style="font-size:10px;font-family:var(--font-mono)">${e.u}</span></td>
+      <td><span class="badge ${e.role==='A'?'b-gold':e.role==='B'?'b-info':'b-neu'}" style="font-size:9px">${e.role}</span></td>
+      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${e.mod}</code></td>
+      <td style="font-size:11.5px;max-width:280px">${isE?e.action_es:e.action_en}</td>
+      <td class="mono" style="font-size:10px;color:var(--stone)">${e.ip}</td>
+      <td><span class="badge ${e.sev==='high'?'b-no':e.sev==='medium'?'b-warn':'b-neu'}" style="font-size:9px">${e.sev.toUpperCase()}</span></td>
+      <td class="mono" style="font-size:9px;color:var(--stone)">${Math.random().toString(36).slice(2,10)}…</td>
+    </tr>`).join('')}
+    </tbody>
+  </table></div>
+  <div class="alert a-info mt2" style="font-size:11px">
+    🔒 ${isE?'Todos los registros son inmutables. Cada entrada tiene un hash SHA-256 encadenado al anterior (blockchain-style). Ningún usuario, incluyendo socios, puede modificar o eliminar entradas. Backups inmutables cada 15 minutos en AWS S3 con Object Lock.':'All records are immutable. Each entry has a SHA-256 hash chained to the previous (blockchain-style). No user, including Partners, can modify or delete entries. Immutable backups every 15 minutes to AWS S3 with Object Lock.'}
+  </div>
+</div>`;
+}
+
+function modalAuditExport(){const isE=es();return`
+<h3>${isE?'Exportación Forense':'Forensic Export'}</h3>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Rango de Fechas':'Date Range'}</label><input type="date" value="2026-01-01"></div>
+    <div class="mf-field"><label></label><input type="date" value="2026-03-31"></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Usuario Filtro':'User Filter'}</label>
+    <select><option>${isE?'Todos':'All users'}</option><option>JKIM</option><option>TWALSH</option><option>DREYES</option><option>APEREZ</option></select></div>
+  <div class="mf-field full"><label>${isE?'Severidad':'Severity'}</label>
+    <select><option>${isE?'Todas':'All'}</option><option>HIGH only</option><option>MEDIUM+HIGH</option></select></div>
+  <div class="mf-field full"><label>${isE?'Formato':'Format'}</label>
+    <select><option>PDF ${isE?'Certificado':'Certified'} (SHA-256 ${isE?'verificable':'verifiable'})</option><option>Excel XLSX</option><option>CSV (${isE?'Forense':'Forensic'})</option><option>JSON (${isE?'Cadena hash':'Hash chain'})</option></select></div>
+</div>
+<div class="alert a-info" style="margin-top:12px;font-size:11px">${isE?'El export incluye la cadena de hashes SHA-256 para verificación forense. Admisible en procesos legales como evidencia digital bajo FRE 902(13).':'Export includes SHA-256 hash chain for forensic verification. Admissible in legal proceedings as digital evidence under FRE 902(13).'}</div>
+<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-gold" onclick="closeModal()">${isE?'Exportar':'Export'}</button></div>`}
 
 // ══════════════════════════════════════════════════════
 // MODALS
