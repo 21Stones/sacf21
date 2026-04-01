@@ -411,6 +411,7 @@ By signing, I affirm: (1) Strict confidentiality of all client financial data ac
       <div class="sb-section">
         <div class="sb-sec-title" id="sbt-constr">Construction</div>
         <div class="nav-item" onclick="nav('jobcost')"><span class="nav-icon">🧱</span><span id="sn-jc">Job Cost / Projects</span><span class="nav-badge">3</span></div>
+        <div class="nav-item" onclick="nav('revengine')"><span class="nav-icon">⚡</span><span id="sn-rev">Revenue Engine</span><span class="nav-badge" style="background:rgba(201,168,76,.2);color:var(--gold)">ASC 606</span></div>
         <div class="nav-item" onclick="nav('wip')"><span class="nav-icon">📐</span><span id="sn-wip">WIP / ASC 606</span></div>
         <div class="nav-item" onclick="nav('budget')"><span class="nav-icon">📊</span><span id="sn-bud">Live Budget</span></div>
         <div class="nav-item" onclick="nav('subs')"><span class="nav-icon">👷</span><span id="sn-subs">Subcontractors</span><span class="nav-badge red">2</span></div>
@@ -451,7 +452,7 @@ const T={
     activeClient:'Active Client',
     dashboard:'Dashboard',coa:'Chart of Accounts',gl:'General Ledger',treasury:'Treasury & Cash',
     bankfeed:'Bank Feeds',assets:'Fixed Assets',bs:'Balance Sheet',pl:'P&L Statement',
-    cf:'Cash Flow',soce:'Stmt of Equity',jobcost:'Job Cost / Projects',wip:'WIP / ASC 606',
+    cf:'Cash Flow',soce:'Stmt of Equity',jobcost:'Job Cost / Projects',revengine:'Revenue Engine',wip:'WIP / ASC 606',
     budget:'Live Budget',subs:'Subcontractors',security:'Security & Users',audit:'Master Audit Log',
     core:'Core',fsTitle:'Financial Statements',construction:'Construction',administration:'Administration',
   },
@@ -462,7 +463,7 @@ const T={
     activeClient:'Cliente Activo',
     dashboard:'Tablero',coa:'Plan de Cuentas',gl:'Mayor General',treasury:'Tesorería',
     bankfeed:'Conexión Bancaria',assets:'Activos Fijos',bs:'Balance General',pl:'Estado de Resultados',
-    cf:'Flujo de Efectivo',soce:'Estado de Capital',jobcost:'Costo por Proyecto',wip:'WIP / NIIF 15',
+    cf:'Flujo de Efectivo',soce:'Estado de Capital',jobcost:'Costo por Proyecto',revengine:'Motor de Ingresos',wip:'WIP / NIIF 15',
     budget:'Presupuesto Vivo',subs:'Subcontratistas',security:'Seguridad y Usuarios',audit:'Bitácora Maestra',
     core:'Núcleo',fsTitle:'Estados Financieros',construction:'Construcción',administration:'Administración',
   }
@@ -478,7 +479,7 @@ function applyI18n(){
     'sb-client-lbl':'activeClient','lang-ind':null,
     'sn-dash':'dashboard','sn-coa':'coa','sn-gl':'gl','sn-tres':'treasury',
     'sn-bank':'bankfeed','sn-assets':'assets','sn-bs':'bs','sn-pl':'pl',
-    'sn-cf':'cf','sn-soce':'soce','sn-jc':'jobcost','sn-wip':'wip',
+    'sn-cf':'cf','sn-soce':'soce','sn-jc':'jobcost','sn-rev':'revengine','sn-wip':'wip',
     'sn-bud':'budget','sn-subs':'subs','sn-sec':'security','sn-audit':'audit',
     'sbt-core':'core','sbt-fs':'fsTitle','sbt-constr':'construction','sbt-admin':'administration',
     'ob-sn':null,'ob-st':null,'ob-ss':null,'ob-sp':null,
@@ -567,7 +568,7 @@ function switchClient(){S.client=document.getElementById('client-sel').value;log
 function renderMod(mod){
   const mc=document.getElementById('mc');
   const fn={dashboard:rDash,coa:rCOA,gl:rGL,treasury:rTreasury,bankfeed:rBankFeed,assets:rAssets,
-    bs:rBS,pl:rPL,cf:rCF,soce:rSOCE,jobcost:rJobCost,wip:rWIP,budget:rBudget,subs:rSubs,
+    bs:rBS,pl:rPL,cf:rCF,soce:rSOCE,jobcost:rJobCost,revengine:rRevEngine,wip:rWIP,budget:rBudget,subs:rSubs,
     security:rSecurity,audit:rAudit};
   mc.innerHTML=(fn[mod]||rDash)();
 }
@@ -1660,28 +1661,125 @@ let activeProjectTab = 'overview'; // overview | phases | subledger | billings |
 // ══════════════════════════════════════════════════════
 // HELPERS: Revenue Recognition (Cost-to-Cost)
 // ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+// PERFORMANCE OBLIGATIONS DATA MODEL
+// Each project can have multiple POs with independent recognition methods
+// ══════════════════════════════════════════════════════
+const PERF_OBL = {
+  'PRJ-001': [
+    { id:'PO-001-A', name_en:'Design & Engineering Services', name_es:'Diseño e Ingeniería',
+      method:'over_time', measure:'c2c', alloc_pct:0.08, alloc_amt:350800,
+      costs_incurred:350800, est_total_cost:350800, pct:1.0, status:'complete',
+      gaap_note:'Satisfied over time — customer controls asset as created (ASC 606-10-25-27b)',
+      ifrs_note:'Performance obligation satisfied over time — outcome measurable reliably (IFRS 15.35b)',
+      gaap_only:false, ifrs_only:false },
+    { id:'PO-001-B', name_en:'Construction — Structure & Envelope', name_es:'Construcción — Estructura y Cerramientos',
+      method:'over_time', measure:'c2c', alloc_pct:0.55, alloc_amt:2411750,
+      costs_incurred:1748200, est_total_cost:2411750, pct:0.724, status:'active',
+      gaap_note:'Cost-to-Cost method. Input measure of progress (ASC 606-10-55-20)',
+      ifrs_note:'Cost-to-Cost input method. If outcome uncertain, recognize only recoverable costs (IFRS 15.45)',
+      gaap_only:false, ifrs_only:false },
+    { id:'PO-001-C', name_en:'MEP Systems & Installation', name_es:'Sistemas MEP e Instalaciones',
+      method:'over_time', measure:'c2c', alloc_pct:0.25, alloc_amt:1096250,
+      costs_incurred:350400, est_total_cost:1096250, pct:0.32, status:'active',
+      gaap_note:'Distinct PO — MEP is separable from structural work (ASC 606-10-25-19)',
+      ifrs_note:'Distinct PO under IFRS 15.27 — separately identifiable, no significant integration service',
+      gaap_only:false, ifrs_only:false },
+    { id:'PO-001-D', name_en:'Finishes & Commissioning', name_es:'Acabados y Puesta en Marcha',
+      method:'point_in_time', measure:'milestone', alloc_pct:0.12, alloc_amt:526200,
+      costs_incurred:0, est_total_cost:526200, pct:0, status:'pending',
+      gaap_note:'Point-in-time recognition at Certificate of Occupancy (ASC 606-10-25-30)',
+      ifrs_note:'Point-in-time — control transfers at final acceptance/occupation (IFRS 15.38)',
+      gaap_only:false, ifrs_only:false },
+  ],
+  'PRJ-002': [
+    { id:'PO-002-A', name_en:'Site Preparation & Demolition', name_es:'Preparación y Demolición',
+      method:'over_time', measure:'c2c', alloc_pct:0.05, alloc_amt:411000,
+      costs_incurred:411000, est_total_cost:411000, pct:1.0, status:'complete',
+      gaap_note:'Satisfied over time — customer controls asset (ASC 606-10-25-27a)',
+      ifrs_note:'Over time — customer receives/consumes benefits as work performed (IFRS 15.35a)',
+      gaap_only:false, ifrs_only:false },
+    { id:'PO-002-B', name_en:'Deep Foundation (Piles & Caissons)', name_es:'Cimentación Profunda (Pilotes)',
+      method:'over_time', measure:'c2c', alloc_pct:0.22, alloc_amt:1808400,
+      costs_incurred:1702000, est_total_cost:1808400, pct:0.941, status:'active',
+      gaap_note:'C-to-C. Underground work = permanent asset on client land (ASC 606-10-25-27b)',
+      ifrs_note:'C-to-C reliable. Soil remediation CO increased est. cost — cumulative catch-up required (IFRS 15.43)',
+      gaap_only:false, ifrs_only:false },
+    { id:'PO-002-C', name_en:'Structural Frame — Floors 1-30', name_es:'Estructura — Pisos 1-30',
+      method:'over_time', measure:'c2c', alloc_pct:0.38, alloc_amt:3123600,
+      costs_incurred:1212000, est_total_cost:3123600, pct:0.388, status:'active',
+      gaap_note:'C-to-C. Units of production alternative permissible for repetitive floor cycles (ASC 606 BC258)',
+      ifrs_note:'C-to-C preferred. IFRS 15 does not explicitly permit units-of-production for non-repetitive structures',
+      gaap_only:false, ifrs_only:false, gaap_ifrs_diff:true },
+    { id:'PO-002-D', name_en:'MEP + Façade + Finishes', name_es:'MEP + Fachada + Acabados',
+      method:'over_time', measure:'c2c', alloc_pct:0.35, alloc_amt:2877000,
+      costs_incurred:0, est_total_cost:2877000, pct:0, status:'pending',
+      gaap_note:'Not yet started — no progress to recognize (ASC 606-10-25-23)',
+      ifrs_note:'Not started — zero revenue recognized; costs capitalized only if meet asset recognition criteria (IFRS 15.95)',
+      gaap_only:false, ifrs_only:false },
+  ],
+  'PRJ-003': [
+    { id:'PO-003-A', name_en:'Civil Works & Track Infrastructure', name_es:'Obra Civil e Infraestructura de Vía',
+      method:'over_time', measure:'c2c', alloc_pct:0.72, alloc_amt:1404000,
+      costs_incurred:1404000, est_total_cost:1404000, pct:1.0, status:'complete',
+      gaap_note:'Government contract — ASC 606 + FAR compliance. C-to-C mandatory (ASC 606-10-55)',
+      ifrs_note:'Public sector contract. IFRS 15 applies; IAS 11 withdrawn. C-to-C under IFRS 15.41',
+      gaap_only:false, ifrs_only:false },
+    { id:'PO-003-B', name_en:'Electrical Systems & Train Control', name_es:'Sistemas Eléctricos y Control Ferroviario',
+      method:'over_time', measure:'c2c', alloc_pct:0.28, alloc_amt:546000,
+      costs_incurred:464000, est_total_cost:546000, pct:0.850, status:'active',
+      gaap_note:'Highly specialized — no alternative use test met; entitled to payment for progress (ASC 606-10-25-27c)',
+      ifrs_note:'Over time — no alternative use + enforceable right to payment for work to date (IFRS 15.35c)',
+      gaap_only:false, ifrs_only:false },
+  ],
+};
+
+// ══════════════════════════════════════════════════════
+// ENHANCED projectTotals — Full EAC + Alert Engine
+// ══════════════════════════════════════════════════════
 function projectTotals(p) {
   const totalBudget = p.phases.reduce((s,ph)=>s+Object.values(ph.budgets).reduce((a,b)=>a+b,0),0);
   const totalActual = p.phases.reduce((s,ph)=>s+Object.values(ph.actuals).reduce((a,b)=>a+b,0),0);
-  // C-to-C % = costs incurred / estimated total cost
-  const estTotalCost = totalBudget; // Est. total = original budget (no EAC revision here)
-  const pctComplete = estTotalCost > 0 ? Math.min(totalActual / estTotalCost, 1) : 0;
+
+  // EAC = Estimate at Completion (can be revised; default = original budget)
+  const eac = p.eac || totalBudget;
+  // C-to-C % = costs incurred / EAC
+  const pctComplete = eac > 0 ? Math.min(totalActual / eac, 1.0) : 0;
   const revRecognized = p.contract * pctComplete;
+
   const totalBilled = p.billings.reduce((s,b)=>s+b.amount,0);
   const totalRetHeld = p.billings.reduce((s,b)=>s+b.ret,0);
-  const totalRetCurrent = p.billings.reduce((s,b)=>s+(b.status==='paid'?b.net:b.amount-b.ret),0);
-  // Contract asset = rev recognized > billed (Unbilled Revenue)
-  // Contract liability = billed > rev recognized (Overbilling)
-  const contractAsset = Math.max(0, revRecognized - totalBilled);
-  const contractLiability = Math.max(0, totalBilled - revRecognized);
-  // Gross profit = recognized rev - actual costs
+
+  // Contract asset / liability
+  const contractAsset    = Math.max(0, revRecognized - totalBilled);
+  const contractLiability= Math.max(0, totalBilled - revRecognized);
+
+  // Gross profit at completion
   const grossProfit = revRecognized - totalActual;
   const grossMargin = revRecognized > 0 ? grossProfit / revRecognized : 0;
-  // EAC variance
-  const eacVariance = totalBudget - totalActual;
-  return { totalBudget, totalActual, estTotalCost, pctComplete, revRecognized,
-    totalBilled, totalRetHeld, totalRetCurrent, contractAsset, contractLiability,
-    grossProfit, grossMargin, eacVariance };
+
+  // EAC margin (projected final)
+  const eacMargin = p.contract > 0 ? (p.contract - eac) / p.contract : 0;
+
+  // Cumulative catch-up: if EAC changed mid-project, we need to recalculate
+  // cumulative revenue recognized in prior periods and catch up in current period
+  const priorBilled = p.billings.filter(b=>b.status==='paid').reduce((s,b)=>s+b.amount,0);
+  const currentPeriodRev = revRecognized - priorBilled * pctComplete;
+
+  // ALERTS
+  const alerts = [];
+  if (pctComplete >= 1.0 && totalActual > eac * 1.02)
+    alerts.push({type:'danger', code:'COST_OVERRUN', msg_en:`Cost overrun: actual ${fmt(totalActual)} exceeds EAC ${fmt(eac)} by ${fmt(totalActual-eac)}. Requires loss provision under ASC 605-35 / IAS 37.`, msg_es:`Sobrecosto: real ${fmt(totalActual)} excede EAC ${fmt(eac)} en ${fmt(totalActual-eac)}. Requiere provisión por pérdida ASC 605-35 / NIC 37.`});
+  if (eac > totalBudget * 1.10)
+    alerts.push({type:'warning', code:'EAC_REVISION', msg_en:`EAC revised +${((eac/totalBudget-1)*100).toFixed(1)}% above original budget. Cumulative catch-up adjustment required this period.`, msg_es:`EAC revisado +${((eac/totalBudget-1)*100).toFixed(1)}% sobre presupuesto original. Requiere ajuste acumulado en el período.`});
+  if (contractLiability > p.contract * 0.15)
+    alerts.push({type:'warning', code:'OVERBILLING', msg_en:`Overbilling ${fmt(contractLiability)} exceeds 15% of contract. Risk of revenue reversal if project delays.`, msg_es:`Sobrefacturación ${fmt(contractLiability)} supera el 15% del contrato. Riesgo de reversión de ingresos si hay demoras.`});
+  if (pctComplete > 0.95 && totalActual / eac < 0.85)
+    alerts.push({type:'warning', code:'MARGIN_SURPRISE', msg_en:`Margin materially better than planned at 95%+ completion. Verify cost accruals are complete.`, msg_es:`Margen materialmente mejor que lo planeado al 95%+ de avance. Verificar que todos los costos estén acumulados.`});
+
+  return { totalBudget, totalActual, eac, estTotalCost:eac, pctComplete, revRecognized,
+    totalBilled, totalRetHeld, contractAsset, contractLiability,
+    grossProfit, grossMargin, eacMargin, eacVariance: eac - totalActual, alerts };
 }
 
 function catSummary(p) {
@@ -1690,6 +1788,1010 @@ function catSummary(p) {
     budget: p.phases.reduce((s,ph)=>s+(ph.budgets[cat]||0),0),
     actual: p.phases.reduce((s,ph)=>s+(ph.actuals[cat]||0),0),
   }));
+}
+
+// ══════════════════════════════════════════════════════
+// MODULE: REVENUE ENGINE — ASC 606 / IFRS 15 Brain
+// ══════════════════════════════════════════════════════
+let revTab = 'dashboard';  // dashboard | step1 | step2 | step3 | step4 | step5 | simulator
+
+function rRevEngine() {
+  const isE = es();
+
+  setTimeout(()=>{
+    document.querySelectorAll('.rev-tab').forEach(b=>b.addEventListener('click',function(){
+      document.querySelectorAll('.rev-tab').forEach(x=>x.classList.remove('active'));
+      this.classList.add('active');
+      revTab = this.dataset.t;
+      rerenderRevTab();
+    }));
+    rerenderRevTab();
+  },60);
+
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">${isE?'Motor de Reconocimiento de Ingresos':'Revenue Recognition Engine'}</div>
+    <div class="page-subtitle">${isE?'Los 5 pasos ASC 606 / NIIF 15 — Automatizados · Libros paralelos · Alertas de ajuste acumulado':'The 5-Step ASC 606 / IFRS 15 Framework — Automated · Parallel ledgers · Cumulative catch-up alerts'}</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalCloseRevEngine())">${isE?'Cierre de Período':'Period Close'}</button>
+    <button class="btn btn-gold btn-sm" onclick="openModal(modalEACRevision())">${isE?'Revisar EAC':'Revise EAC'}</button>
+  </div>
+</div>
+
+<!-- 5-STEP PROGRESS INDICATOR -->
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
+${[
+  ['1', isE?'Identificación\ndel Contrato':'Contract\nIdentification', 'step1', 'ok'],
+  ['2', isE?'Cálculo %\nde Avance':'% Complete\nCalculation', 'step2', 'ok'],
+  ['3', isE?'Asientos\nde Ajuste':'Adjustment\nEntries', 'step3', 'warn'],
+  ['4', isE?'Dashboard\nOver/Under':'Over/Under\nDashboard', 'step4', 'ok'],
+  ['5', isE?'GAAP vs\nNIIF Diff':'GAAP vs\nIFRS Diff', 'step5', 'info'],
+  ['⚡', isE?'Simulador\nInteractivo':'Interactive\nSimulator', 'simulator', 'ok'],
+].map(([num,label,tab,status])=>`
+<div class="rev-tab ${revTab===tab?'active':''}" data-t="${tab}"
+  style="background:${revTab===tab?'var(--navy)':'#fff'};border:2px solid ${revTab===tab?'var(--gold)':'rgba(0,0,0,.06)'};
+    border-radius:var(--radius-lg);padding:12px 10px;cursor:pointer;text-align:center;transition:var(--tr)">
+  <div style="width:28px;height:28px;border-radius:50%;background:${revTab===tab?'var(--gold)':status==='ok'?'var(--success-light)':status==='warn'?'var(--warning-light)':'var(--info-light)'};
+    color:${revTab===tab?'var(--navy-deep)':status==='ok'?'var(--success)':status==='warn'?'var(--warning)':'var(--info)'};
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;margin:0 auto 8px">
+    ${num}
+  </div>
+  <div style="font-size:11px;font-weight:${revTab===tab?700:500};color:${revTab===tab?'var(--gold)':'var(--navy)'};white-space:pre-line;line-height:1.3">${label}</div>
+</div>`).join('')}
+</div>
+
+<!-- ALERT STRIP — live alerts from all projects -->
+${PROJECTS.flatMap(p=>{
+  const t=projectTotals(p);
+  return t.alerts.map(a=>`<div class="alert a-${a.type==='danger'?'danger':'warn'}" style="font-size:11px">
+    <strong>${p.id} — ${p.name}:</strong> ${isE?a.msg_es:a.msg_en}
+    <span class="badge ${a.type==='danger'?'b-no':'b-warn'}" style="font-size:9px;margin-left:8px">${a.code}</span>
+  </div>`);
+}).join('')}
+
+<!-- TAB CONTENT -->
+<div id="rev-tab-content"></div>`;
+}
+
+function rerenderRevTab() {
+  const el = document.getElementById('rev-tab-content');
+  if(!el) return;
+  const isE = S.lang === 'es';
+
+  // ── DASHBOARD: Executive summary of all 5 steps
+  if(revTab === 'dashboard') {
+    // Aggregate all projects
+    const totals = PROJECTS.map(p=>({p, t:projectTotals(p)}));
+    const totalRevRec = totals.reduce((s,x)=>s+x.t.revRecognized,0);
+    const totalBilled = totals.reduce((s,x)=>s+x.t.totalBilled,0);
+    const totalAsset  = totals.reduce((s,x)=>s+x.t.contractAsset,0);
+    const totalLiab   = totals.reduce((s,x)=>s+x.t.contractLiability,0);
+    const totalCosts  = totals.reduce((s,x)=>s+x.t.totalActual,0);
+    const allAlerts   = totals.flatMap(({p,t})=>t.alerts.map(a=>({...a,pid:p.id,pname:p.name})));
+
+    el.innerHTML = `
+    <!-- EXECUTIVE KPI STRIP -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px">
+    ${[
+      [isE?'Ingresos Reconocidos (Acum.)':'Cumulative Rev. Recognized', fmt(totalRevRec), 'success', isE?'Por % de Avance C-a-C':'By C-to-C % complete'],
+      [isE?'Facturado a la Fecha':'Billed to Date',               fmt(totalBilled),  'info',    isE?'Facturas AIA emitidas':'AIA invoices issued'],
+      [isE?'Activos de Contrato':'Contract Assets',               fmt(totalAsset),   'success', isE?'Ingreso devengado no facturado':'Earned revenue not billed'],
+      [isE?'Pasivos de Contrato':'Contract Liabilities',          fmt(totalLiab),    'warning', isE?'Facturación excede avance':'Billing exceeds progress'],
+      [isE?'Margen Bruto Ponderado':'Weighted Gross Margin',      (totals.reduce((s,x)=>s+(x.t.grossMargin*x.p.contract),0)/totals.reduce((s,x)=>s+x.p.contract,0)*100).toFixed(1)+'%', 'gold', isE?'Sobre ingresos reconocidos':'On recognized revenue'],
+    ].map(([l,v,c,s])=>`
+    <div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div>
+    <div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:18px">${v}</div>
+    <div class="kpi-sub">${s}</div></div>`).join('')}
+    </div>
+
+    ${allAlerts.length>0?`
+    <!-- ACTIVE VALIDATION ALERTS -->
+    <div class="card" style="border-left:4px solid var(--danger);margin-bottom:14px">
+      <div class="card-header"><div class="card-title">⚡ ${isE?'Alertas del Motor de Validación':'Revenue Engine Validation Alerts'}</div>
+      <span class="badge b-no">${allAlerts.length}</span></div>
+      ${allAlerts.map(a=>`
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(0,0,0,.05)">
+        <span class="badge ${a.type==='danger'?'b-no':'b-warn'}" style="font-size:10px;flex-shrink:0">${a.pid}</span>
+        <div style="flex:1;font-size:12px;color:var(--navy)">${isE?a.msg_es:a.msg_en}</div>
+        <span class="badge b-neu" style="font-size:9px;flex-shrink:0">${a.code}</span>
+      </div>`).join('')}
+    </div>`:``}
+
+    <!-- 5-STEP STATUS AT A GLANCE -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-header"><div class="card-title">${isE?'Los 5 Pasos ASC 606 / NIIF 15 — Estado Actual':'The 5-Step ASC 606 / IFRS 15 Framework — Current Status'}</div></div>
+      <div style="display:flex;flex-direction:column;gap:0">
+      ${[
+        {n:1, title_en:'Contract Identification & Performance Obligations', title_es:'Identificación de Contrato y Obligaciones de Desempeño',
+         status:'ok', detail_en:`${PROJECTS.reduce((s,p)=>s+(PERF_OBL[p.id]||[]).length,0)} POs identified across ${PROJECTS.length} contracts. Allocation complete.`,
+         detail_es:`${PROJECTS.reduce((s,p)=>s+(PERF_OBL[p.id]||[]).length,0)} ODs identificadas en ${PROJECTS.length} contratos. Asignación completa.`},
+        {n:2, title_en:'C-to-C % Complete Calculation', title_es:'Cálculo % de Avance C-a-C',
+         status:allAlerts.filter(a=>a.code==='EAC_REVISION').length>0?'warn':'ok',
+         detail_en:`EAC monitored for all projects. ${allAlerts.filter(a=>a.code==='EAC_REVISION').length} EAC revision(s) pending cumulative catch-up.`,
+         detail_es:`EAC monitoreado en todos los proyectos. ${allAlerts.filter(a=>a.code==='EAC_REVISION').length} revisión(es) EAC con ajuste acumulado pendiente.`},
+        {n:3, title_en:'Auto Adjustment Entries (Unbilled / Overbilling)', title_es:'Asientos de Ajuste Automáticos (Sub/Sobre-Facturación)',
+         status:totalLiab>0?'warn':'ok',
+         detail_en:`${fmt(totalAsset)} Contract Asset posted to 1-01-03-001. ${fmt(totalLiab)} Contract Liability posted to 2-01-02-001.`,
+         detail_es:`${fmt(totalAsset)} Activo de Contrato en 1-01-03-001. ${fmt(totalLiab)} Pasivo de Contrato en 2-01-02-001.`},
+        {n:4, title_en:'Over/Under Billing Dashboard', title_es:'Dashboard de Sobre/Sub-Facturación',
+         status:'ok',
+         detail_en:`${totals.filter(x=>x.t.contractAsset>0).length} under-billed, ${totals.filter(x=>x.t.contractLiability>0).length} over-billed. Net position: ${fmt(totalAsset-totalLiab)}.`,
+         detail_es:`${totals.filter(x=>x.t.contractAsset>0).length} sub-facturado, ${totals.filter(x=>x.t.contractLiability>0).length} sobre-facturado. Posición neta: ${fmt(totalAsset-totalLiab)}.`},
+        {n:5, title_en:'GAAP vs IFRS Divergence Management', title_es:'Gestión de Divergencias GAAP vs NIIF',
+         status:'info',
+         detail_en:`1 active divergence (PRJ-002, PO-002-C): Units-per-Floor method. Dual notes auto-generated for both ledgers.`,
+         detail_es:`1 divergencia activa (PRJ-002, OD-002-C): Método unidades por piso. Notas diferenciadas generadas para ambos libros.`},
+      ].map(s=>`
+      <div style="display:flex;align-items:center;gap:12px;padding:12px;border-bottom:1px solid rgba(0,0,0,.04);cursor:pointer"
+        onclick="document.querySelectorAll('.rev-tab').forEach(b=>b.classList.remove('active'));revTab='step${s.n}';rerenderRevTab()"
+        onmouseover="this.style.background='var(--stone-pale)'" onmouseout="this.style.background=''">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--${s.status==='ok'?'success':s.status==='warn'?'warning':'info'}-light);color:var(--${s.status==='ok'?'success':s.status==='warn'?'warning':'info'});display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0">${s.n}</div>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600;color:var(--navy)">${isE?s.title_es:s.title_en}</div>
+          <div style="font-size:11px;color:var(--stone);margin-top:2px">${isE?s.detail_es:s.detail_en}</div>
+        </div>
+        <span class="badge ${s.status==='ok'?'b-ok':s.status==='warn'?'b-warn':'b-info'}" style="font-size:10px">${s.status==='ok'?'OK':s.status==='warn'?isE?'Requiere Acción':'Action Needed':'INFO'}</span>
+        <span style="color:var(--stone-light);font-size:14px">›</span>
+      </div>`).join('')}
+      </div>
+    </div>
+
+    <!-- PERIOD CLOSE PREVIEW -->
+    <div class="g2">
+      <div class="card">
+        <div class="card-header"><div class="card-title">${isE?'Asientos a Generar — Cierre Q1 2026':'Entries to Generate — Q1 2026 Close'}</div>
+        <button class="btn btn-gold btn-sm" onclick="openModal(modalCloseRevEngine())">${isE?'Ejecutar Cierre':'Run Close'}</button></div>
+        ${totals.map(({p,t})=>{
+          const adj = t.contractAsset - t.contractLiability;
+          if(Math.abs(adj)<1) return `<div style="font-size:12px;color:var(--stone);padding:8px 0">${p.id}: ${isE?'Balanceado — sin asiento':'Balanced — no entry needed'}</div>`;
+          return `<div style="padding:8px 0;border-bottom:1px solid rgba(0,0,0,.04)">
+            <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:4px">${p.name}</div>
+            <div style="display:flex;flex-direction:column;gap:2px">
+              <div style="font-size:11px"><span style="color:var(--success);font-weight:700;min-width:18px;display:inline-block">Dr</span>
+                <code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${adj>0?'1-01-03-001':'4-01-01-001'}</code>
+                <span style="font-family:var(--font-mono);font-weight:700;color:var(--${adj>0?'success':'danger'});margin-left:8px">${fmt(Math.abs(adj))}</span>
+              </div>
+              <div style="font-size:11px"><span style="color:var(--danger);font-weight:700;min-width:18px;display:inline-block">Cr</span>
+                <code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${adj>0?'4-01-01-001':'2-01-02-001'}</code>
+                <span style="font-family:var(--font-mono);font-weight:700;color:var(--${adj>0?'navy':'warning'});margin-left:8px">${fmt(Math.abs(adj))}</span>
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">${isE?'Variable Consideration — Incentivos y Penalidades':'Variable Consideration — Incentives & Penalties'}</div></div>
+        ${[
+          {proj:'PRJ-001', type_en:'Performance Bonus',    type_es:'Bono por Desempeño',    amt:125000, prob:0.75, method:'expected_val', include:true,
+           note_en:'75% likely — include $93,750 (prob × amt) per expected value method.',
+           note_es:'75% probable — incluir $93,750 (prob × monto) por valor esperado.'},
+          {proj:'PRJ-002', type_en:'Delay Penalty',        type_es:'Penalidad por Demora',  amt:-85000,  prob:0.30, method:'most_likely',  include:false,
+           note_en:'30% likely — exclude per constraint. Not highly probable of not reversing.',
+           note_es:'30% probable — excluir por restricción. No es altamente probable que no se revierta.'},
+          {proj:'PRJ-003', type_en:'Early Completion Bonus',type_es:'Bono Terminación Anticipada',amt:45000,prob:0.90,method:'most_likely',include:true,
+           note_en:'90% likely — include per most-likely method. Highly probable.',
+           note_es:'90% probable — incluir por método de monto más probable. Altamente probable.'},
+        ].map(vc=>`
+        <div style="padding:10px 0;border-bottom:1px solid rgba(0,0,0,.04)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+            <span class="badge b-gold" style="font-size:9px">${vc.proj}</span>
+            <span class="badge ${vc.include?'b-ok':'b-no'}" style="font-size:9px">${vc.include?(isE?'INCLUIR':'INCLUDE'):(isE?'EXCLUIR':'EXCLUDE')}</span>
+            <span style="font-size:12px;font-weight:500;color:var(--navy)">${isE?vc.type_es:vc.type_en}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px">
+            <span style="color:var(--stone)">${isE?'Monto Bruto / Prob.':'Gross Amt / Prob.'}: <strong>${fmt(vc.amt)} / ${(vc.prob*100).toFixed(0)}%</strong></span>
+            <span style="font-family:var(--font-mono);font-weight:700;color:var(--${vc.include?'success':'danger'})">${vc.include?(vc.method==='expected_val'?fmt(vc.amt*vc.prob):fmt(vc.amt)):fmt(0)}</span>
+          </div>
+          <div style="font-size:10px;color:var(--stone);margin-top:3px">${isE?vc.note_es:vc.note_en}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+    return;
+  }
+
+  // ── STEP 1: Contract Identification & Performance Obligations
+  if(revTab === 'step1') {
+    el.innerHTML = `
+    <div style="font-size:13px;font-weight:600;color:var(--navy);margin-bottom:10px;margin-top:4px">${isE?'Paso 1 — Identificación de Contratos y Obligaciones de Desempeño':'Step 1 — Contract Identification & Performance Obligations'}</div>
+
+    <!-- PO Decomposition per project -->
+    ${PROJECTS.map(p => {
+      const pos = PERF_OBL[p.id] || [];
+      const t = projectTotals(p);
+      return `
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-header">
+          <div>
+            <div class="card-title">${p.name}</div>
+            <div class="card-sub">${p.id} · ${isE?'Contrato:':'Contract:'} ${fmt(p.contract)} · ${pos.length} ${isE?'Obligaciones de Desempeño':'Performance Obligations'}</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="badge b-gold" style="font-size:10px">ASC 606 / IFRS 15</span>
+            ${t.alerts.length>0?`<span class="badge b-no" style="font-size:10px">${t.alerts.length} ${isE?'Alerta(s)':'Alert(s)'}</span>`:''}
+          </div>
+        </div>
+        <div style="overflow-x:auto"><table class="dt" style="min-width:900px">
+          <thead><tr>
+            <th>PO ID</th>
+            <th style="min-width:200px">${isE?'Obligación de Desempeño':'Performance Obligation'}</th>
+            <th>${isE?'Método':'Method'}</th>
+            <th>${isE?'Medida':'Measure'}</th>
+            <th class="num">${isE?'Precio Asignado':'Allocated Price'}</th>
+            <th class="num">${isE?'% Asignado':'% Alloc.'}</th>
+            <th class="num">${isE?'Costos Inc.':'Costs Inc.'}</th>
+            <th class="num">${isE?'% Avance':'% Complete'}</th>
+            <th class="num">${isE?'Ing. Reconocido':'Rev. Recognized'}</th>
+            <th>${isE?'Estado':'Status'}</th>
+            ${pos.some(x=>x.gaap_ifrs_diff)?'<th>GAAP≠IFRS</th>':''}
+          </tr></thead>
+          <tbody>
+          ${pos.map(po => {
+            const revRec = po.alloc_amt * po.pct;
+            return `<tr ${po.gaap_ifrs_diff?'style="background:var(--warning-light)"':''}>
+              <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 6px;border-radius:4px">${po.id}</code></td>
+              <td style="font-size:12.5px;font-weight:500">${isE?po.name_es:po.name_en}</td>
+              <td>
+                <span class="badge ${po.method==='over_time'?'b-ok':'b-info'}" style="font-size:10px">
+                  ${po.method==='over_time'?(isE?'A lo largo del tiempo':'Over Time'):(isE?'En un punto':'Point-in-Time')}
+                </span>
+              </td>
+              <td><span class="badge b-neu" style="font-size:10px">${po.measure==='c2c'?'Cost-to-Cost':po.measure==='milestone'?'Milestone':po.measure}</span></td>
+              <td class="num mono bold">${fmt(po.alloc_amt)}</td>
+              <td class="num mono">${(po.alloc_pct*100).toFixed(0)}%</td>
+              <td class="num mono ${po.costs_incurred>po.est_total_cost?'red':''}">${fmt(po.costs_incurred)}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <div class="prog" style="width:60px"><div class="prog-fill" style="width:${po.pct*100}%;background:${po.pct===1?'var(--success)':po.pct>0.6?'var(--gold)':'var(--info)'}"></div></div>
+                  <span class="mono" style="font-size:12px;font-weight:700">${(po.pct*100).toFixed(1)}%</span>
+                </div>
+              </td>
+              <td class="num mono green bold">${fmt(revRec)}</td>
+              <td><span class="badge ${po.status==='complete'?'b-ok':po.status==='active'?'b-info':'b-neu'}" style="font-size:10px">${po.status}</span></td>
+              ${pos.some(x=>x.gaap_ifrs_diff)?`<td>${po.gaap_ifrs_diff?'<span class="badge b-warn" style="font-size:9px">⚑ DIFF</span>':'—'}</td>`:''}
+            </tr>
+            <tr style="background:rgba(11,31,58,.02)">
+              <td colspan="${pos.some(x=>x.gaap_ifrs_diff)?11:10}" style="padding:4px 12px 8px 40px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                  <div style="font-size:10px;color:var(--info)"><strong>🇺🇸 GAAP:</strong> ${po.gaap_note}</div>
+                  <div style="font-size:10px;color:var(--success)"><strong>🌐 IFRS:</strong> ${po.ifrs_note}</div>
+                </div>
+              </td>
+            </tr>`;
+          }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--navy);color:#fff;font-weight:700">
+              <td colspan="4">${isE?'TOTAL DEL CONTRATO':'CONTRACT TOTAL'}</td>
+              <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(p.contract)}</td>
+              <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.6)">100%</td>
+              <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(pos.reduce((s,po)=>s+po.costs_incurred,0))}</td>
+              <td></td>
+              <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(pos.reduce((s,po)=>s+po.alloc_amt*po.pct,0))}</td>
+              <td colspan="${pos.some(x=>x.gaap_ifrs_diff)?2:1}"></td>
+            </tr>
+          </tfoot>
+        </table></div>
+      </div>`;
+    }).join('')}
+
+    <!-- Loss Provision Engine -->
+    <div class="card" style="border-left:4px solid var(--danger)">
+      <div class="card-header">
+        <div class="card-title">⚠ ${isE?'Motor de Provisión por Pérdida — ASC 605-35 / IAS 37':'Loss Provision Engine — ASC 605-35 / IAS 37'}</div>
+        <span class="badge b-neu">${isE?'Sin pérdidas activas':'No active losses'}</span>
+      </div>
+      <div style="font-size:11px;color:var(--stone);margin-bottom:12px">
+        ${isE?'Cuando los costos estimados al completar (EAC) superan el precio del contrato, se genera una PÉRDIDA PREVISTA que debe reconocerse INMEDIATAMENTE en su totalidad, sin importar el % de avance. El motor detecta este escenario automáticamente.':'When estimated costs at completion (EAC) exceed the contract price, a FORESEEABLE LOSS must be recognized IMMEDIATELY in full, regardless of % complete. The engine detects this scenario automatically.'}
+      </div>
+      <div style="background:var(--stone-pale);border-radius:var(--radius);padding:14px">
+        <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:10px">${isE?'Escenario Ejemplo — Pérdida Prevista':'Example Scenario — Foreseeable Loss'}</div>
+        <div class="g2">
+          <div style="display:flex;flex-direction:column;gap:4px;font-size:11px">
+          ${[
+            [isE?'Precio del Contrato':'Contract Price', fmt(1950000), 'navy'],
+            [isE?'EAC (Revisado)':'Revised EAC', fmt(2100000), 'danger'],
+            [isE?'Pérdida Prevista Total':'Total Foreseeable Loss', fmt(-150000), 'danger'],
+            [isE?'% de Avance al Momento':'Current % Complete', '65%', 'stone'],
+            [isE?'Ingreso Reconocido':'Revenue Recognized', fmt(1267500), 'stone'],
+            [isE?'COGS Normal (65% × EAC)':'Normal COGS (65% × EAC)', fmt(1365000), 'stone'],
+            [isE?'Pérdida ADICIONAL a provisionar':'ADDITIONAL Loss to Provision', fmt(150000), 'danger'],
+          ].map(([l,v,c])=>`
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(0,0,0,.05)">
+            <span style="color:var(--stone)">${l}</span>
+            <span style="font-family:var(--font-mono);font-weight:700;color:var(--${c})">${v}</span>
+          </div>`).join('')}
+          </div>
+          <div style="background:var(--navy);border-radius:var(--radius);padding:12px">
+            <div style="font-size:9px;letter-spacing:1.5px;color:rgba(255,255,255,.4);text-transform:uppercase;margin-bottom:10px">${isE?'Asiento Automático — Provisión por Pérdida':'Auto Entry — Loss Provision'}</div>
+            ${[
+              {dr:true,  acct:'5-01-00-001', label:isE?'COGS — Provisión Pérdida Prevista':'COGS — Foreseeable Loss Provision', amt:'$150,000'},
+              {dr:false, acct:'2-01-03-004', label:isE?'Provisión Pérdida Contrato (Pasivo)':'Contract Loss Provision (Liability)', amt:'$150,000'},
+            ].map(e=>`
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+              <div>
+                <span style="font-size:11px;font-weight:700;color:${e.dr?'var(--success-light)':'var(--gold)'};display:inline-block;min-width:18px">${e.dr?'Dr':'Cr'}</span>
+                <code style="font-size:10px;background:rgba(255,255,255,.1);padding:1px 5px;border-radius:3px;color:rgba(255,255,255,.6)">${e.acct}</code>
+                <span style="font-size:11px;color:rgba(255,255,255,.5);margin-left:6px">${e.label}</span>
+              </div>
+              <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--danger)">${e.amt}</span>
+            </div>`).join('')}
+            <div style="margin-top:8px;font-size:10px;color:rgba(255,255,255,.35)">
+              ${isE?'La pérdida completa se reconoce en el período en que se identifica, independientemente del avance. Requiere EAC revisado firmado por el Socio.':'The full loss is recognized in the period identified, regardless of progress. Requires Partner-approved EAC revision.'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="alert a-info" style="font-size:11px">
+      ⓘ ${isE
+        ? 'Una Obligación de Desempeño es una promesa de transferir un bien o servicio distinto. 21 Stones identifica cada PO separada, asigna el precio de transacción en base a su precio de venta independiente, y aplica el método de reconocimiento correcto a cada una.'
+        : 'A Performance Obligation is a promise to transfer a distinct good or service. 21 Stones identifies each separate PO, allocates the transaction price based on standalone selling price, and applies the correct recognition method to each.'}
+    </div>`;
+    return;
+  }
+
+  // ── STEP 2: C-to-C Calculation Engine
+  if(revTab === 'step2') {
+    el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${isE?'Paso 2 — Motor C-a-C: Porcentaje de Terminación':'Step 2 — C-to-C Engine: Percentage of Completion'}</div>
+        <span class="badge b-gold">ASC 606-10-55-20 / IFRS 15.41</span>
+      </div>
+      <div class="alert a-info" style="font-size:11px;margin-bottom:14px">
+        ⓘ ${isE
+          ? 'El sistema recalcula el % de avance al cierre de cada período comparando costos reales con el EAC (Estimate at Completion). Si el EAC es revisado, el sistema calcula el "ajuste de reconocimiento acumulado" para el período corriente.'
+          : 'System recalculates completion % at each period close comparing actual costs to EAC. If EAC is revised, system calculates the "cumulative recognition catch-up" for the current period.'}
+      </div>
+
+      <!-- C-to-C Equation Visual per project -->
+      ${PROJECTS.map(p => {
+        const t = projectTotals(p);
+        const pct = (t.pctComplete*100).toFixed(2);
+        const eacChange = ((t.eac - t.totalBudget) / t.totalBudget * 100).toFixed(1);
+        return `
+        <div style="background:var(--navy);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+            <div>
+              <div style="font-family:var(--font-display);font-size:15px;font-weight:700;color:#fff">${p.name}</div>
+              <code style="font-size:10px;color:rgba(255,255,255,.4)">${p.id}</code>
+            </div>
+            <div style="display:flex;gap:8px">
+              ${t.alerts.filter(a=>a.code==='EAC_REVISION').map(a=>`<span class="badge b-warn" style="font-size:10px">EAC REVISED +${eacChange}%</span>`).join('')}
+              ${t.alerts.filter(a=>a.code==='COST_OVERRUN').map(()=>`<span class="badge b-no" style="font-size:10px">COST OVERRUN</span>`).join('')}
+              <span class="badge b-gold" style="font-size:11px">${pct}% ${isE?'Avance':'Complete'}</span>
+            </div>
+          </div>
+
+          <!-- Formula breakdown -->
+          <div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;gap:8px;align-items:center;background:rgba(0,0,0,.2);border-radius:var(--radius);padding:12px;margin-bottom:14px">
+            ${[
+              [isE?'Costos Reales Incurridos':'Actual Costs Incurred', fmt(t.totalActual), 'gold'],
+              ['÷', null, null],
+              [isE?'EAC (Est. at Completion)':'EAC (Est. at Completion)', fmt(t.eac), 'stone'],
+              ['=', null, null],
+              [isE?'% de Avance (C-a-C)':'% Complete (C-to-C)', pct+'%', 'gold'],
+              ['×', null, null],
+              [isE?'Precio de Contrato':'Contract Price', fmt(p.contract), 'stone'],
+            ].map(([l,v,c])=>v===null
+              ? `<div style="text-align:center;font-size:20px;color:rgba(255,255,255,.3)">${l}</div>`
+              : `<div style="text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.35);margin-bottom:3px;letter-spacing:.5px">${l}</div>
+                 <div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:var(--${c})">${v}</div></div>`
+            ).join('')}
+          </div>
+
+          <!-- Result line -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+            ${[
+              [isE?'= Ingreso Reconocido Acum.':'= Cumulative Rev. Recognized', fmt(t.revRecognized), 'success-light'],
+              [isE?'− Facturado Acumulado':'− Billed to Date', fmt(t.totalBilled), 'stone'],
+              [t.contractAsset>0?(isE?'= Activo de Contrato':'= Contract Asset'):(isE?'= Pasivo de Contrato':'= Contract Liability'),
+               t.contractAsset>0?fmt(t.contractAsset):fmt(t.contractLiability),
+               t.contractAsset>0?'success-light':'gold'],
+              [isE?'Margen Bruto EAC':'Gross Margin at EAC', (t.eacMargin*100).toFixed(1)+'%', t.eacMargin>0.12?'success-light':'gold'],
+            ].map(([l,v,c])=>`
+            <div style="background:rgba(255,255,255,.06);border-radius:var(--radius);padding:10px;text-align:center">
+              <div style="font-size:10px;color:rgba(255,255,255,.4);margin-bottom:4px">${l}</div>
+              <div style="font-family:var(--font-mono);font-size:16px;font-weight:700;color:var(--${c})">${v}</div>
+            </div>`).join('')}
+          </div>
+
+          <!-- Validation alerts -->
+          ${t.alerts.map(a=>`<div class="alert a-${a.type==='danger'?'danger':'warn'} mt2" style="font-size:11px">
+            <strong>${a.code}:</strong> ${isE?a.msg_es:a.msg_en}
+          </div>`).join('')}
+        </div>`;
+      }).join('')}
+
+      <!-- EAC REVISION MECHANICS -->
+      <div style="background:var(--stone-pale);border-radius:var(--radius-lg);padding:16px;margin-top:4px">
+        <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:10px">
+          ${isE?'Mecánica del Ajuste Acumulado cuando el EAC Cambia':'Cumulative Catch-Up Mechanics when EAC Changes'}
+        </div>
+        <div class="g2">
+          <div>
+            <div style="font-size:11px;font-weight:600;color:var(--success);margin-bottom:8px">${isE?'Ejemplo — Revisión al Alza del EAC':'Example — EAC Upward Revision'}</div>
+            <div style="display:flex;flex-direction:column;gap:4px;font-size:11px">
+              ${[
+                [isE?'EAC Original':'Original EAC', '$3,800,000', ''],
+                [isE?'EAC Revisado (OC aprobada)':'Revised EAC (CO approved)', '$4,200,000', ''],
+                [isE?'Costos Incurridos':'Costs Incurred', '$2,100,000', ''],
+                [isE?'% Avance OLD (2.1/3.8)':'% Complete OLD (2.1/3.8)', '55.3%', 'stone'],
+                [isE?'% Avance NEW (2.1/4.2)':'% Complete NEW (2.1/4.2)', '50.0%', 'gold'],
+                [isE?'Rev. Rec. Prev. Períodos':'Rev. Rec. Prior Periods', '$2,900,000', ''],
+                [isE?'Rev. Rec. Total Acum. (NEW)':'Cumulative Rev. Rec. (NEW)', '$2,625,000', ''],
+                [isE?'Ajuste Negativo Período':'Current Period Negative Adj.', '($275,000)', 'danger'],
+              ].map(([l,v,c])=>`
+              <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(0,0,0,.04)">
+                <span style="color:var(--stone)">${l}</span>
+                <span style="font-family:var(--font-mono);font-weight:600;color:var(--${c||'navy'})">${v}</span>
+              </div>`).join('')}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;color:var(--danger);margin-bottom:8px">${isE?'Asiento de Ajuste Generado Automáticamente':'Auto-Generated Adjustment Entry'}</div>
+            <div style="background:var(--navy);border-radius:var(--radius);padding:12px">
+              ${[
+                {dr:false, acct:'4-01-01-001', label:isE?'Ingresos Construcción (REVERSA)':'Construction Revenue (REVERSAL)', amt:'$275,000'},
+                {dr:true,  acct:'2-01-02-001', label:isE?'Pasivo de Contrato (Overbilling)':'Contract Liability (Overbilling)', amt:'$275,000'},
+              ].map(e=>`
+              <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+                <div>
+                  <span style="font-size:11px;font-weight:700;color:${e.dr?'var(--success-light)':'var(--gold)'};min-width:18px;display:inline-block">${e.dr?'Dr':'Cr'}</span>
+                  <code style="font-size:10px;background:rgba(255,255,255,.08);padding:1px 5px;border-radius:3px;color:rgba(255,255,255,.6)">${e.acct}</code>
+                  <span style="font-size:11px;color:rgba(255,255,255,.5);margin-left:6px">${e.label}</span>
+                </div>
+                <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--danger)">${e.amt}</span>
+              </div>`).join('')}
+            </div>
+            <div class="alert a-warn mt2" style="font-size:11px">
+              ⚑ ${isE?'ASC 606-10-65-1 & IFRS 15.C3: Los ajustes acumulados se reconocen en el período corriente (no reexpresión). El sistema genera automáticamente este asiento en el cierre mensual.':'ASC 606-10-65-1 & IFRS 15.C3: Cumulative adjustments recognized in current period (no restatement). System auto-generates this entry at monthly close.'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  // ── STEP 3: Auto Adjustment Entries
+  } else if(revTab === 'step3') {
+    el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${isE?'Paso 3 — Asientos de Ajuste Automáticos':'Step 3 — Automatic Adjustment Entries'}</div>
+        <span class="badge b-gold">${isE?'Cierre de Período Q1 2026':'Period Close Q1 2026'}</span>
+      </div>
+      <div class="g2" style="margin-bottom:16px">
+        <!-- Scenario A: Under-billed -->
+        <div style="background:var(--success-light);border-radius:var(--radius-lg);padding:14px;border-left:4px solid var(--success)">
+          <div style="font-size:12px;font-weight:700;color:var(--success);margin-bottom:6px">
+            ${isE?'Escenario A — Sub-Facturación (Billed < Earned)':'Scenario A — Under-billed (Billed < Earned)'}
+          </div>
+          <div style="font-size:11px;color:var(--navy);margin-bottom:10px">
+            ${isE?'El constructor trabajó más de lo que ha cobrado. El ingreso devengado no facturado se reconoce como Activo de Contrato en el Balance General.':'The builder has worked more than billed. Unbilled earned revenue is recognized as a Contract Asset on the Balance Sheet.'}
+          </div>
+          <div style="background:#fff;border-radius:var(--radius);padding:10px">
+            <div style="font-size:9px;letter-spacing:1.5px;color:var(--stone);text-transform:uppercase;margin-bottom:8px">ASC 606 / IFRS 15 — ${isE?'Asiento Generado':'Generated Entry'}</div>
+            ${[
+              {dr:true,  acct:'1-01-03-001', label:isE?'Activo por Contrato — Ing. No Facturado':'Contract Asset — Unbilled Revenue', amt:fmt(PROJECTS.filter(p=>projectTotals(p).contractAsset>0).reduce((s,p)=>s+projectTotals(p).contractAsset,0)), color:'success'},
+              {dr:false, acct:'4-01-01-001', label:isE?'Ingresos por Construcción (ASC 606 / NIIF 15)':'Construction Revenue (ASC 606 / IFRS 15)', amt:fmt(PROJECTS.filter(p=>projectTotals(p).contractAsset>0).reduce((s,p)=>s+projectTotals(p).contractAsset,0)), color:'navy'},
+            ].map(e=>`
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.05)">
+              <div>
+                <span style="font-size:11px;font-weight:700;color:${e.dr?'var(--success)':'var(--danger)'};min-width:18px;display:inline-block">${e.dr?'Dr':'Cr'}</span>
+                <code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${e.acct}</code>
+                <span style="font-size:11px;color:var(--stone);margin-left:6px">${e.label}</span>
+              </div>
+              <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--${e.color})">${e.amt}</span>
+            </div>`).join('')}
+          </div>
+          <div style="margin-top:8px;font-size:10px;color:var(--success)">
+            ${isE?'Cuenta 1-01-03-001 aparece en el BALANCE GENERAL como Activo Circulante. NO distorsiona el P&L hasta que es facturado.':'Account 1-01-03-001 appears on BALANCE SHEET as Current Asset. Does NOT distort P&L until invoiced.'}
+          </div>
+        </div>
+        <!-- Scenario B: Over-billed -->
+        <div style="background:var(--warning-light);border-radius:var(--radius-lg);padding:14px;border-left:4px solid var(--warning)">
+          <div style="font-size:12px;font-weight:700;color:var(--warning);margin-bottom:6px">
+            ${isE?'Escenario B — Sobre-Facturación (Billed > Earned)':'Scenario B — Over-billed (Billed > Earned)'}
+          </div>
+          <div style="font-size:11px;color:var(--navy);margin-bottom:10px">
+            ${isE?'El constructor cobró anticipos o facturó por adelantado. El exceso se difiere como Pasivo de Contrato hasta que los costos justifiquen el ingreso.':'Builder collected advances or front-billed. Excess is deferred as Contract Liability until costs justify revenue.'}
+          </div>
+          <div style="background:#fff;border-radius:var(--radius);padding:10px">
+            <div style="font-size:9px;letter-spacing:1.5px;color:var(--stone);text-transform:uppercase;margin-bottom:8px">ASC 606 / IFRS 15 — ${isE?'Asiento Generado':'Generated Entry'}</div>
+            ${[
+              {dr:true,  acct:'4-01-01-001', label:isE?'Ingresos por Construcción (AJUSTE REVERSO)':'Construction Revenue (REVERSAL ADJUSTMENT)', amt:fmt(PROJECTS.filter(p=>projectTotals(p).contractLiability>0).reduce((s,p)=>s+projectTotals(p).contractLiability,0)), color:'danger'},
+              {dr:false, acct:'2-01-02-001', label:isE?'Pasivo de Contrato — Ing. Diferido (Overbilling)':'Contract Liability — Deferred Revenue (Overbilling)', amt:fmt(PROJECTS.filter(p=>projectTotals(p).contractLiability>0).reduce((s,p)=>s+projectTotals(p).contractLiability,0)), color:'navy'},
+            ].map(e=>`
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.05)">
+              <div>
+                <span style="font-size:11px;font-weight:700;color:${e.dr?'var(--success)':'var(--danger)'};min-width:18px;display:inline-block">${e.dr?'Dr':'Cr'}</span>
+                <code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${e.acct}</code>
+                <span style="font-size:11px;color:var(--stone);margin-left:6px">${e.label}</span>
+              </div>
+              <span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--${e.color})">${e.amt}</span>
+            </div>`).join('')}
+          </div>
+          <div style="margin-top:8px;font-size:10px;color:var(--warning)">
+            ${isE?'Cuenta 2-01-02-001 aparece en el BALANCE GENERAL como Pasivo Circulante. El ingreso se reconoce gradualmente conforme aumenta el % de avance.':'Account 2-01-02-001 appears on BALANCE SHEET as Current Liability. Revenue recognized gradually as completion % increases.'}
+          </div>
+        </div>
+      </div>
+
+      <!-- Period Close Entry Log -->
+      <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:10px">${isE?'Asientos de Cierre Generados — Q1 2026':'Period Close Entries Generated — Q1 2026'}</div>
+      <div style="overflow-x:auto"><table class="dt">
+        <thead><tr>
+          <th>Ref</th><th>${isE?'Proyecto':'Project'}</th><th>${isE?'PO':'PO'}</th>
+          <th>${isE?'Descripción':'Description'}</th>
+          <th style="color:var(--success)" class="num">Dr</th>
+          <th style="color:var(--danger)" class="num">Cr</th>
+          <th>${isE?'Tipo':'Type'}</th><th>Standard_Tag</th>
+        </tr></thead>
+        <tbody>
+        ${PROJECTS.flatMap(p => {
+          const t = projectTotals(p);
+          const pos = PERF_OBL[p.id] || [];
+          return pos.filter(po=>po.pct>0).map((po,i) => {
+            const revRec = po.alloc_amt * po.pct;
+            const billed = p.billings.reduce((s,b)=>s+b.amount,0) * po.alloc_pct;
+            const asset  = Math.max(0, revRec - billed);
+            const liab   = Math.max(0, billed - revRec);
+            const ref = `RCE-${p.id.slice(-3)}-${String(i+1).padStart(2,'0')}`;
+            return asset > 0.5 ? `<tr>
+              <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${ref}A</code></td>
+              <td><span class="badge b-gold" style="font-size:9px">${p.id}</span></td>
+              <td><code style="font-size:9px">${po.id}</code></td>
+              <td style="font-size:11.5px">${isE?po.name_es:po.name_en}</td>
+              <td class="num mono green">${fmt(asset)}</td>
+              <td class="num mono red">—</td>
+              <td><span class="badge b-ok" style="font-size:10px">Unbilled</span></td>
+              <td><span class="badge b-info" style="font-size:10px">BOTH</span></td>
+            </tr>` : liab > 0.5 ? `<tr style="background:var(--warning-light)">
+              <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${ref}B</code></td>
+              <td><span class="badge b-gold" style="font-size:9px">${p.id}</span></td>
+              <td><code style="font-size:9px">${po.id}</code></td>
+              <td style="font-size:11.5px">${isE?po.name_es:po.name_en}</td>
+              <td class="num mono green">—</td>
+              <td class="num mono red">${fmt(liab)}</td>
+              <td><span class="badge b-warn" style="font-size:10px">Overbilled</span></td>
+              <td><span class="badge b-info" style="font-size:10px">BOTH</span></td>
+            </tr>` : '';
+          });
+        }).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+
+  // ── STEP 4: Over/Under Dashboard
+  } else if(revTab === 'step4') {
+    el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${isE?'Paso 4 — Dashboard de Control: Sobre/Sub-Facturación':'Step 4 — Control Dashboard: Over/Under-Billing'}</div>
+        <span class="badge b-gold">${isE?'Q1 2026 — Cierre':'Q1 2026 — Close'}</span>
+      </div>
+
+      <!-- Master control table -->
+      <div style="overflow-x:auto"><table class="dt" style="min-width:900px">
+        <thead>
+          <tr style="background:rgba(11,31,58,.04)">
+            <th colspan="3"></th>
+            <th colspan="2" style="text-align:center;font-size:10px;letter-spacing:1px;color:var(--info);border-left:2px solid rgba(27,79,138,.15);border-right:2px solid rgba(27,79,138,.15)">${isE?'C-to-C CALCULATION':'C-to-C CALCULATION'}</th>
+            <th colspan="2" style="text-align:center;font-size:10px;letter-spacing:1px;color:var(--warning)">${isE?'POSICIÓN CONTABLE':'ACCOUNTING POSITION'}</th>
+            <th colspan="2" style="text-align:center;font-size:10px;letter-spacing:1px;color:var(--stone)">${isE?'BALANCE GENERAL':'BALANCE SHEET'}</th>
+          </tr>
+          <tr>
+            <th>${isE?'Proyecto':'Project'}</th>
+            <th class="num">${isE?'Costos Inc.':'Costs Inc.'}</th>
+            <th class="num">EAC</th>
+            <th class="num" style="border-left:2px solid rgba(27,79,138,.15)">% ${isE?'Avance':'Complete'}</th>
+            <th class="num" style="border-right:2px solid rgba(27,79,138,.15)">${isE?'Ing. Ganado':'Earned Rev.'}</th>
+            <th class="num">${isE?'Facturado':'Billed'}</th>
+            <th class="num">${isE?'Diferencia':'Difference'}</th>
+            <th class="num" style="color:var(--success)">${isE?'Activo Contrato':'Contract Asset'}</th>
+            <th class="num" style="color:var(--warning)">${isE?'Pasivo Contrato':'Contract Liability'}</th>
+          </tr>
+        </thead>
+        <tbody>
+        ${PROJECTS.map(p => {
+          const t = projectTotals(p);
+          const pct = (t.pctComplete*100).toFixed(1);
+          const diff = t.revRecognized - t.totalBilled;
+          return `<tr>
+            <td>
+              <div style="font-weight:600;font-size:13px">${p.name}</div>
+              <div style="font-size:10px;color:var(--stone)">${p.id} · ${isE?'Contrato:':'Contract:'} ${fmt(p.contract)}</div>
+            </td>
+            <td class="num mono">${fmt(t.totalActual)}</td>
+            <td class="num mono">${fmt(t.eac)}</td>
+            <td class="num" style="border-left:2px solid rgba(27,79,138,.1)">
+              <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
+                <div class="prog" style="width:50px"><div class="prog-fill" style="width:${pct}%;background:${parseFloat(pct)>85?'var(--success)':parseFloat(pct)>50?'var(--gold)':'var(--info)'}"></div></div>
+                <span class="mono" style="font-size:12px;font-weight:700">${pct}%</span>
+              </div>
+            </td>
+            <td class="num mono bold green" style="border-right:2px solid rgba(27,79,138,.1)">${fmt(t.revRecognized)}</td>
+            <td class="num mono">${fmt(t.totalBilled)}</td>
+            <td class="num mono bold ${diff>=0?'green':'red'}">${diff>=0?'+':''} ${fmt(diff)}</td>
+            <td class="num mono bold" style="color:var(--success)">${t.contractAsset>0?fmt(t.contractAsset):'—'}</td>
+            <td class="num mono bold" style="color:var(--warning)">${t.contractLiability>0?fmt(t.contractLiability):'—'}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--navy);color:#fff;font-weight:700">
+            <td>${isE?'TOTALES':'TOTALS'}</td>
+            <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(PROJECTS.reduce((s,p)=>s+projectTotals(p).totalActual,0))}</td>
+            <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(PROJECTS.reduce((s,p)=>s+projectTotals(p).eac,0))}</td>
+            <td></td>
+            <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(PROJECTS.reduce((s,p)=>s+projectTotals(p).revRecognized,0))}</td>
+            <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(PROJECTS.reduce((s,p)=>s+projectTotals(p).totalBilled,0))}</td>
+            <td class="num" style="font-family:var(--font-mono);color:${PROJECTS.reduce((s,p)=>s+(projectTotals(p).revRecognized-projectTotals(p).totalBilled),0)>=0?'#a8f0c6':'#f0a8a8'}">${fmt(PROJECTS.reduce((s,p)=>s+(projectTotals(p).revRecognized-projectTotals(p).totalBilled),0))}</td>
+            <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(PROJECTS.reduce((s,p)=>s+projectTotals(p).contractAsset,0))}</td>
+            <td class="num" style="font-family:var(--font-mono);color:var(--gold-light)">${fmt(PROJECTS.reduce((s,p)=>s+projectTotals(p).contractLiability,0))}</td>
+          </tr>
+        </tfoot>
+      </table></div>
+
+      <!-- Visual status pills -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px">
+      ${PROJECTS.map(p=>{
+        const t=projectTotals(p);
+        const isOver = t.contractLiability > 0;
+        const isUnder = t.contractAsset > 0;
+        return `<div style="padding:14px;border-radius:var(--radius-lg);border:2px solid var(--${isOver?'warning':isUnder?'success':'stone-light'});background:var(--${isOver?'warning-light':isUnder?'success-light':'stone-pale'})">
+          <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:8px">${p.name}</div>
+          <div style="font-size:22px;font-weight:700;font-family:var(--font-mono);color:var(--${isOver?'warning':isUnder?'success':'stone'});margin-bottom:4px">
+            ${isOver?'+'+fmt(t.contractLiability):isUnder?fmt(t.contractAsset):'—'}
+          </div>
+          <div style="font-size:11px;color:var(--${isOver?'warning':isUnder?'success':'stone'});font-weight:600">
+            ${isOver?(isE?'SOBRE-FACTURACIÓN':'OVER-BILLED'):isUnder?(isE?'SUB-FACTURACIÓN':'UNDER-BILLED'):(isE?'BALANCEADO':'BALANCED')}
+          </div>
+          <div style="font-size:10px;color:var(--stone);margin-top:4px">
+            ${isOver?(isE?'Pasivo en Balance — diferir ingreso hasta mayor avance':'Balance Sheet Liability — defer revenue until more progress')
+                    :(isE?'Activo en Balance — reconocer ingreso devengado':'Balance Sheet Asset — recognize earned revenue')}
+          </div>
+          <span class="badge ${isOver?'b-warn':isUnder?'b-ok':'b-neu'}" style="font-size:10px;margin-top:8px;display:inline-block">
+            ${isE?'Cta:':'Acct:'} ${isOver?'2-01-02-001':'1-01-03-001'}
+          </span>
+        </div>`;
+      }).join('')}
+      </div>
+    </div>`;
+
+  // ── STEP 5: GAAP vs IFRS Differences
+  } else if(revTab === 'step5') {
+    el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${isE?'Paso 5 — Diferencias US GAAP vs NIIF en Reconocimiento de Ingresos':'Step 5 — US GAAP vs IFRS Differences in Revenue Recognition'}</div>
+        <span class="badge b-gold">${isE?'Puntos de Divergencia':'Divergence Points'}</span>
+      </div>
+
+      <!-- Comparison table -->
+      <div style="overflow-x:auto"><table class="dt">
+        <thead><tr>
+          <th style="width:25%">${isE?'Tema':'Topic'}</th>
+          <th style="width:35%;color:var(--info)">🇺🇸 US GAAP (ASC 606)</th>
+          <th style="width:35%;color:var(--success)">🌐 IFRS (NIIF 15)</th>
+          <th style="width:5%">${isE?'Impacto':'Impact'}</th>
+        </tr></thead>
+        <tbody>
+        ${[
+          {
+            topic: isE?'Medida de Progreso — Métodos Permitidos':'Progress Measure — Permitted Methods',
+            gaap: isE?'Permite: (1) Costo a Costo, (2) Unidades Producidas, (3) Unidades Entregadas. Las unidades entregadas son explícitamente permitidas en construcción repetitiva (BC258).':'Allows: (1) Cost-to-Cost, (2) Units produced, (3) Units delivered. Units-delivered explicitly permitted for repetitive construction (BC258).',
+            ifrs: isE?'Permite: (1) Costo a Costo (preferido), (2) Encuestas de avance, (3) Hitos. Las unidades entregadas NO están explícitamente listadas — mayor juicio requerido.':'Allows: (1) Cost-to-Cost (preferred), (2) Progress surveys, (3) Milestones. Units-delivered NOT explicitly listed — more judgment required.',
+            impact: 'medium'
+          },
+          {
+            topic: isE?'Resultado No Medible Confiablemente':'Outcome Not Reliably Measurable',
+            gaap: isE?'Si el resultado no puede estimarse, se reconocen ingresos = costos recuperables (cero margen). Cesa el reconocimiento de utilidad.':'If outcome cannot be estimated, revenue = recoverable costs (zero profit). Profit recognition ceases.',
+            ifrs: isE?'Más estricto: si el resultado no puede medirse confiablemente, el ingreso se reconoce SOLO hasta el monto de costos que sea probable de recuperar. El exceso va directamente a COGS sin ingreso.':'More restrictive: if outcome not reliably measurable, revenue recognized ONLY to extent of costs expected to be recovered. Excess goes directly to COGS with no revenue.',
+            impact: 'high'
+          },
+          {
+            topic: isE?'Licencias de Propiedad Intelectual':'Intellectual Property Licenses',
+            gaap: isE?'Distingue entre licencias "derecho de acceso" (a lo largo del tiempo) y "derecho de uso" (punto en el tiempo). Guía específica ASC 606-10-55-58 a 65.':'Distinguishes "right of access" (over time) vs "right of use" (point-in-time) licenses. Specific guidance ASC 606-10-55-58 to 65.',
+            ifrs: isE?'Misma distinción pero con ligeras diferencias en la aplicación. IFRS 15.B58-B62 usa criterios adicionales para licencias con uso "simbólico" vs "funcional".':'Same distinction but slightly different application. IFRS 15.B58-B62 uses additional criteria for "symbolic" vs "functional" IP.',
+            impact: 'low'
+          },
+          {
+            topic: isE?'Costos de Obtener / Cumplir el Contrato':'Costs to Obtain / Fulfil Contract',
+            gaap: isE?'Expediente práctico: costos con amortización ≤ 1 año pueden deducirse inmediatamente (ASC 606-10-10-4).':'Practical expedient: costs with amortization ≤ 1 year may be expensed immediately (ASC 606-10-10-4).',
+            ifrs: isE?'Mismo expediente (IFRS 15.94). Sin embargo, la interpretación de "1 año" puede diferir entre entidades bajo IFRS en algunos países.':'Same expedient (IFRS 15.94). However, interpretation of "1 year" may differ across IFRS entities in some jurisdictions.',
+            impact: 'low'
+          },
+          {
+            topic: isE?'Obligaciones de Desempeño — Bienes y Servicios':'PO Identification — Goods & Services',
+            gaap: isE?'Guía adicional para contratos con minoristas y arranques de franquicia (SAB Topics). Criterio "distinto en el contexto del contrato" con más ejemplos de implementación.':'Additional guidance for retail and franchise arrangements (SAB Topics). "Distinct within contract context" with more implementation examples.',
+            ifrs: isE?'Aplicación más principista. El juicio profesional es más determinante que las reglas. IFRIC puede emitir interpretaciones adicionales.':'More principles-based application. Professional judgment is more determinative than rules. IFRIC may issue additional interpretations.',
+            impact: 'medium'
+          },
+          {
+            topic: isE?'Consideración Variable (Incentivos, Penalidades)':'Variable Consideration (Incentives, Penalties)',
+            gaap: isE?'Usa el método de "monto más probable" o "valor esperado". Restricción: incluir solo si es altamente probable que no se revierta significativamente.':'Uses "most likely amount" or "expected value" methods. Constraint: include only if highly probable will not be significantly reversed.',
+            ifrs: isE?'Mismo marco. IFRS usa "highly probable" (≈ 90%+ probabilidad), alineado con GAAP. La restricción de reconocimiento es esencialmente igual.':'Same framework. IFRS uses "highly probable" (≈ 90%+ probability), aligned with GAAP. Recognition constraint is essentially the same.',
+            impact: 'low'
+          },
+          {
+            topic: isE?'Presentación: Activo vs Pasivo de Contrato':'Presentation: Contract Asset vs Liability',
+            gaap: isE?'ASC 606: "derecho incondicional = AR". Si hay condición distinta de tiempo = Activo de Contrato. Puede compensarse en el balance si es del mismo contrato.':'ASC 606: "unconditional right = AR". Condition other than time = Contract Asset. May be netted on balance sheet if same contract.',
+            ifrs: isE?'IFRS 15: misma lógica. No permite compensar activo/pasivo de contratos distintos. Mayor énfasis en la distinción AR vs Activo de Contrato.':'IFRS 15: same logic. Does not permit netting across different contracts. Greater emphasis on AR vs Contract Asset distinction.',
+            impact: 'medium'
+          },
+        ].map(r=>`<tr>
+          <td style="font-weight:600;font-size:12.5px">${r.topic}</td>
+          <td style="font-size:11px;color:var(--navy);background:rgba(27,79,138,.02);border-left:3px solid var(--info)">${r.gaap}</td>
+          <td style="font-size:11px;color:var(--navy);background:rgba(26,122,74,.02);border-left:3px solid var(--success)">${r.ifrs}</td>
+          <td><span class="badge ${r.impact==='high'?'b-no':r.impact==='medium'?'b-warn':'b-neu'}" style="font-size:9px">${r.impact.toUpperCase()}</span></td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>
+
+      <!-- Divergence Alert for PRJ-002 -->
+      <div class="alert a-warn mt2" style="font-size:11px">
+        ⚑ ${isE
+          ? 'Harbor View Tower (PRJ-002, PO-002-C): El método de "Unidades por Piso" es aceptable bajo GAAP (ASC 606 BC258) para ciclos repetitivos de losa. Bajo NIIF 15, el mismo método requiere demostrar que cada piso es una unidad de producción separable y que el control se transfiere progresivamente — mayor documentación requerida. 21 Stones genera automáticamente la nota explicativa diferenciada para ambos libros.'
+          : 'Harbor View Tower (PRJ-002, PO-002-C): "Units-per-Floor" method acceptable under GAAP (ASC 606 BC258) for repetitive slab cycles. Under IFRS 15, same method requires demonstrating each floor is a separable production unit with progressive control transfer — greater documentation required. 21 Stones auto-generates the differentiated explanatory note for both ledgers.'}
+      </div>
+    </div>`;
+
+  // ── REVENUE SIMULATOR: Interactive C-to-C scenario tool
+  } else if(revTab === 'simulator') {
+    el.innerHTML = `
+    <div style="font-size:13px;font-weight:600;color:var(--navy);margin-bottom:4px">${isE?'Simulador Interactivo — Motor de Reconocimiento ASC 606 / NIIF 15':'Interactive Simulator — ASC 606 / IFRS 15 Recognition Engine'}</div>
+    <div style="font-size:11px;color:var(--stone);margin-bottom:14px">${isE?'Ajuste cualquier variable y observe en tiempo real cómo cambian los asientos, el estado contable y la posición del contrato.':'Adjust any variable and watch in real time how entries, accounting status and contract position change.'}</div>
+
+    <!-- INPUT PANEL -->
+    <div style="background:var(--stone-pale);border-radius:var(--radius-lg);padding:16px;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px">
+        <div>
+          <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--stone);margin-bottom:5px">${isE?'Precio de Contrato':'Contract Price'}</div>
+          <input type="number" id="rsim-contract" value="5000000" min="100000" step="50000"
+            oninput="rerunRevSim()"
+            style="width:100%;border:1px solid var(--stone-light);border-radius:var(--radius);padding:8px 10px;font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--navy);background:#fff;outline:none">
+        </div>
+        <div>
+          <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--stone);margin-bottom:5px">EAC ${isE?'(Costo Total Estimado)':'(Estimated Total Cost)'}</div>
+          <input type="number" id="rsim-eac" value="3800000" min="100000" step="50000"
+            oninput="rerunRevSim()"
+            style="width:100%;border:1px solid var(--stone-light);border-radius:var(--radius);padding:8px 10px;font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--navy);background:#fff;outline:none">
+        </div>
+        <div>
+          <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--stone);margin-bottom:5px">${isE?'Costos Incurridos a la Fecha':'Costs Incurred to Date'}</div>
+          <input type="number" id="rsim-costs" value="1900000" min="0" step="50000"
+            oninput="rerunRevSim()"
+            style="width:100%;border:1px solid var(--stone-light);border-radius:var(--radius);padding:8px 10px;font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--navy);background:#fff;outline:none">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div>
+          <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--stone);margin-bottom:5px">${isE?'Facturado a la Fecha':'Billed to Date'}</div>
+          <input type="number" id="rsim-billed" value="2200000" min="0" step="50000"
+            oninput="rerunRevSim()"
+            style="width:100%;border:1px solid var(--stone-light);border-radius:var(--radius);padding:8px 10px;font-family:var(--font-mono);font-size:14px;color:var(--navy);background:#fff;outline:none">
+        </div>
+        <div>
+          <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--stone);margin-bottom:5px">${isE?'Norma Contable':'Accounting Standard'}</div>
+          <select id="rsim-std" onchange="rerunRevSim()"
+            style="width:100%;border:1px solid var(--stone-light);border-radius:var(--radius);padding:8px 10px;font-family:var(--font-body);font-size:13px;color:var(--navy);background:#fff;outline:none">
+            <option value="both">${isE?'Dual — GAAP + IFRS':'Dual — GAAP + IFRS'}</option>
+            <option value="gaap">US GAAP (ASC 606)</option>
+            <option value="ifrs">IFRS (NIIF 15)</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--stone);margin-bottom:5px">${isE?'¿Resultado medible?':'Outcome reliably measurable?'}</div>
+          <select id="rsim-reliable" onchange="rerunRevSim()"
+            style="width:100%;border:1px solid var(--stone-light);border-radius:var(--radius);padding:8px 10px;font-family:var(--font-body);font-size:13px;color:var(--navy);background:#fff;outline:none">
+            <option value="yes">${isE?'Sí — Medición confiable':'Yes — Reliably measurable'}</option>
+            <option value="no">${isE?'No — Resultado incierto (IFRS más restrictivo)':'No — Uncertain outcome (IFRS more restrictive)'}</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- OUTPUT: Updated by rerunRevSim() -->
+    <div id="rsim-output"></div>`;
+
+    setTimeout(()=>rerunRevSim(), 50);
+  }
+}
+
+function modalCloseRevEngine(){const isE=es();return`
+<h3>${isE?'Cierre de Período — Motor de Ingresos':'Period Close — Revenue Engine'}</h3>
+<div class="alert a-warn" style="margin-bottom:14px;font-size:11px">
+  ${isE?'El cierre recalculará el % de avance de todos los proyectos activos y generará automáticamente los asientos de ajuste (Activo/Pasivo de Contrato).':'Close will recalculate completion % for all active projects and auto-generate adjustment entries (Contract Asset/Liability).'}
+</div>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Período':'Period'}</label><input type="month" value="2026-03"></div>
+    <div class="mf-field"><label>${isE?'Norma':'Standard'}</label><select><option>Both (Dual)</option><option>US GAAP</option><option>IFRS only</option></select></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Proyectos a Cerrar':'Projects to Close'}</label>
+    <select multiple style="height:80px">${PROJECTS.map(p=>`<option value="${p.id}" selected>${p.id} — ${p.name}</option>`).join('')}</select></div>
+  <div class="mf-field full"><label><input type="checkbox" checked> ${isE?'Generar asientos de ajuste automáticamente':'Auto-generate adjustment entries'}</label></div>
+  <div class="mf-field full"><label><input type="checkbox" checked> ${isE?'Alertar al socio por variaciones de EAC > 5%':'Alert Partner on EAC variances > 5%'}</label></div>
+</div>
+<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-gold" onclick="closeModal()">${isE?'Ejecutar Cierre':'Run Close'}</button></div>`}
+
+function modalEACRevision(){const isE=es();return`
+<h3>${isE?'Revisión de EAC — Estimate at Completion':'EAC Revision — Estimate at Completion'}</h3>
+<div class="alert a-warn" style="margin-bottom:14px;font-size:11px">
+  ${isE?'Una revisión del EAC cambia el % de avance y puede generar un ajuste acumulado de ingresos en el período corriente.':'An EAC revision changes the completion % and may trigger a cumulative revenue catch-up in the current period.'}
+</div>
+<div class="mf">
+  <div class="mf-field full"><label>${isE?'Proyecto':'Project'}</label>
+    <select>${PROJECTS.map(p=>`<option>${p.id} — ${p.name}</option>`).join('')}</select></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'EAC Actual':'Current EAC'}</label><input type="number" placeholder="${fmt(4200000)}"></div>
+    <div class="mf-field"><label>${isE?'EAC Revisado':'Revised EAC'}</label><input type="number" placeholder="${fmt(4350000)}"></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Razón de Revisión':'Reason for Revision'}</label>
+    <select><option>${isE?'Órdenes de Cambio Aprobadas':'Approved Change Orders'}</option><option>${isE?'Condiciones del Suelo / Imprevisto':'Soil Conditions / Unforeseen'}</option><option>${isE?'Aumento de Materiales':'Material Price Escalation'}</option><option>${isE?'Revisión de Cronograma':'Schedule Revision'}</option></select></div>
+  <div class="mf-field full"><label>${isE?'Notas':'Notes'}</label><input type="text" placeholder="${isE?'Descripción del cambio...':'Description of change...'}"></div>
+</div>
+<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-navy" onclick="closeModal()">${isE?'Aplicar Revisión':'Apply Revision'}</button></div>`}
+
+// ══════════════════════════════════════════════════════
+// REVENUE SIMULATOR ENGINE — Interactive C-to-C
+// ══════════════════════════════════════════════════════
+function rerunRevSim() {
+  const isE = S.lang === 'es';
+  const out = document.getElementById('rsim-output');
+  if (!out) return;
+
+  const contract  = parseFloat(document.getElementById('rsim-contract')?.value) || 5000000;
+  const eac       = parseFloat(document.getElementById('rsim-eac')?.value)      || 3800000;
+  const costs     = parseFloat(document.getElementById('rsim-costs')?.value)    || 1900000;
+  const billed    = parseFloat(document.getElementById('rsim-billed')?.value)   || 2200000;
+  const std       = document.getElementById('rsim-std')?.value                  || 'both';
+  const reliable  = document.getElementById('rsim-reliable')?.value             || 'yes';
+
+  // Core C-to-C calculation
+  const pct         = eac > 0 ? Math.min(costs / eac, 1.0) : 0;
+  const isLoss      = eac > contract;
+  const lossAmt     = isLoss ? eac - contract : 0;
+
+  // GAAP vs IFRS treatment for unreliable outcome
+  let revGAAP, revIFRS;
+  if (reliable === 'no') {
+    // GAAP: recognize revenue = recoverable costs (zero margin)
+    revGAAP = costs; // revenue = costs incurred (zero profit method)
+    // IFRS: more restrictive — only costs expected to be recovered
+    const recoverable = Math.min(costs, contract * pct); // subset of costs
+    revIFRS = recoverable;
+  } else {
+    revGAAP = contract * pct;
+    revIFRS = contract * pct;
+  }
+
+  const revRec      = std === 'ifrs' ? revIFRS : revGAAP;
+  const cogsNormal  = costs; // actual costs incurred = COGS for WIP release
+  const asset       = Math.max(0, revRec - billed);
+  const liab        = Math.max(0, billed - revRec);
+  const grossProfit = revRec - cogsNormal;
+  const grossMargin = revRec > 0 ? (grossProfit / revRec) : 0;
+  const eacMargin   = contract > 0 ? (contract - eac) / contract : 0;
+
+  const jeRow = (dr, acct, label, amt, color, note) => `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07)">
+      <div>
+        <span style="font-size:11px;font-weight:700;color:${dr?'var(--success-light)':'var(--gold)'};display:inline-block;min-width:18px">${dr?'Dr':'Cr'}</span>
+        <code style="font-size:10px;background:rgba(255,255,255,.1);padding:2px 6px;border-radius:3px;color:rgba(255,255,255,.65)">${acct}</code>
+        <span style="font-size:11px;color:rgba(255,255,255,.5);margin-left:6px">${label}</span>
+        ${note?`<div style="font-size:10px;color:rgba(255,255,255,.3);margin-left:24px;margin-top:2px">${note}</div>`:''}
+      </div>
+      <span style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:${color};white-space:nowrap;margin-left:8px">${fmt(amt)}</span>
+    </div>`;
+
+  const stat = (label, value, color, note) => `
+    <div style="background:rgba(255,255,255,.05);border-radius:var(--radius);padding:10px;text-align:center">
+      <div style="font-size:9px;color:rgba(255,255,255,.35);letter-spacing:.5px;margin-bottom:4px">${label}</div>
+      <div style="font-family:var(--font-mono);font-size:16px;font-weight:700;color:var(--${color})">${value}</div>
+      ${note?`<div style="font-size:9px;color:rgba(255,255,255,.3);margin-top:3px">${note}</div>`:''}
+    </div>`;
+
+  // Determine if GAAP and IFRS diverge
+  const diverges = Math.abs(revGAAP - revIFRS) > 0.5;
+
+  out.innerHTML = `
+  <!-- FORMULA PANEL -->
+  <div style="background:var(--navy);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px">
+    <div style="font-size:10px;letter-spacing:1.5px;color:rgba(255,255,255,.35);text-transform:uppercase;margin-bottom:12px">${isE?'CÁLCULO C-a-C EN TIEMPO REAL':'REAL-TIME C-to-C CALCULATION'}</div>
+    <div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;gap:6px;align-items:center;background:rgba(0,0,0,.25);border-radius:var(--radius);padding:12px;margin-bottom:14px">
+      ${[
+        [isE?'Costos Incurridos':'Costs Incurred', fmt(costs), 'gold'],
+        ['÷', null, null],
+        [isE?'EAC (Costo Total Est.)':'EAC (Est. Total Cost)', fmt(eac), 'stone'],
+        ['=', null, null],
+        [isE?'% Avance (C-a-C)':'% Complete (C-to-C)', (pct*100).toFixed(2)+'%', 'gold'],
+        ['×', null, null],
+        [isE?'Precio de Contrato':'Contract Price', fmt(contract), 'stone'],
+      ].map(([l,v,c])=>v===null
+        ? `<div style="text-align:center;font-size:22px;color:rgba(255,255,255,.2)">${l}</div>`
+        : `<div style="text-align:center"><div style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:4px">${l}</div>
+           <div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--${c})">${v}</div></div>`
+      ).join('')}
+    </div>
+
+    <!-- Key metrics -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">
+      ${stat(isE?'Ing. Reconocido':'Rev. Recognized', fmt(revRec), 'success-light', std==='both'?'GAAP=IFRS':'—')}
+      ${stat(isE?'Facturado':'Billed', fmt(billed), 'stone', isE?'AIA emitido':'AIA issued')}
+      ${stat(isE?'Posición':'Position', asset>0?'+'+fmt(asset):liab>0?'-'+fmt(liab):'±0', asset>0?'success-light':liab>0?'gold':'stone', asset>0?(isE?'Activo':'Asset'):liab>0?(isE?'Pasivo':'Liability'):(isE?'Balanceado':'Balanced'))}
+      ${stat(isE?'Margen Bruto':'Gross Margin', (grossMargin*100).toFixed(1)+'%', grossMargin>0.15?'success-light':grossMargin>0?'gold':'danger', isE?'A la fecha':'To date')}
+      ${stat(isE?'Margen EAC':'EAC Margin', (eacMargin*100).toFixed(1)+'%', eacMargin>0.15?'success-light':eacMargin>0?'gold':'danger', isE?'Proyectado final':'Projected final')}
+      ${stat('% Avance', (pct*100).toFixed(1)+'%', pct>0.8?'success-light':pct>0.5?'gold':'info', isE?'C-a-C':'C-to-C')}
+    </div>
+  </div>
+
+  <!-- VALIDATION ALERTS -->
+  ${isLoss ? `
+  <div class="alert a-danger" style="margin-bottom:12px">
+    🚨 ${isE?`PÉRDIDA PREVISTA DETECTADA: EAC ${fmt(eac)} supera el precio del contrato ${fmt(contract)} en ${fmt(lossAmt)}. Se debe reconocer la pérdida completa INMEDIATAMENTE. El motor generará automáticamente el asiento de provisión por pérdida.`:
+    `FORESEEABLE LOSS DETECTED: EAC ${fmt(eac)} exceeds contract price ${fmt(contract)} by ${fmt(lossAmt)}. The full loss must be recognized IMMEDIATELY. The engine will auto-generate the loss provision entry.`}
+  </div>` : ''}
+  ${pct > 1.0 ? `<div class="alert a-danger" style="margin-bottom:12px">⚠ ${isE?`Costos incurridos (${fmt(costs)}) SUPERAN el EAC (${fmt(eac)}). Revisar EAC inmediatamente.`:`Costs incurred (${fmt(costs)}) EXCEED EAC (${fmt(eac)}). Revise EAC immediately.`}</div>` : ''}
+  ${billed > contract * 0.9 && pct < 0.85 ? `<div class="alert a-warn" style="margin-bottom:12px">⚠ ${isE?`Facturación alta (${(billed/contract*100).toFixed(0)}% del contrato) con avance bajo (${(pct*100).toFixed(0)}%). Riesgo de reversión de ingresos.`:`High billing (${(billed/contract*100).toFixed(0)}% of contract) with low progress (${(pct*100).toFixed(0)}%). Revenue reversal risk.`}</div>` : ''}
+  ${reliable === 'no' && diverges ? `<div class="alert a-warn" style="margin-bottom:12px">⚑ ${isE?`DIVERGENCIA GAAP vs IFRS ACTIVA: Resultado no medible confiablemente. GAAP reconoce ${fmt(revGAAP)} (costos recuperables). IFRS reconoce solo ${fmt(revIFRS)} (monto más conservador). El motor mantiene ambos libros separados.`:`ACTIVE GAAP vs IFRS DIVERGENCE: Outcome not reliably measurable. GAAP recognizes ${fmt(revGAAP)} (recoverable costs). IFRS recognizes only ${fmt(revIFRS)} (more conservative). Engine maintains both ledgers separately.`}</div>` : ''}
+
+  <!-- GENERATED JOURNAL ENTRIES -->
+  <div style="display:grid;grid-template-columns:${diverges&&std==='both'?'1fr 1fr':'1fr'};gap:12px;margin-bottom:14px">
+
+    <!-- GAAP Entry (or shared if same) -->
+    <div style="background:var(--navy-mid);border-radius:var(--radius-lg);padding:14px">
+      <div style="font-size:10px;letter-spacing:1px;color:rgba(255,255,255,.4);text-transform:uppercase;margin-bottom:10px">
+        ${diverges&&std==='both'?'🇺🇸 US GAAP — ASC 606':'ASC 606 / IFRS 15'}
+      </div>
+      ${asset > 0.5 ? `
+        ${jeRow(true, '1-01-03-001', isE?'Activo de Contrato — Ing. No Facturado':'Contract Asset — Unbilled Revenue', asset, 'var(--success-light)', isE?'Balance General — Activo Circulante':'Balance Sheet — Current Asset')}
+        ${jeRow(false,'4-01-01-001', isE?'Ingresos Construcción (ASC 606)':'Construction Revenue (ASC 606)', revGAAP, 'var(--gold)', isE?`P&L — ${(pct*100).toFixed(1)}% del contrato devengado`:`P&L — ${(pct*100).toFixed(1)}% of contract earned`)}
+        ${jeRow(true, '5-01-03-001', isE?'COGS — Costos de Obra':'COGS — Construction Costs', cogsNormal, 'var(--danger)', isE?'P&L — WIP reclasificado a gasto':'P&L — WIP reclassified to expense')}
+        ${jeRow(false,'1-01-03-001', isE?'WIP (Activo) — reduce':'WIP (Asset) — reduce', cogsNormal, 'var(--gold)', '')}
+      ` : liab > 0.5 ? `
+        ${jeRow(true, '4-01-01-001', isE?'Ingresos Construcción — AJUSTE':'Construction Revenue — ADJUSTMENT', liab, 'var(--danger)', isE?'Reversar exceso facturado':'Reverse overbilled amount')}
+        ${jeRow(false,'2-01-02-001', isE?'Pasivo de Contrato — Ing. Diferido':'Contract Liability — Deferred Revenue', liab, 'var(--gold)', isE?'Balance General — Pasivo Circulante':'Balance Sheet — Current Liability')}
+      ` : `<div style="font-size:12px;color:rgba(255,255,255,.4);padding:12px;text-align:center">${isE?'✓ Balanceado — sin ajuste requerido':'✓ Balanced — no adjustment needed'}</div>`}
+      ${isLoss ? `
+        ${jeRow(true, '5-01-00-001', isE?'COGS — Provisión Pérdida Prevista':'COGS — Foreseeable Loss Provision', lossAmt, 'var(--danger)', isE?'ASC 605-35: reconocimiento inmediato':'ASC 605-35: immediate recognition')}
+        ${jeRow(false,'2-01-03-004', isE?'Provisión Pérdida de Contrato (Pasivo)':'Contract Loss Provision (Liability)', lossAmt, 'var(--gold)', isE?'IAS 37 — Onerous Contract Provision':'IAS 37 — Onerous Contract Provision')}
+      ` : ''}
+    </div>
+
+    <!-- IFRS Entry (only shown when diverges and dual mode) -->
+    ${diverges && std==='both' ? `
+    <div style="background:var(--navy-light);border-radius:var(--radius-lg);padding:14px;border:2px solid var(--gold)">
+      <div style="font-size:10px;letter-spacing:1px;color:var(--gold);text-transform:uppercase;margin-bottom:10px">
+        🌐 IFRS (NIIF 15) — ${isE?'CAPA DE AJUSTE':'ADJUSTMENT LAYER'}
+      </div>
+      ${jeRow(false,'4-01-01-001', isE?'Ingresos IFRS — Ajuste Capa':'IFRS Revenue — Layer Adjustment', revIFRS, 'var(--success-light)', isE?`NIIF 15.45: solo costos recuperables si resultado incierto`:`IFRS 15.45: only recoverable costs if outcome uncertain`)}
+      <div style="margin-top:10px;padding:8px;background:rgba(255,255,255,.06);border-radius:var(--radius);font-size:10px;color:rgba(255,255,255,.5)">
+        ${isE?`Diferencia GAAP vs IFRS: ${fmt(Math.abs(revGAAP-revIFRS))} — ${revGAAP>revIFRS?'GAAP reconoce MÁS ingresos':'IFRS reconoce MÁS ingresos'} en este período.`:`GAAP vs IFRS difference: ${fmt(Math.abs(revGAAP-revIFRS))} — ${revGAAP>revIFRS?'GAAP recognizes MORE revenue':'IFRS recognizes MORE revenue'} this period.`}
+      </div>
+    </div>` : ''}
+  </div>
+
+  <!-- PERIOD P&L IMPACT SUMMARY -->
+  <div class="card">
+    <div class="card-header"><div class="card-title">${isE?'Impacto en Estado de Resultados del Período':'Period P&L Impact'}</div></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+    ${[
+      [isE?'Ingresos del Período':'Period Revenue', fmt(revRec), revRec>0?'success':'stone'],
+      [isE?'COGS del Período':'Period COGS', fmt(cogsNormal), 'danger'],
+      [isE?'Utilidad Bruta':'Gross Profit', fmt(grossProfit), grossProfit>0?'success':'danger'],
+      [isE?'% Margen Bruto':'Gross Margin %', (grossMargin*100).toFixed(1)+'%', grossMargin>0.15?'success':grossMargin>0?'warning':'danger'],
+    ].map(([l,v,c])=>`
+    <div style="background:var(--stone-pale);border-radius:var(--radius);padding:12px;text-align:center;border-top:3px solid var(--${c})">
+      <div style="font-size:10px;color:var(--stone);margin-bottom:6px">${l}</div>
+      <div style="font-family:var(--font-mono);font-size:17px;font-weight:700;color:var(--${c})">${v}</div>
+    </div>`).join('')}
+    </div>
+  </div>`;
 }
 
 // ══════════════════════════════════════════════════════
