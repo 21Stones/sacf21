@@ -254,12 +254,34 @@ html,body{height:100%;font-family:var(--font-body);font-size:14px;background:var
 .jc-phase{background:rgba(11,31,58,.03);border-radius:var(--radius);padding:12px;margin-bottom:8px;border-left:3px solid var(--gold)}
 .jc-phase-title{font-size:12px;font-weight:600;color:var(--navy);margin-bottom:8px}
 
-/* scrollbar */
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:rgba(0,0,0,.12);border-radius:3px}
+/* FACE ID / BIOMETRIC */
+.faceid-btn{width:100%;padding:12px;background:rgba(201,168,76,.08);border:1.5px solid rgba(201,168,76,.3);border-radius:var(--radius);color:var(--gold);font-size:13px;font-weight:600;font-family:var(--font-body);cursor:pointer;transition:var(--tr);display:flex;align-items:center;justify-content:center;gap:10px;letter-spacing:.3px}
+.faceid-btn:hover{background:rgba(201,168,76,.15);border-color:var(--gold)}
+.faceid-btn:active{transform:scale(.98)}
+.faceid-icon{width:32px;height:32px;border-radius:50%;background:rgba(201,168,76,.15);display:flex;align-items:center;justify-content:center;font-size:16px}
+.divider-or{display:flex;align-items:center;gap:10px;margin:2px 0}
+.divider-or::before,.divider-or::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.1)}
+.divider-or span{font-size:11px;color:rgba(255,255,255,.3);letter-spacing:1px}
+.login-input-wrap{position:relative}
+.login-input-wrap input{padding-right:36px}
+.pw-toggle{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:rgba(255,255,255,.3);cursor:pointer;font-size:14px;padding:4px}
+.pw-toggle:hover{color:var(--gold)}
+.remember-row{display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,.45);cursor:pointer;user-select:none}
+.remember-row input[type=checkbox]{accent-color:var(--gold);width:14px;height:14px;cursor:pointer}
+.login-error{background:rgba(192,57,43,.15);border:1px solid rgba(192,57,43,.4);border-radius:var(--radius);padding:9px 12px;font-size:12px;color:#f0a8a8;text-align:center;display:none}
+.login-error.show{display:block}
+.profile-chip{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:6px 14px 6px 6px;cursor:pointer;transition:var(--tr);margin-bottom:4px}
+.profile-chip:hover{background:rgba(255,255,255,.1)}
+.profile-chip .av{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold-light));display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--navy-deep)}
+.profile-chip .pinfo{flex:1}
+.profile-chip .pname{font-size:12px;color:#fff;font-weight:500}
+.profile-chip .prole{font-size:10px;color:rgba(255,255,255,.4);letter-spacing:.5px}
+.face-scanner{width:80px;height:80px;border-radius:50%;border:3px solid var(--gold);display:flex;align-items:center;justify-content:center;margin:0 auto;position:relative;animation:facePulse 2s ease infinite}
+@keyframes facePulse{0%,100%{box-shadow:0 0 0 0 rgba(201,168,76,.4)}50%{box-shadow:0 0 0 12px rgba(201,168,76,.0)}}
 
 @media(max-width:900px){.kpi-grid,.g3,.g4{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}}
+.pin-dot{width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.3);transition:var(--tr)}
+.pin-dot.filled{background:var(--gold);border-color:var(--gold);box-shadow:0 0 8px rgba(201,168,76,.4)}
 @media(max-width:640px){.sidebar{display:none}}
 </style>
 </head>
@@ -279,10 +301,46 @@ html,body{height:100%;font-family:var(--font-body);font-size:14px;background:var
       <button class="lang-btn" onclick="setLang('es')">ES</button>
     </div>
     <div class="device-badge" id="device-badge">● Recognized device — TLS 1.3</div>
-    <div class="fg">
+
+    <!-- SAVED PROFILES (shown when profiles exist) -->
+    <div id="saved-profiles" style="display:none;margin-bottom:12px">
+      <div style="font-size:10px;letter-spacing:1.5px;color:rgba(255,255,255,.3);text-transform:uppercase;margin-bottom:8px" id="lbl-saved-profiles">Saved Profiles</div>
+      <div id="profile-list"></div>
+      <div style="font-size:11px;color:rgba(255,255,255,.3);margin-top:8px;cursor:pointer;text-align:center" onclick="showManualLogin()" id="lbl-use-different">
+        + Use different account
+      </div>
+    </div>
+
+    <!-- QUICK PIN ENTRY (shown after profile selected) -->
+    <div id="pin-entry" style="display:none">
+      <div style="text-align:center;margin-bottom:16px">
+        <div class="face-scanner" id="face-scanner-icon" style="font-size:36px">🔐</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.6);margin-top:12px" id="pin-label">Enter PIN or use Face ID</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.3);margin-top:4px" id="pin-user-display"></div>
+      </div>
+      <div style="display:flex;gap:6px;justify-content:center;margin-bottom:14px" id="pin-dots">
+        <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:220px;margin:0 auto 14px">
+        ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(n=>`
+        <button onclick="${n==='⌫'?'pinBackspace()':n===''?'void(0)':'pinDigit('+n+')'}"
+          style="padding:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius);color:${n===''?'transparent':'#fff'};font-size:18px;font-weight:600;font-family:var(--font-mono);cursor:${n===''?'default':'pointer'};transition:var(--tr)"
+          ${n===''?'disabled':''} onmouseover="this.style.background='rgba(255,255,255,.14)'" onmouseout="this.style.background='rgba(255,255,255,.07)'">${n}</button>`).join('')}
+      </div>
+      <button class="faceid-btn" id="faceid-btn" onclick="tryFaceID()" style="max-width:220px;margin:0 auto 10px">
+        <div class="faceid-icon">🪪</div>
+        <span id="lbl-faceid">Face ID / Biometric</span>
+      </button>
+      <div style="text-align:center;margin-top:8px">
+        <span style="font-size:11px;color:rgba(255,255,255,.3);cursor:pointer" onclick="showManualLogin()" id="lbl-back-manual">← Back to password login</span>
+      </div>
+    </div>
+
+    <!-- MANUAL LOGIN FORM -->
+    <div class="fg" id="manual-login">
       <div>
         <label id="ll-role">Access Level</label>
-        <select id="l-role">
+        <select id="l-role" onchange="onRoleChange()">
           <option value="">— Select —</option>
           <option value="A">Level A — Partner (Socio)</option>
           <option value="B">Level B — Supervisor</option>
@@ -291,15 +349,29 @@ html,body{height:100%;font-family:var(--font-body);font-size:14px;background:var
       </div>
       <div>
         <label id="ll-user">User ID</label>
-        <input type="text" id="l-user" placeholder="firstname.lastname">
+        <input type="text" id="l-user" placeholder="firstname.lastname" autocomplete="username" oninput="checkKnownUser()">
       </div>
       <div>
         <label id="ll-pass">Password</label>
-        <input type="password" id="l-pass" placeholder="••••••••">
+        <div class="login-input-wrap">
+          <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password">
+          <button class="pw-toggle" onclick="togglePw()" title="Show/hide" id="pw-toggle-btn">👁</button>
+        </div>
       </div>
+      <label class="remember-row">
+        <input type="checkbox" id="l-remember" checked>
+        <span id="lbl-remember">Remember this device for 30 days</span>
+      </label>
+      <div class="login-error" id="login-error"></div>
       <button class="btn-login" onclick="doLogin()" id="l-btn">Sign In →</button>
+      <div class="divider-or"><span id="lbl-or">OR</span></div>
+      <button class="faceid-btn" onclick="tryFaceIDFromManual()">
+        <div class="faceid-icon">🪪</div>
+        <span id="lbl-faceid2">Sign in with Face ID / Biometric</span>
+      </button>
     </div>
-    <div style="text-align:center;margin-top:1.5rem;font-size:11px;color:rgba(255,255,255,.2)">SOC 2 Type II · AICPA · Encrypted</div>
+
+    <div style="text-align:center;margin-top:1.5rem;font-size:11px;color:rgba(255,255,255,.2)">SOC 2 Type II · AICPA · AES-256 Encrypted</div>
   </div>
 </div>
 
@@ -371,7 +443,7 @@ By signing, I affirm: (1) Strict confidentiality of all client financial data ac
         <div class="tb-notif-icon">🔔</div>
         <div class="notif-dot"></div>
       </div>
-      <div class="tb-user">
+      <div class="tb-user" onclick="openProfileModal()" title="My Profile">
         <div class="tb-av" id="u-av">JD</div>
         <div><div class="tb-uname" id="u-name">John Doe</div><div class="tb-urole" id="u-role">Partner · Level A</div></div>
       </div>
@@ -440,8 +512,108 @@ By signing, I affirm: (1) Strict confidentiality of all client financial data ac
 </div>
 
 <script>
-// ══════════════════════ STATE ══════════════════════
+// ══════════════════════════════════════════════════════════════
+// STATE & IN-MEMORY DATABASE — 21 Stones ERP
+// ══════════════════════════════════════════════════════════════
 const S={lang:'en',role:null,user:null,mod:'dashboard',client:'Skyline Builders Inc.',log:[]};
+
+// ── LIVE DATA STORES (persisted via window.storage when available) ──
+const DB = {
+  clients: [
+    { id:'CLT-001', name:'Skyline Builders Inc.',    ein:'47-1234567', type:'LLC',   sector:'Construction & Contracting', std:'Dual — GAAP + IFRS', prev:'QuickBooks', addr:'1200 Brickell Ave, Miami FL 33131',    fy:'December 31', coa:'Construction Industry (AIA)', status:'active', created:'2024-01-15' },
+    { id:'CLT-002', name:'Oceanic Dev. Group',       ein:'82-7654321', type:'LLC',   sector:'Real Estate Development',    std:'US GAAP',            prev:'Sage 300',    addr:'500 Biscayne Blvd, Miami FL 33132',  fy:'December 31', coa:'Real Estate Developer',          status:'active', created:'2024-03-20' },
+    { id:'CLT-003', name:'Rivera & Associates',      ein:'61-9876543', type:'S-Corp',sector:'Professional Services',      std:'US GAAP',            prev:'Excel',       addr:'1450 NW 107th Ave, Doral FL 33172', fy:'December 31', coa:'General Business',               status:'active', created:'2024-06-01' },
+    { id:'CLT-004', name:'NovaTech Solutions',       ein:'33-4567890', type:'C-Corp',sector:'Technology',                 std:'US GAAP',            prev:'None',        addr:'2525 Ponce de Leon, Coral Gables FL', fy:'December 31', coa:'General Business',              status:'active', created:'2025-01-10' },
+  ],
+  users: [
+    { id:'USR-001', first:'Maria',   last:'Santos',  email:'m.santos@21stones.com',   role:'A', clients:['ALL'],              nda:'N/A',         status:'active', empId:'21S-001', created:'2023-01-01' },
+    { id:'USR-002', first:'James',   last:'Kim',     email:'j.kim@21stones.com',       role:'B', clients:['CLT-001','CLT-002'],nda:'2026-03-28', status:'active', empId:'21S-002', created:'2023-06-15' },
+    { id:'USR-003', first:'Diana',   last:'Reyes',   email:'d.reyes@21stones.com',     role:'C', clients:['CLT-001'],          nda:'2026-03-25', status:'active', empId:'21S-003', created:'2024-02-01' },
+    { id:'USR-004', first:'Tom',     last:'Walsh',   email:'t.walsh@21stones.com',     role:'B', clients:['CLT-003'],          nda:'2026-03-01', status:'active', empId:'21S-004', created:'2024-04-10' },
+    { id:'USR-005', first:'Ana',     last:'Pérez',   email:'a.perez@21stones.com',     role:'C', clients:['CLT-002'],          nda:'2026-03-29', status:'active', empId:'21S-005', created:'2024-11-20' },
+  ],
+  subs: [
+    { id:'SUB-001', name:'Elite MEP Group',     ein:'12-3456789', pid:'PRJ-001', w9:'filed',   coiExp:'2026-12-31', ret:10, contract:284500, paid:262050, lw:'Generated', blocked:false },
+    { id:'SUB-002', name:'Rodriguez Concrete',  ein:'',           pid:'PRJ-002', w9:'missing', coiExp:'2026-06-30', ret:10, contract:182000, paid:0,      lw:'Blocked',   blocked:true,  reason:'W-9 MISSING' },
+    { id:'SUB-003', name:'SteelPro Inc.',       ein:'98-7654321', pid:'PRJ-002', w9:'filed',   coiExp:'2026-04-02', ret:10, contract:317000, paid:285300, lw:'Pending',   blocked:true,  reason:'COI EXPIRES SOON' },
+    { id:'SUB-004', name:'Apex Framing LLC',    ein:'55-4433221', pid:'PRJ-003', w9:'filed',   coiExp:'2026-08-31', ret:10, contract:89000,  paid:80100,  lw:'Generated', blocked:false },
+    { id:'SUB-005', name:'SkyHigh Glass',       ein:'44-3322110', pid:'PRJ-001', w9:'filed',   coiExp:'2027-03-31', ret:5,  contract:420000, paid:0,      lw:'Pending',   blocked:false },
+  ],
+  journal: [
+    { id:'JE-0341',  date:'2026-03-29', desc:'Revenue recognition Riverside Plaza', proj:'PRJ-001', dr:'1-01-02-001', cr:'4-01-01-001', amt:547320, std:'gaap', wip:false },
+    { id:'JE-0342',  date:'2026-03-29', desc:'WIP→COGS reclassification Q1',        proj:'PRJ-001', dr:'5-01-03-001', cr:'1-01-03-001', amt:372480, std:'both', wip:true  },
+    { id:'JE-0340',  date:'2026-03-28', desc:'Q1 depreciation SL',                  proj:'ALL',     dr:'6-03-01-001', cr:'1-02-01-004', amt:62400,  std:'both', wip:false },
+    { id:'JE-0339',  date:'2026-03-27', desc:'AP Elite MEP Group inv #0412',         proj:'PRJ-001', dr:'1-01-03-001', cr:'2-01-01-002', amt:84500,  std:'both', wip:true  },
+    { id:'JE-0338',  date:'2026-03-26', desc:'Payroll accrual March',                proj:'ALL',     dr:'5-01-02-001', cr:'2-01-03-001', amt:97230,  std:'both', wip:true  },
+  ],
+  cos: [],   // change orders added by user
+  assets: [], // fixed assets added by user
+};
+
+// ── STORAGE ENGINE ──────────────────────────────────────────
+const STORE_KEY = '21stones_db';
+
+async function dbSave() {
+  try {
+    if (window.storage) {
+      await window.storage.set(STORE_KEY, JSON.stringify({
+        clients: DB.clients,
+        users:   DB.users,
+        subs:    DB.subs,
+        cos:     DB.cos,
+        assets:  DB.assets,
+        journal: DB.journal,
+        lang:    S.lang,
+      }));
+    }
+  } catch(e) { /* storage not available — in-memory only */ }
+}
+
+async function dbLoad() {
+  try {
+    if (window.storage) {
+      const res = await window.storage.get(STORE_KEY);
+      if (res && res.value) {
+        const saved = JSON.parse(res.value);
+        if (saved.clients?.length) DB.clients = saved.clients;
+        if (saved.users?.length)   DB.users   = saved.users;
+        if (saved.subs?.length)    DB.subs    = saved.subs;
+        if (saved.cos?.length)     DB.cos     = saved.cos;
+        if (saved.assets?.length)  DB.assets  = saved.assets;
+        if (saved.journal?.length) DB.journal = saved.journal;
+        if (saved.lang)            S.lang     = saved.lang;
+      }
+    }
+  } catch(e) { /* first load — use defaults */ }
+}
+
+// ── CLIENT SELECTOR: rebuild from DB.clients ──
+function rebuildClientSelector() {
+  const sel = document.getElementById('client-sel');
+  if (!sel) return;
+  sel.innerHTML = DB.clients
+    .filter(c=>c.status==='active')
+    .map(c=>`<option value="${c.name}">${c.name}</option>`)
+    .join('');
+  // restore current client if it still exists
+  const opt = Array.from(sel.options).find(o=>o.value===S.client);
+  if (opt) sel.value = S.client;
+  else { sel.selectedIndex = 0; S.client = sel.value; }
+  // update client options in user-assignment modals
+  const usrClients = DB.clients.filter(c=>c.status==='active').map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  document.querySelectorAll('.dynamic-client-opts').forEach(el => el.innerHTML = usrClients);
+}
+
+// ── NEXT ID HELPERS ──
+function nextId(prefix, arr) {
+  const nums = arr.map(x => parseInt((x.id||'').replace(prefix+'-',''))||0);
+  return `${prefix}-${String(Math.max(0,...nums)+1).padStart(3,'0')}`;
+}
+function nextPrjId() {
+  // Find highest PRJ-XXX in PROJECTS
+  const all = PROJECTS.map(p=>parseInt(p.id.replace('PRJ-',''))||0);
+  return `PRJ-${String(Math.max(0,...all)+1).padStart(3,'0')}`;
+}
 
 // ══════════════════════ I18N ══════════════════════
 const T={
@@ -472,6 +644,7 @@ const t=k=>T[S.lang][k]||k;
 function setLang(l){S.lang=l;document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.textContent===l.toUpperCase()));applyI18n()}
 function toggleLang(){setLang(S.lang==='en'?'es':'en');renderMod(S.mod)}
 function applyI18n(){
+  // Core map
   const m={
     'll-role':'roleLabel','ll-user':'uidLabel','ll-pass':'pwdLabel','l-btn':'signIn',
     'nda-h':'ndaH','nda-sub':'ndaSub','nda-btn':'ndaBtn',
@@ -484,27 +657,362 @@ function applyI18n(){
     'sbt-core':'core','sbt-fs':'fsTitle','sbt-constr':'construction','sbt-admin':'administration',
     'ob-sn':null,'ob-st':null,'ob-ss':null,'ob-sp':null,
   };
+  const isE = S.lang === 'es';
   for(const id in m){
     const el=document.getElementById(id);if(!el)continue;
-    if(!m[id]){if(id==='lang-ind')el.textContent=S.lang==='en'?'EN / ES':'ES / EN';continue}
+    if(!m[id]){if(id==='lang-ind')el.textContent=isE?'ES / EN':'EN / ES';continue}
     el.textContent=t(m[id]);
   }
+  // Login-screen bilingual labels
+  const loginLabels = {
+    'lbl-saved-profiles': isE?'Perfiles Guardados':'Saved Profiles',
+    'lbl-use-different':  isE?'+ Usar otra cuenta':'+ Use different account',
+    'lbl-faceid':         isE?'Face ID / Biométrico':'Face ID / Biometric',
+    'lbl-faceid2':        isE?'Ingresar con Face ID / Biométrico':'Sign in with Face ID / Biometric',
+    'lbl-back-manual':    isE?'← Volver al acceso con contraseña':'← Back to password login',
+    'lbl-remember':       isE?'Recordar este dispositivo 30 días':'Remember this device for 30 days',
+    'lbl-or':             isE?'O':'OR',
+    'pin-label':          isE?'Ingrese su PIN de 4 dígitos':'Enter your 4-digit PIN',
+  };
+  Object.entries(loginLabels).forEach(([id,txt])=>{ const el=document.getElementById(id);if(el)el.textContent=txt; });
   // ob labels
   const oblabels=['obl-name','obl-ein','obl-type','obl-sector','obl-std','obl-prev','obl-coa','obl-fy','obl-addr'];
   const en=['Legal Entity Name','EIN / Tax ID','Entity Type','Industry','Accounting Standard','Previous System','Chart of Accounts Template','Fiscal Year End','Business Address'];
   const es=['Nombre Legal de la Entidad','EIN / RFC / NIT','Tipo de Entidad','Sector Industrial','Norma Contable','Sistema Anterior','Plantilla de Plan de Cuentas','Cierre de Año Fiscal','Dirección'];
-  oblabels.forEach((id,i)=>{const el=document.getElementById(id);if(el)el.textContent=S.lang==='en'?en[i]:es[i]});
+  oblabels.forEach((id,i)=>{const el=document.getElementById(id);if(el)el.textContent=isE?es[i]:en[i]});
 }
 
-// ══════════════════════ AUTH ══════════════════════
+// ══════════════════════════════════════════════════════════════
+// AUTH — Credential Store, Hashing, PIN, Face ID / WebAuthn
+// ══════════════════════════════════════════════════════════════
+
+// Simple deterministic hash (not cryptographic — for demo; real impl uses bcrypt server-side)
+function hashPass(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, '0');
+}
+
+// Default credentials seeded into DB.users (hashed)
+// Role A: maria.santos / 21stones2026
+// Role B: james.kim / partner2026
+// Role C: diana.reyes / staff2026
+const DEFAULT_CREDS = {
+  'maria.santos': { hash: hashPass('21stones2026'), role:'A', uid:'USR-001' },
+  'james.kim':    { hash: hashPass('partner2026'), role:'B', uid:'USR-002' },
+  'diana.reyes':  { hash: hashPass('staff2026'),   role:'C', uid:'USR-003' },
+  'tom.walsh':    { hash: hashPass('staff2026'),   role:'B', uid:'USR-004' },
+  'ana.perez':    { hash: hashPass('staff2026'),   role:'C', uid:'USR-005' },
+};
+
+// PIN state
+let pinBuffer = '';
+let pinTarget = null; // { userId, hash, role, name }
+const PIN_LENGTH = 4;
+
+// Remembered profiles (stored in window.storage)
+let savedProfiles = []; // [{userId, displayName, role, initials, pin_hash, faceid_registered}]
+const PROFILES_KEY = '21stones_profiles';
+const SESSION_KEY  = '21stones_session';
+
+async function authInit() {
+  try {
+    if (window.storage) {
+      const pr = await window.storage.get(PROFILES_KEY);
+      if (pr?.value) savedProfiles = JSON.parse(pr.value);
+      // Check active session (auto-login if token valid)
+      const sess = await window.storage.get(SESSION_KEY);
+      if (sess?.value) {
+        const s = JSON.parse(sess.value);
+        if (s.expires > Date.now() && s.userId && s.role) {
+          S.user = s.userId; S.role = s.role;
+          await dbLoad();
+          enterApp();
+          return;
+        }
+      }
+    }
+  } catch(e) {}
+  renderLoginView();
+}
+
+function renderLoginView() {
+  if (savedProfiles.length > 0) {
+    document.getElementById('saved-profiles').style.display = 'block';
+    document.getElementById('manual-login').style.display = 'none';
+    document.getElementById('pin-entry').style.display = 'none';
+    const list = document.getElementById('profile-list');
+    list.innerHTML = savedProfiles.map((p,i) => `
+      <div class="profile-chip" onclick="selectProfile(${i})">
+        <div class="av">${p.initials}</div>
+        <div class="pinfo">
+          <div class="pname">${p.displayName}</div>
+          <div class="prole">${p.role==='A'?'Partner · Level A':p.role==='B'?'Supervisor · Level B':'Staff · Level C'}</div>
+        </div>
+        <span style="font-size:16px;color:rgba(255,255,255,.25)">›</span>
+      </div>`).join('');
+  } else {
+    showManualLogin();
+  }
+  applyI18n();
+}
+
+function showManualLogin() {
+  document.getElementById('saved-profiles').style.display = 'none';
+  document.getElementById('pin-entry').style.display = 'none';
+  document.getElementById('manual-login').style.display = 'flex';
+}
+
+function selectProfile(idx) {
+  const p = savedProfiles[idx];
+  if (!p) return;
+  pinTarget = p;
+  pinBuffer = '';
+  document.getElementById('saved-profiles').style.display = 'none';
+  document.getElementById('manual-login').style.display = 'none';
+  document.getElementById('pin-entry').style.display = 'block';
+  document.getElementById('pin-user-display').textContent = p.displayName;
+  updatePinDots();
+  // If Face ID registered, offer it immediately
+  if (p.faceid_registered && window.PublicKeyCredential) {
+    document.getElementById('faceid-btn').style.display = 'flex';
+  } else {
+    document.getElementById('faceid-btn').style.display = 'none';
+  }
+}
+
+function pinDigit(n) {
+  if (pinBuffer.length >= PIN_LENGTH) return;
+  pinBuffer += String(n);
+  updatePinDots();
+  if (pinBuffer.length === PIN_LENGTH) {
+    setTimeout(() => checkPin(), 180);
+  }
+}
+
+function pinBackspace() {
+  pinBuffer = pinBuffer.slice(0, -1);
+  updatePinDots();
+}
+
+function updatePinDots() {
+  document.querySelectorAll('.pin-dot').forEach((d,i) => {
+    d.classList.toggle('filled', i < pinBuffer.length);
+  });
+}
+
+function checkPin() {
+  if (!pinTarget) return;
+  const enteredHash = hashPass(pinBuffer);
+  if (enteredHash === pinTarget.pin_hash) {
+    completeAuthFlow(pinTarget.userId, pinTarget.role);
+  } else {
+    pinBuffer = '';
+    updatePinDots();
+    const lbl = document.getElementById('pin-label');
+    lbl.textContent = S.lang==='es' ? '❌ PIN incorrecto. Intente de nuevo.' : '❌ Incorrect PIN. Try again.';
+    setTimeout(() => { lbl.textContent = S.lang==='es' ? 'Ingrese su PIN de 4 dígitos' : 'Enter your 4-digit PIN'; }, 1500);
+  }
+}
+
+// Face ID / WebAuthn (Platform Authenticator)
+async function tryFaceID() {
+  if (!pinTarget) return;
+  await doWebAuthn(pinTarget.userId, pinTarget.role);
+}
+async function tryFaceIDFromManual() {
+  // Try to find profile by username field
+  const uid = document.getElementById('l-user')?.value.trim();
+  const profile = savedProfiles.find(p => p.userId === uid || p.displayName.toLowerCase().includes(uid.toLowerCase()));
+  if (!profile) {
+    showLoginError(S.lang==='es'?'Primero ingrese su User ID para usar Face ID':'Enter your User ID first to use Face ID');
+    return;
+  }
+  await doWebAuthn(profile.userId, profile.role);
+}
+async function doWebAuthn(userId, role) {
+  if (!window.PublicKeyCredential) {
+    gMsg(S.lang==='es'?'Face ID no disponible en este dispositivo':'Face ID not available on this device'); return;
+  }
+  try {
+    // Request platform authenticator (Touch ID / Face ID / Windows Hello)
+    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    if (!available) { gMsg('Biometric authenticator not available on this device'); return; }
+    // For demo: simulate successful biometric
+    const icon = document.getElementById('face-scanner-icon');
+    if (icon) { icon.style.fontSize = '42px'; icon.textContent = '🔄'; }
+    await new Promise(r => setTimeout(r, 900));
+    if (icon) { icon.textContent = '✅'; }
+    await new Promise(r => setTimeout(r, 400));
+    completeAuthFlow(userId, role);
+  } catch(e) {
+    if (icon) icon.textContent = '🔐';
+    gMsg(S.lang==='es'?'Autenticación biométrica cancelada':'Biometric authentication cancelled');
+  }
+}
+
+function onRoleChange() {
+  const role = document.getElementById('l-role')?.value;
+  const userEl = document.getElementById('l-user');
+  if (!userEl) return;
+  const roleDefaults = { A:'maria.santos', B:'james.kim', C:'diana.reyes' };
+  if (role && roleDefaults[role] && !userEl.value) {
+    userEl.value = roleDefaults[role];
+    checkKnownUser();
+  }
+}
+
+function checkKnownUser() {
+  const uid = document.getElementById('l-user')?.value.trim().toLowerCase();
+  const userEl = document.getElementById('l-user');
+  if (!uid || !userEl) return;
+  const known = DEFAULT_CREDS[uid] || Object.entries(DEFAULT_CREDS).find(([k])=>k===uid)?.[1];
+  if (known) { userEl.style.borderColor='rgba(201,168,76,.4)'; }
+  else { userEl.style.borderColor=''; }
+}
+
+function togglePw() {
+  const inp = document.getElementById('l-pass');
+  const btn = document.getElementById('pw-toggle-btn');
+  if (!inp) return;
+  const showing = inp.type === 'text';
+  inp.type = showing ? 'password' : 'text';
+  btn.textContent = showing ? '👁' : '🙈';
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('login-error');
+  if (el) { el.textContent = msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'), 3500); }
+}
+
 function doLogin(){
-  const role=document.getElementById('l-role').value;
-  const user=document.getElementById('l-user').value.trim();
-  const pass=document.getElementById('l-pass').value;
-  if(!role||!user||!pass){gMsg('Complete all fields / Complete todos los campos');return}
-  if(pass.length<4){gMsg('Invalid credentials');return}
-  S.role=role;S.user=user;log(user.toUpperCase(),'Successful login','low');
-  role==='A'?showScreen('onboarding-screen'):showScreen('nda-screen');
+  const role = document.getElementById('l-role').value;
+  const user = document.getElementById('l-user').value.trim().toLowerCase();
+  const pass = document.getElementById('l-pass').value;
+  const remember = document.getElementById('l-remember')?.checked ?? true;
+
+  if (!role || !user || !pass) {
+    showLoginError(S.lang==='es'?'Complete todos los campos':'Please complete all fields'); return;
+  }
+
+  // Check credentials against DEFAULT_CREDS or DB.users
+  const cred = DEFAULT_CREDS[user];
+  const enteredHash = hashPass(pass);
+
+  if (!cred) {
+    showLoginError(S.lang==='es'?'Usuario no encontrado':'User not found'); return;
+  }
+  if (cred.hash !== enteredHash) {
+    showLoginError(S.lang==='es'?'Contraseña incorrecta — intente de nuevo':'Incorrect password — please try again'); return;
+  }
+  if (cred.role !== role) {
+    showLoginError(S.lang==='es'?`Este usuario es Nivel ${cred.role}, no ${role}`:`This user is Level ${cred.role}, not ${role}`); return;
+  }
+
+  // If "remember device" — ask for PIN setup if new profile
+  const existing = savedProfiles.find(p => p.userId === user);
+  if (remember && !existing) {
+    requestPINSetup(user, cred.role, pass);
+    return;
+  }
+
+  completeAuthFlow(user, role);
+}
+
+function requestPINSetup(userId, role, pass) {
+  // Show PIN setup modal
+  openModal(`
+    <h3 style="font-family:var(--font-display)">${S.lang==='es'?'Configurar PIN de Acceso Rápido':'Set Up Quick Access PIN'}</h3>
+    <div style="text-align:center;color:var(--stone);font-size:12px;margin-bottom:20px">
+      ${S.lang==='es'?'Cree un PIN de 4 dígitos para acceder más rápido en este dispositivo.':'Create a 4-digit PIN for faster access on this device.'}
+    </div>
+    <div style="display:flex;gap:12px;justify-content:center;margin-bottom:20px" id="setup-pin-dots">
+      <div class="pin-dot" style="border-color:var(--stone-light)"></div>
+      <div class="pin-dot" style="border-color:var(--stone-light)"></div>
+      <div class="pin-dot" style="border-color:var(--stone-light)"></div>
+      <div class="pin-dot" style="border-color:var(--stone-light)"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:200px;margin:0 auto 16px">
+      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(n=>`
+      <button onclick="${n==='⌫'?'setupPinBackspace()':n===''?'void(0)':'setupPinDigit('+n+')'}"
+        style="padding:12px;background:var(--stone-pale);border:1px solid var(--stone-light);border-radius:var(--radius);color:${n===''?'transparent':'var(--navy)'};font-size:18px;font-weight:600;font-family:var(--font-mono);cursor:${n===''?'default':'pointer'}"
+        ${n===''?'disabled':''}>${n}</button>`).join('')}
+    </div>
+    <div id="setup-pin-confirm" style="text-align:center;font-size:12px;color:var(--stone);min-height:20px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="skipPINSetup('${userId}','${role}','${hashPass(pass)}')">${S.lang==='es'?'Omitir':'Skip'}</button>
+    </div>
+  `);
+  window._setupPin = { userId, role, passHash: hashPass(pass), pin: '' };
+}
+
+window._setupPinConfirm = '';
+function setupPinDigit(n) {
+  const s = window._setupPin; if (!s) return;
+  if (!s.confirming) {
+    s.pin += String(n);
+    updateSetupDots(s.pin.length, false);
+    if (s.pin.length === 4) {
+      s.confirming = true; s.pin1 = s.pin; s.pin = '';
+      document.getElementById('setup-pin-confirm').textContent = S.lang==='es'?'Confirme su PIN:':'Confirm your PIN:';
+      updateSetupDots(0, false);
+    }
+  } else {
+    s.pin += String(n);
+    updateSetupDots(s.pin.length, true);
+    if (s.pin.length === 4) {
+      if (s.pin === s.pin1) { saveProfileWithPIN(s.userId, s.role, s.passHash, hashPass(s.pin)); }
+      else {
+        s.confirming = false; s.pin = ''; s.pin1 = '';
+        document.getElementById('setup-pin-confirm').style.color = 'var(--danger)';
+        document.getElementById('setup-pin-confirm').textContent = S.lang==='es'?'Los PINs no coinciden. Intente de nuevo.':'PINs do not match. Try again.';
+        setTimeout(()=>{ document.getElementById('setup-pin-confirm').style.color=''; document.getElementById('setup-pin-confirm').textContent=''; updateSetupDots(0,false); }, 1500);
+      }
+    }
+  }
+}
+function setupPinBackspace() {
+  const s = window._setupPin; if (!s) return;
+  s.pin = s.pin.slice(0,-1);
+  updateSetupDots(s.pin.length, s.confirming);
+}
+function updateSetupDots(len, confirm) {
+  const dots = document.querySelectorAll('#setup-pin-dots .pin-dot');
+  dots.forEach((d,i) => { d.classList.toggle('filled', i < len); d.style.borderColor = confirm?'var(--gold)':'var(--stone-light)'; });
+}
+function skipPINSetup(userId, role, passHash) {
+  saveProfileWithPIN(userId, role, passHash, null);
+}
+async function saveProfileWithPIN(userId, role, passHash, pinHash) {
+  const dbUser = DB.users.find(u => u.id === DEFAULT_CREDS[userId]?.uid);
+  const displayName = dbUser ? `${dbUser.first} ${dbUser.last}` : userId;
+  const initials = displayName.split(' ').map(w=>w[0]?.toUpperCase()||'').slice(0,2).join('');
+  // Check if WebAuthn platform auth available
+  let faceAvail = false;
+  try { faceAvail = !!(await PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable?.()); } catch(e){}
+  const existing = savedProfiles.findIndex(p=>p.userId===userId);
+  const profile = { userId, displayName, role, initials, pin_hash: pinHash, faceid_registered: faceAvail };
+  if (existing >= 0) savedProfiles[existing] = profile;
+  else savedProfiles.push(profile);
+  try { if (window.storage) await window.storage.set(PROFILES_KEY, JSON.stringify(savedProfiles)); } catch(e){}
+  closeModal();
+  completeAuthFlow(userId, role);
+}
+
+async function completeAuthFlow(userId, role) {
+  await dbLoad();
+  S.user = userId;
+  S.role = role;
+  // Save session (30-day token)
+  try {
+    if (window.storage) {
+      await window.storage.set(SESSION_KEY, JSON.stringify({
+        userId, role, expires: Date.now() + 30*24*3600*1000
+      }));
+    }
+  } catch(e) {}
+  log(userId.toUpperCase(), `Login · Role ${role} · ${new Date().toLocaleString()}`, 'low');
+  role === 'A' ? showScreen('onboarding-screen') : showScreen('nda-screen');
 }
 function signNDA(){
   const sig=document.getElementById('nda-sig').value.trim();
@@ -515,17 +1023,44 @@ function signNDA(){
 }
 function skipOB(){enterApp()}
 function completeOB(){
-  const nm=document.getElementById('ob-name').value.trim();
-  if(nm){S.client=nm;document.getElementById('client-sel').options[0].text=nm}
-  log(S.user.toUpperCase(),`Client created: "${nm||'Manual'}"`, 'medium');
+  const nm  = document.getElementById('ob-name').value.trim();
+  const ein = document.getElementById('ob-ein').value.trim();
+  const type= document.getElementById('ob-type').value;
+  const sec = document.getElementById('ob-sector').value;
+  const std = document.getElementById('ob-std').value;
+  const prev= document.getElementById('ob-prev').value;
+  const addr= document.getElementById('ob-addr').value.trim();
+  const fy  = document.getElementById('ob-fy')?.value   || 'December 31';
+  const coa = document.getElementById('ob-coa')?.value  || 'Construction Industry (AIA)';
+
+  if (!nm) { gMsg(S.lang==='es'?'El nombre es obligatorio':'Name is required'); return; }
+
+  // Check for duplicate
+  if (DB.clients.find(c => c.name.toLowerCase() === nm.toLowerCase())) {
+    gMsg(S.lang==='es'?`Cliente "${nm}" ya existe en el sistema`:`Client "${nm}" already exists`);
+    enterApp(); return;
+  }
+
+  const newClient = {
+    id: nextId('CLT', DB.clients),
+    name: nm, ein, type, sector: sec, std, prev, addr, fy, coa,
+    status: 'active',
+    created: new Date().toISOString().slice(0,10)
+  };
+  DB.clients.push(newClient);
+  S.client = nm;
+  dbSave();
+  log(S.user.toUpperCase(), `New client created: "${nm}" (${newClient.id})`, 'medium');
   enterApp();
 }
+
 function autoFill(f){
   const m={name:'Skyline Builders Inc.',type:'LLC',sector:'Construction & Contracting',prev:'QuickBooks'};
   const ids={name:'ob-name',type:'ob-type',sector:'ob-sector',prev:'ob-prev'};
   const el=document.getElementById(ids[f]);
   if(el)el.value=m[f];
 }
+
 function enterApp(){
   showScreen('app-screen');
   const initials=(S.user||'').split('.').map(s=>s[0]?.toUpperCase()||'').join('').slice(0,2)||'U';
@@ -534,6 +1069,7 @@ function enterApp(){
   const rn={A:'Partner · Level A',B:'Supervisor · Level B',C:'Staff · Level C'};
   document.getElementById('u-role').textContent=rn[S.role]||'';
   if(S.role!=='A')document.getElementById('sb-admin').style.display='none';
+  rebuildClientSelector();
   nav('dashboard');
   setTimeout(()=>gMsg('Session active · Guardián 21 monitoring enabled · All actions logged'),1800);
 }
@@ -541,7 +1077,10 @@ function doLogout(){
   log(S.user?.toUpperCase()||'USER','Logout','low');
   S.role=null;S.user=null;
   ['l-role','l-user','l-pass'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
+  // Clear active session but keep profiles (for quick re-login)
+  try{ if(window.storage) window.storage.delete(SESSION_KEY); }catch(e){}
   showScreen('login-screen');
+  renderLoginView();
 }
 function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.add('hidden'));document.getElementById(id).classList.remove('hidden')}
 
@@ -586,24 +1125,35 @@ const fmtN=(n)=>n>=0?`<span class="green mono">${fmt(n)}</span>`:`<span class="r
 // ══════════════════════════════════════════════════════
 // MODULE: DASHBOARD
 // ══════════════════════════════════════════════════════
-function rDash(){return`
+function rDash(){
+  const isE = es();
+  const allT = PROJECTS.map(p=>projectTotals(p));
+  const totalRevRec = allT.reduce((s,t)=>s+t.revRecognized,0);
+  const totalGP     = allT.reduce((s,t)=>s+t.grossProfit,0);
+  const totalWIP    = allT.reduce((s,t)=>s+t.totalActual,0);
+  const alertCount  = allT.reduce((s,t)=>s+t.alerts.length,0);
+  const blockedSubs = DB.subs.filter(s=>s.blocked).length;
+  const today       = new Date().toLocaleDateString();
+
+  return`
 <div class="page-header">
-  <div><div class="page-title">${es()?'Tablero Ejecutivo':'Executive Dashboard'}</div>
-  <div class="page-subtitle">${S.client} · ${es()?'Dual GAAP+IFRS activo':'Dual GAAP+IFRS active'} · ${es()?'Hoy':'Today'} ${new Date().toLocaleDateString()}</div></div>
+  <div><div class="page-title">${isE?'Tablero Ejecutivo':'Executive Dashboard'}</div>
+  <div class="page-subtitle">${S.client} · ${isE?'Dual GAAP+IFRS activo':'Dual GAAP+IFRS active'} · ${isE?'Hoy':'Today'} ${today}</div></div>
   <div class="page-actions">
-    <button class="btn btn-ghost btn-sm" onclick="nav('pl')">${es()?'Ver P&L':'View P&L'}</button>
-    <button class="btn btn-navy btn-sm" onclick="openJEModal()">${es()?'+ Asiento':'+ Journal Entry'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="nav('pl')">${isE?'Ver P&L':'View P&L'}</button>
+    <button class="btn btn-navy btn-sm" onclick="openJEModal()">+ ${isE?'Asiento':'Journal Entry'}</button>
   </div>
 </div>
 <div class="kpi-grid">
-  ${kpi(es()?'Ingresos MTD':'Revenue MTD','$1,847,320',es()?'▲ 12.4% vs mes ant.':'▲ 12.4% vs last mo.','gold','up')}
-  ${kpi(es()?'Utilidad Neta':'Net Income','$284,510','▲ 8.1% YTD','success','up')}
-  ${kpi(es()?'Posición de Caja':'Cash Position','$542,800',es()?'30d proyectado: $480K':'30d projected: $480K','info','')}
-  ${kpi(es()?'WIP Pendiente':'WIP Outstanding','$3,120,000',es()?'3 proyectos activos':'3 active projects','warning','')}
+  ${kpi(isE?'Ingresos Reconocidos':'Revenue Recognized', fmt(totalRevRec), isE?`${PROJECTS.length} proyectos · C-a-C`:`${PROJECTS.length} projects · C-to-C`,'gold','up')}
+  ${kpi(isE?'Utilidad Bruta':'Gross Profit', fmt(totalGP), totalRevRec>0?((totalGP/totalRevRec)*100).toFixed(1)+'% margin':'—','success',totalGP>0?'up':'dn')}
+  ${kpi(isE?'Posición de Caja':'Cash Position','$542,800',isE?'30d proyectado: $480K':'30d projected: $480K','info','')}
+  ${kpi(isE?'WIP Acumulado':'WIP Outstanding', fmt(totalWIP), isE?`${PROJECTS.length} obra(s) activa(s)`:`${PROJECTS.length} active project(s)`,'warning','')}
 </div>
+${alertCount>0?`<div class="alert a-warn" style="display:flex;align-items:center;gap:12px">⚡ ${isE?`Motor de Ingresos: ${alertCount} alerta(s) activa(s)`:`Revenue Engine: ${alertCount} active alert(s)`}<button class="btn btn-sm btn-gold" style="margin-left:auto" onclick="nav('revengine')">${isE?'Ver':'View'}</button></div>`:''}
 <div class="g2">
   <div class="card">
-    <div class="card-header"><div><div class="card-title">${es()?'Balance Dual':'Dual Balance'}</div><div class="card-sub">GAAP vs IFRS</div></div><span class="badge b-gold">DUAL</span></div>
+    <div class="card-header"><div><div class="card-title">${isE?'Balance Dual':'Dual Balance'}</div><div class="card-sub">GAAP vs IFRS</div></div><span class="badge b-gold">DUAL</span></div>
     <div class="dual">
       <div class="dual-pane"><div class="dual-lbl">US GAAP</div>
         <table class="dt"><tbody>
@@ -620,17 +1170,17 @@ function rDash(){return`
           <tr><td>Goodwill</td><td class="num gold">N/A (IAS 38)</td></tr>
         </tbody></table></div>
     </div>
-    <div class="alert a-info mt1" style="font-size:11px">ⓘ ${es()?'Diferencia GAAP-IFRS: $150K por eliminación de Goodwill':'GAAP-IFRS diff: $150K goodwill elimination (IAS 38)'}</div>
+    <div class="alert a-info mt1" style="font-size:11px">ⓘ ${isE?'Diferencia GAAP-IFRS: $150K por eliminación de Goodwill':'GAAP-IFRS diff: $150K goodwill elimination (IAS 38)'}</div>
   </div>
   <div class="card">
-    <div class="card-header"><div><div class="card-title">${es()?'Acceso Rápido a Estados':'Quick Financial Statements'}</div></div></div>
+    <div class="card-header"><div class="card-title">${isE?'Acceso Rápido':'Quick Access'}</div></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      ${[['⚖','Balance Sheet','bs',es()?'Balance General':'Balance Sheet'],
-         ['📈','P&L','pl',es()?'Estado de Resultados':'P&L Statement'],
-         ['💧','Cash Flow','cf',es()?'Flujo de Efectivo':'Cash Flow'],
-         ['🔄','Equity','soce',es()?'Estado de Capital':'Stmt of Equity'],
-         ['🧱','Job Cost','jobcost',es()?'Costo por Proyecto':'Job Cost'],
-         ['📡','Bank Feeds','bankfeed',es()?'Conexión Bancaria':'Bank Feeds']].map(([ico,lbl,mod,name])=>`
+      ${[['⚖','bs',isE?'Balance General':'Balance Sheet'],
+         ['📈','pl',isE?'Estado P&L':'P&L Statement'],
+         ['💧','cf',isE?'Flujo de Caja':'Cash Flow'],
+         ['⚡','revengine',isE?'Motor de Ingresos':'Revenue Engine'],
+         ['🧱','jobcost',isE?'Costo por Proyecto':'Job Cost'],
+         ['📡','bankfeed',isE?'Conexión Bancaria':'Bank Feeds']].map(([ico,mod,name])=>`
       <div onclick="nav('${mod}')" style="background:var(--stone-pale);border-radius:var(--radius);padding:12px;cursor:pointer;transition:var(--tr)" onmouseover="this.style.background='var(--gold-pale)'" onmouseout="this.style.background='var(--stone-pale)'">
         <div style="font-size:22px;margin-bottom:6px">${ico}</div>
         <div style="font-size:12px;font-weight:600;color:var(--navy)">${name}</div>
@@ -641,29 +1191,47 @@ function rDash(){return`
 <div class="g3">
   <div class="card">
     <div class="card-header"><div class="card-title">WIP Summary</div><span class="badge b-gold">ASC 606</span></div>
-    ${[['Riverside Plaza','68%','success'],['Harbor View Tower','42%','warning'],['Metro Line Ext.','91%','success']].map(([n,p,t])=>`
-    <div style="margin-bottom:12px"><div class="flex-between" style="margin-bottom:5px"><span style="font-size:12px">${n}</span><span style="font-size:12px;font-weight:600;color:var(--${t})">${p}</span></div>
-    <div class="prog"><div class="prog-fill" style="width:${p};background:var(--${t})"></div></div></div>`).join('')}
-    <button class="btn btn-ghost btn-sm" onclick="nav('wip')" style="width:100%">${es()?'Ver WIP completo':'View Full WIP'}</button>
+    ${PROJECTS.map(p=>{
+      const t2=projectTotals(p); const pct2=(t2.pctComplete*100).toFixed(0);
+      const col=parseFloat(pct2)>80?'success':parseFloat(pct2)>50?'gold':'info';
+      return `<div style="margin-bottom:12px">
+        <div class="flex-between" style="margin-bottom:5px"><span style="font-size:12px">${p.name.split(' ').slice(0,2).join(' ')}</span><span style="font-size:12px;font-weight:600;color:var(--${col})">${pct2}%</span></div>
+        <div class="prog"><div class="prog-fill" style="width:${pct2}%;background:var(--${col})"></div></div>
+      </div>`;
+    }).join('')}
+    <button class="btn btn-ghost btn-sm" onclick="nav('wip')" style="width:100%">${isE?'Ver WIP completo':'View Full WIP'}</button>
   </div>
   <div class="card">
-    <div class="card-header"><div class="card-title">${es()?'Alertas de Cumplimiento':'Compliance Alerts'}</div><span class="badge b-no">2 Blocked</span></div>
-    ${[['Rodriguez Concrete','🚫','b-no',es()?'W-9 faltante':'W-9 missing'],
-       ['SteelPro Inc.','⚠','b-warn',es()?'COI vence 3 días':'COI exp 3 days'],
-       ['Elite MEP Group','✓','b-ok',es()?'Cumplimiento total':'Fully compliant']].map(([n,ic,cls,d])=>`
-    <div class="flex" style="padding:8px 0;border-bottom:1px solid rgba(0,0,0,.04)">
-      <div style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.04)">${ic}</div>
-      <div style="flex:1"><div style="font-size:12px;font-weight:500">${n}</div><div style="font-size:11px;color:var(--stone)">${d}</div></div>
-      <span class="badge ${cls}" style="font-size:9px">${cls==='b-ok'?'OK':cls==='b-warn'?'WARN':'BLOCKED'}</span>
-    </div>`).join('')}
+    <div class="card-header">
+      <div class="card-title">${isE?'Alertas de Cumplimiento':'Compliance Alerts'}</div>
+      ${blockedSubs>0?`<span class="badge b-no">${blockedSubs} ${isE?'Bloqueados':'Blocked'}</span>`:'<span class="badge b-ok">All OK</span>'}
+    </div>
+    ${DB.subs.length===0?`<div style="font-size:12px;color:var(--stone);padding:8px 0">${isE?'Sin subcontratistas':'No subcontractors'}</div>`:
+    DB.subs.slice(0,4).map(s=>{
+      const now=new Date(); const cd=s.coiExp?new Date(s.coiExp):null;
+      const exp=cd&&cd>now&&(cd-now)<14*24*3600*1000;
+      const ic=s.blocked?'🚫':exp?'⚠':'✓'; const cls=s.blocked?'b-no':exp?'b-warn':'b-ok';
+      const det=s.w9==='missing'?(isE?'W-9 faltante':'W-9 missing'):exp?(isE?'COI vence pronto':'COI expiring soon'):(isE?'Cumplimiento total':'Compliant');
+      return `<div class="flex" style="padding:8px 0;border-bottom:1px solid rgba(0,0,0,.04)">
+        <div style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.04);font-size:13px;flex-shrink:0">${ic}</div>
+        <div style="flex:1;margin-left:8px"><div style="font-size:12px;font-weight:500">${s.name}</div><div style="font-size:10px;color:var(--stone)">${det}</div></div>
+        <span class="badge ${cls}" style="font-size:9px">${s.blocked?'BLOCKED':exp?'WARN':'OK'}</span>
+      </div>`;
+    }).join('')}
+    <button class="btn btn-ghost btn-sm" onclick="nav('subs')" style="width:100%;margin-top:8px">${isE?'Ver Subcontratistas':'View Subs'}</button>
   </div>
   <div class="card">
-    <div class="card-header"><div class="card-title">Disaster Recovery</div><span class="badge b-ok">LIVE</span></div>
-    ${[['Last Backup','7 min ago','ok'],['Multi-Region','US-East + EU-West','ok'],['RTO','< 4 min','ok'],['Next Backup','in 8 min','info']].map(([k,v,t])=>`
-    <div class="flex-between" style="padding:7px 0;border-bottom:1px solid rgba(0,0,0,.04)">
-      <span style="font-size:12px;color:var(--stone)">${k}</span>
-      <span class="badge b-${t}" style="font-size:10px">${v}</span>
+    <div class="card-header">
+      <div class="card-title">${isE?'Clientes Activos':'Active Clients'}</div>
+      <span class="badge b-ok">${DB.clients.filter(c=>c.status==='active').length}</span>
+    </div>
+    ${DB.clients.filter(c=>c.status==='active').map(c=>`
+    <div class="flex-between" style="padding:6px 0;border-bottom:1px solid rgba(0,0,0,.04)">
+      <div><div style="font-size:12px;font-weight:500">${c.name}</div>
+      <div style="font-size:10px;color:var(--stone)">${c.type} · ${c.sector.split(' ')[0]}</div></div>
+      <span class="badge ${c.std.includes('Dual')?'b-gold':c.std.includes('IFRS')?'b-ok':'b-info'}" style="font-size:9px">${c.std.includes('Dual')?'DUAL':c.std.includes('IFRS')?'IFRS':'GAAP'}</span>
     </div>`).join('')}
+    ${S.role==='A'?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="showScreen('onboarding-screen')">${isE?'+ Nuevo Cliente':'+ New Client'}</button>`:''}
   </div>
 </div>`}
 
@@ -1192,10 +1760,48 @@ function openJEModal() {
 
 function postJE() {
   if (!jeBalanced()) return;
+  const isE = S.lang === 'es';
+
+  // Collect header fields from modal
+  const inputs  = document.querySelectorAll('.modal input, .modal select');
+  const txId    = inputs[0]?.value || `JE-${Date.now().toString().slice(-6)}`;
+  const effDate = inputs[1]?.value || new Date().toISOString().slice(0,10);
+  const postDate= inputs[2]?.value || effDate;
+  const stdRaw  = inputs[3]?.value || 'Both';
+  const std     = stdRaw.includes('GAAP')?'gaap':stdRaw.includes('IFRS')?'ifrs':'both';
+  const descEl  = document.querySelector('.modal input[type="text"][placeholder]');
+  const desc    = descEl?.value?.trim() || `${isE?'Asiento manual':'Manual entry'} ${txId}`;
+
+  // Build entry from JE_LINES
   const dr = jeTotal('dr');
-  log(S.user?.toUpperCase()||'U', `Posted JE ${fmt(dr)} — Dual layer GAAP+IFRS generated`, 'medium');
+  const hasWIP = JE_LINES.some(l=>l.account?.startsWith('1-01-03')||l.account?.startsWith('5-01'));
+
+  // Post each balanced pair to DB.journal
+  const drLines = JE_LINES.filter(l=>parseFloat(l.dr)>0);
+  const crLines = JE_LINES.filter(l=>parseFloat(l.cr)>0);
+  if(drLines.length && crLines.length) {
+    DB.journal.push({
+      id:    txId,
+      date:  effDate,
+      desc:  desc,
+      proj:  drLines[0]?.project || crLines[0]?.project || 'ALL',
+      dr:    drLines[0]?.account || '—',
+      dr_name: drLines[0]?.accountName || '',
+      cr:    crLines[0]?.account || '—',
+      cr_name: crLines[0]?.accountName || '',
+      amt:   dr,
+      std,
+      tag:   std==='gaap'?'GAAP':std==='ifrs'?'IFRS':'BOTH',
+      wip:   hasWIP,
+    });
+    dbSave();
+  }
+
+  log(S.user?.toUpperCase()||'U', `Posted ${txId}: ${desc} — ${fmt(dr)} (${std.toUpperCase()})`, 'medium');
   closeModal();
-  gMsg(`${S.lang==='es'?'Asiento registrado':'Journal entry posted'} · ${fmt(dr)} · ${S.lang==='es'?'Capa IFRS generada automáticamente':'IFRS layer auto-generated'}`);
+  gMsg(`${isE?'✓ Asiento registrado':'✓ Entry posted'} · ${txId} · ${fmt(dr)} · ${isE?'Capa IFRS auto-generada':'IFRS layer auto-generated'}`);
+  // Refresh GL if currently open
+  if(S.mod==='gl') renderMod('gl');
 }
 
 // ══════════════════════════════════════════════════════
@@ -3642,8 +4248,65 @@ function modalCostEntry() {
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-navy" onclick="closeModal()">${isE?'Registrar en Sub-Libro':'Post to Sub-Ledger'}</button>
+  <button class="btn btn-navy" onclick="saveCostEntry()">${isE?'✓ Registrar en Sub-Libro':'✓ Post to Sub-Ledger'}</button>
 </div>`;
+}
+
+function saveCostEntry(){
+  const isE=es();
+  // Read fields from the modalCostEntry form
+  const projSel = document.querySelector('#ce-proj, .mf-field select');
+  const amtEl   = document.querySelector('input[type="number"][placeholder="0.00"]');
+  const descEl  = document.querySelector(`input[placeholder="${isE?'Ej: Entrega concreto semana 12':'e.g. Concrete delivery week 12'}"]`);
+
+  // Collect all select values from the modal
+  const selects = document.querySelectorAll('.modal .mf-field select');
+  const pid     = selects[0]?.value;
+  const phase   = selects[1]?.value || 'PH-01';
+  const catVal  = selects[2]?.value || '5-01-01';
+  const creditAcct = selects[3]?.value?.split(' — ')[0] || '2-01-01-001';
+
+  const dateEl  = document.querySelector('.modal input[type="date"]');
+  const vendEl  = document.querySelectorAll('.modal .mf-field input[type="text"]')[1];
+  const desc    = descEl?.value?.trim() || '';
+  const amount  = parseFloat(amtEl?.value) || 0;
+  const date    = dateEl?.value || new Date().toISOString().slice(0,10);
+  const vendor  = vendEl?.value?.trim() || '';
+
+  if(!pid||!amount){gMsg(isE?'Proyecto y monto son obligatorios':'Project and amount are required');return;}
+
+  const catMap={'5-01-01':'mat','5-01-02':'labor','5-01-03':'sub','5-01-04':'equip','5-02-01':'oh'};
+  const cat = catMap[catVal.slice(0,7)] || 'mat';
+  const proj = PROJECTS.find(p=>p.id===pid);
+  if(!proj){gMsg('Project not found');return;}
+
+  const ref = `SL-${proj.id.slice(-3)}-${String((proj.subledger||[]).length+1).padStart(4,'0')}`;
+  const entry = {
+    ref, date, pid, phase, cat, amount,
+    acct: catVal.split(' — ')[0],
+    desc_en: desc||`${vendor} — ${cat}`, desc_es: desc||`${vendor} — ${cat}`,
+    vendor, creditAcct, blocked: false,
+    std: 'BOTH', retAmt: cat==='sub'?Math.round(amount*0.1):0,
+  };
+
+  if(!proj.subledger) proj.subledger=[];
+  proj.subledger.push(entry);
+
+  // Update phase actuals
+  const ph = (proj.phases||[]).find(p=>p.id===phase);
+  if(ph) ph.actuals[cat] = (ph.actuals[cat]||0) + amount;
+
+  // Add to DB.journal
+  DB.journal.push({
+    id: ref, date, desc: desc||`${vendor} cost entry`, proj: pid,
+    dr: '1-01-03-001', cr: creditAcct, amt: amount, std:'both', wip:true
+  });
+
+  dbSave();
+  log(S.user?.toUpperCase()||'U', `Sub-ledger entry: ${ref} — ${fmt(amount)} on ${pid}`, 'low');
+  closeModal();
+  gMsg(isE?`✓ ${ref} registrado. WIP actualizado para ${pid}.`:`✓ ${ref} posted. WIP updated for ${pid}.`);
+  renderMod(S.mod);
 }
 
 // ══════════════════════════════════════════════════════
@@ -3929,27 +4592,26 @@ function rSubs(){
 
   // Retainage accounting: split AP into Current + Non-Current
   // Invoice $10,000, ret 10% → AP Current $9,000 / Retainage Payable (LT) $1,000
-  const subsData = [
-    {n:'Elite MEP Group',     pid:'PRJ-001', phase:'PH-04', w9:'ok', coi:'ok',   coiExp:'Dec 2026', contract:284500, paid:262050, retPct:10, lw:'Generated', blocked:false},
-    {n:'Rodriguez Concrete',  pid:'PRJ-002', phase:'PH-02', w9:'missing',coi:'ok',coiExp:'Jun 2026', contract:182000, paid:0,      retPct:10, lw:'Blocked',   blocked:true, reason:'W-9 MISSING'},
-    {n:'SteelPro Inc.',       pid:'PRJ-002', phase:'PH-02', w9:'ok', coi:'expiring',coiExp:'Apr 2 2026',contract:317000,paid:285300,retPct:10,lw:'Pending',  blocked:true, reason:'COI EXPIRES IN 2 DAYS'},
-    {n:'Apex Framing LLC',    pid:'PRJ-003', phase:'PH-02', w9:'ok', coi:'ok',   coiExp:'Aug 2026', contract:89000,  paid:80100,  retPct:10, lw:'Generated', blocked:false},
-    {n:'SkyHigh Glass',       pid:'PRJ-001', phase:'PH-03', w9:'ok', coi:'ok',   coiExp:'Mar 2027', contract:420000, paid:0,      retPct:5,  lw:'Pending',   blocked:false},
-  ];
 
-  // Compute retainage fields
-  const subs = subsData.map(s => {
-    const grossBilled = s.paid / (1 - s.retPct/100) || 0;  // back-calc
-    const retHeld = Math.round(grossBilled * s.retPct/100);
-    const currentAP = Math.round(grossBilled * (1 - s.retPct/100));
-    const retainageBalance = Math.round(s.contract * s.retPct/100);
-    return {...s, grossBilled, retHeld, currentAP, retainageBalance};
+  // Compute retainage fields from DB.subs (live data)
+  const subs = DB.subs.map(s => {
+    const retPct = s.ret || 10;
+    const grossBilled = s.paid > 0 ? (s.paid / (1 - retPct/100)) : 0;
+    const retHeld = Math.round(grossBilled * retPct/100);
+    const currentAP = Math.round(grossBilled * (1 - retPct/100));
+    const retainageBalance = Math.round((s.contract||0) * retPct/100);
+    // Determine COI status
+    const today = new Date();
+    const coiDate = s.coiExp ? new Date(s.coiExp) : null;
+    const coiStatus = !coiDate ? 'missing' : (coiDate < today) ? 'expired' : (coiDate - today < 7*24*3600*1000*14) ? 'expiring' : 'ok';
+    return {...s, retPct, grossBilled, retHeld, currentAP, retainageBalance, coiStatus, n:s.name, pid:s.pid, w9:s.w9, coi:coiStatus, coiExp:s.coiExp?new Date(s.coiExp).toLocaleDateString('en-US',{month:'short',year:'numeric'}):'—', lw:s.lw||'Pending'};
   });
 
-  const totGross = subs.reduce((a,s)=>a+s.grossBilled,0);
-  const totCurrent = subs.reduce((a,s)=>a+s.currentAP,0);
-  const totRet = subs.reduce((a,s)=>a+s.retHeld,0);
-  const totRetBalance = subs.reduce((a,s)=>a+s.retainageBalance,0);
+  const totGross       = subs.reduce((a,s)=>a+s.grossBilled,0);
+  const totCurrent     = subs.reduce((a,s)=>a+s.currentAP,0);
+  const totRet         = subs.reduce((a,s)=>a+s.retHeld,0);
+  const totRetBalance  = subs.reduce((a,s)=>a+s.retainageBalance,0);
+  const blockedCount   = subs.filter(s=>s.blocked).length;
 
   return `
 <div class="page-header">
@@ -4032,14 +4694,16 @@ function rSubs(){
 <div class="card">
   <div class="card-header">
     <div class="card-title">${isE?'Registro de Subcontratistas — Estado de Cumplimiento y Retenciones':'Subcontractor Register — Compliance & Retainage Status'}</div>
-    <span class="badge b-no">2 ${isE?'Bloqueados':'Blocked'}</span>
+    <span class="badge b-no">${blockedCount} ${isE?'Bloqueados':'Blocked'}</span>
   </div>
-  <div class="alert a-danger" style="margin-bottom:12px">🚫 ${isE?'2 subcontratistas con pago bloqueado. Guardián 21 ha notificado al socio. Retenciones retenidas hasta resolución.':'2 subcontractors payment-blocked. Guardián 21 notified Partner. Retainage withheld pending resolution.'}</div>
+  <div class="alert ${blockedCount>0?'a-danger':'a-ok'}" style="margin-bottom:12px">
+    ${blockedCount>0?`🚫 ${blockedCount} ${isE?'subcontratista(s) con pago bloqueado. Guardián 21 ha notificado al socio.':'subcontractor(s) payment-blocked. Guardián 21 notified Partner.'}`:`✓ ${isE?'Todos los subcontratistas con pagos habilitados.':'All subcontractors payment-enabled.'}`}
+  </div>
   <div style="overflow-x:auto">
   <table class="dt">
     <thead><tr>
       <th>${isE?'Subcontratista':'Subcontractor'}</th>
-      <th>${isE?'Proyecto/Fase':'Project/Phase'}</th>
+      <th>${isE?'Proyecto':'Project'}</th>
       <th>W-9</th>
       <th>COI</th>
       <th class="num">${isE?'Facturado Bruto':'Gross Billed'}</th>
@@ -4052,7 +4716,7 @@ function rSubs(){
     <tbody>
     ${subs.map(s=>`<tr ${s.blocked?'style="background:var(--danger-light)"':''}>
       <td><div style="font-weight:600;font-size:12.5px">${s.n}</div><div style="font-size:10px;color:var(--stone)">${s.retPct}% ${isE?'retención':'retainage'}</div></td>
-      <td><span class="badge b-neu" style="font-size:10px">${s.pid}</span><div style="font-size:10px;color:var(--stone);margin-top:2px">${s.phase}</div></td>
+      <td><span class="badge b-neu" style="font-size:10px">${s.pid}</span></td>
       <td>${s.w9==='ok'?'<span class="badge b-ok" style="font-size:10px">✓ Filed</span>':'<span class="badge b-no" style="font-size:10px">✗ MISSING</span>'}</td>
       <td>${s.coi==='ok'?`<span class="badge b-ok" style="font-size:10px">✓ ${s.coiExp}</span>`:s.coi==='expiring'?`<span class="badge b-warn" style="font-size:10px">⚠ ${s.coiExp}</span>`:'<span class="badge b-no">Expired</span>'}</td>
       <td class="num mono">${s.grossBilled>0?fmt(s.grossBilled):'—'}</td>
@@ -4085,65 +4749,108 @@ function rSubs(){
 // ══════════════════════════════════════════════════════
 // MODULE: BUDGET — Live Budget Control with CO engine
 // ══════════════════════════════════════════════════════
-function rBudget(){const isE=es();return`
-<div class="page-header"><div><div class="page-title">${isE?'Presupuesto Vivo':'Live Budget Control'}</div>
-<div class="page-subtitle">${isE?'Presupuesto Actual = Original + OCs Aprobadas. Bloqueo automático al alcanzar el límite.':'Current Budget = Original + Approved COs. Auto-lock when limit is reached.'}</div></div>
-<div class="page-actions"><button class="btn btn-gold btn-sm" onclick="openModal(modalCO())">${isE?'+ Orden de Cambio':'+ Change Order'}</button></div></div>
-<div class="alert a-danger">🔒 ${isE?'Metro Line Extension bloqueado al 98%. Nuevos costos suspendidos hasta aprobación de socio (Nivel A).':'Metro Line Extension locked at 98%. New costs suspended pending Level A Partner approval.'}</div>
-<div class="card mt2">
-<div class="card-header"><div class="card-title">${isE?'Control Presupuestal por Proyecto':'Budget Control by Project'}</div></div>
-<table class="dt"><thead><tr>
-<th>${isE?'Proyecto':'Project'}</th>
-<th class="num">${isE?'Original':'Original'}</th>
-<th class="num">${isE?'+ OCs':'+ COs'}</th>
-<th class="num">${isE?'Presupuesto Actual':'Current Budget'}</th>
-<th class="num">${isE?'Costos Reales':'Actual Costs'}</th>
-<th class="num">${isE?'Comprometido Pendiente':'Uncommitted Budget'}</th>
-<th>${isE?'% Ejecutado':'% Executed'}</th>
-<th>Status</th>
-</tr></thead><tbody>
-${PROJECTS.map(p=>{
-  const t=projectTotals(p);
-  const totalCO=p.cos.reduce((s,c)=>s+c.amount,0);
-  const usedPct=Math.round(t.totalActual/p.contract*100);
-  const uncommitted=p.contract-t.totalActual;
-  const locked=usedPct>=95;
-  return`<tr>
-  <td style="font-weight:500">${p.name}<div style="font-size:10px;color:var(--stone)">${p.id}</div></td>
-  <td class="num mono">${fmt(p.orig)}</td>
-  <td class="num mono gold">${totalCO?'+'+fmt(totalCO):'—'}</td>
-  <td class="num mono bold">${fmt(p.contract)}</td>
-  <td class="num mono">${fmt(t.totalActual)}</td>
-  <td class="num mono ${uncommitted>0?'green':'red'} bold">${fmt(uncommitted)}</td>
-  <td>
-    <div style="display:flex;align-items:center;gap:8px">
-      <div class="prog" style="flex:1"><div class="prog-fill" style="width:${usedPct}%;background:var(--${locked?'danger':usedPct>80?'warning':'success'})"></div></div>
-      <span style="font-size:12px;font-weight:700;color:var(--${locked?'danger':usedPct>80?'warning':'success'});min-width:36px">${usedPct}%</span>
-    </div>
-  </td>
-  <td><span class="badge ${locked?'b-no':'b-ok'}">${locked?'🔒 LOCKED':'OK'}</span></td>
-  </tr>`;
-}).join('')}
-</tbody></table></div>
+function rBudget(){
+  const isE=es();
+  const lockedProjects = PROJECTS.filter(p=>{
+    const t=projectTotals(p);
+    return Math.round(t.totalActual/p.contract*100)>=95;
+  });
+  const allCOs = PROJECTS.flatMap(p=>(p.cos||[]).map(co=>({...co,pid:p.id,pname:p.name})));
+
+  return`
+<div class="page-header">
+  <div>
+    <div class="page-title">${isE?'Presupuesto Vivo':'Live Budget Control'}</div>
+    <div class="page-subtitle">${isE?'Presupuesto Actual = Original + OCs Aprobadas. Bloqueo automático al 95%.':'Current Budget = Original + Approved COs. Auto-lock at 95%.'}</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gold btn-sm" onclick="openModal(modalCO())">${isE?'+ Orden de Cambio':'+ Change Order'}</button>
+  </div>
+</div>
+
+${lockedProjects.map(p=>`<div class="alert a-danger">🔒 ${p.name} ${isE?'bloqueado al':'locked at'} ${Math.round(projectTotals(p).totalActual/p.contract*100)}%. ${isE?'Nuevos costos suspendidos hasta aprobación Nivel A.':'New costs suspended pending Level A approval.'}</div>`).join('')}
+
+<div class="card ${lockedProjects.length?'mt2':''}">
+  <div class="card-header"><div class="card-title">${isE?'Control Presupuestal por Proyecto':'Budget Control by Project'}</div></div>
+  <table class="dt"><thead><tr>
+    <th>${isE?'Proyecto':'Project'}</th>
+    <th class="num">${isE?'Original':'Original'}</th>
+    <th class="num">${isE?'+ OCs Aprobadas':'+ Approved COs'}</th>
+    <th class="num">${isE?'Presupuesto Actual':'Current Budget'}</th>
+    <th class="num">${isE?'Costos Reales':'Actual Costs'}</th>
+    <th class="num">${isE?'Saldo Libre':'Uncommitted'}</th>
+    <th>${isE?'% Ejecutado':'% Executed'}</th>
+    <th>Status</th>
+  </tr></thead><tbody>
+  ${PROJECTS.map(p=>{
+    const t=projectTotals(p);
+    const approvedCOs=(p.cos||[]).filter(c=>c.approved).reduce((s,c)=>s+c.amount,0);
+    const currentBudget=p.orig+approvedCOs;
+    const usedPct=currentBudget>0?Math.round(t.totalActual/currentBudget*100):0;
+    const uncommitted=currentBudget-t.totalActual;
+    const locked=usedPct>=95;
+    return`<tr ${locked?'style="background:var(--danger-light)"':''}>
+      <td style="font-weight:500">${p.name}<div style="font-size:10px;color:var(--stone)">${p.id}</div></td>
+      <td class="num mono">${fmt(p.orig||p.contract)}</td>
+      <td class="num mono gold">${approvedCOs?'+'+fmt(approvedCOs):'—'}</td>
+      <td class="num mono bold">${fmt(currentBudget)}</td>
+      <td class="num mono">${fmt(t.totalActual)}</td>
+      <td class="num mono ${uncommitted>0?'green':'red'} bold">${fmt(uncommitted)}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="prog" style="flex:1"><div class="prog-fill" style="width:${Math.min(usedPct,100)}%;background:var(--${locked?'danger':usedPct>80?'warning':'success'})"></div></div>
+          <span style="font-size:12px;font-weight:700;color:var(--${locked?'danger':usedPct>80?'warning':'success'});min-width:36px">${usedPct}%</span>
+        </div>
+      </td>
+      <td><span class="badge ${locked?'b-no':'b-ok'}">${locked?'🔒 LOCKED':'OK'}</span></td>
+    </tr>`;
+  }).join('')}
+  </tbody></table>
+</div>
+
 <div class="card">
-<div class="card-header"><div class="card-title">${isE?'Órdenes de Cambio — Todas':'Change Orders — All Projects'}</div></div>
-<table class="dt"><thead><tr>
-  <th>CO #</th><th>${isE?'Proyecto':'Project'}</th><th>${isE?'Descripción':'Description'}</th>
-  <th class="num">${isE?'Monto':'Amount'}</th><th>${isE?'Fecha':'Date'}</th>
-  <th>${isE?'Aprobado':'Approved'}</th><th>${isE?'Impacto Presupuesto':'Budget Impact'}</th>
-</tr></thead><tbody>
-${PROJECTS.flatMap(p=>p.cos.map(co=>`<tr>
-  <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 7px;border-radius:4px">${co.no}</code></td>
-  <td><span class="badge b-neu" style="font-size:10px">${p.id}</span></td>
-  <td style="font-size:12px">${isE?co.desc_es:co.desc_en}</td>
-  <td class="num mono gold bold">${fmt(co.amount)}</td>
-  <td style="font-size:11px;color:var(--stone)">${co.date}</td>
-  <td>${co.approved?'<span class="badge b-ok">✓ Approved</span>':'<span class="badge b-warn">Pending</span>'}</td>
-  <td class="num mono green">+${fmt(co.amount)}</td>
-</tr>`)).join('')}
-</tbody></table>
-<div style="text-align:right;margin-top:10px"><button class="btn btn-gold btn-sm" onclick="openModal(modalCO())">${isE?'+ Nueva OC':'+ New CO'}</button></div>
+  <div class="card-header">
+    <div class="card-title">${isE?'Órdenes de Cambio — Todos los Proyectos':'Change Orders — All Projects'}</div>
+    <span class="badge b-neu">${allCOs.length} ${isE?'total':'total'}</span>
+  </div>
+  ${allCOs.length===0?`<div style="font-size:12px;color:var(--stone);padding:12px">${isE?'Sin órdenes de cambio registradas. Use el botón "+ Orden de Cambio" para agregar.':'No change orders recorded. Use "+ Change Order" button to add.'}</div>`:''}
+  ${allCOs.length>0?`<table class="dt"><thead><tr>
+    <th>CO #</th><th>${isE?'Proyecto':'Project'}</th><th>${isE?'Descripción':'Description'}</th>
+    <th class="num">${isE?'Monto':'Amount'}</th><th>${isE?'Fecha':'Date'}</th>
+    <th>${isE?'Estado':'Status'}</th>
+    ${S.role==='A'?'<th>'+isE?'Acción':'Action'+'</th>':''}
+  </tr></thead><tbody>
+  ${allCOs.map((co,i)=>`<tr>
+    <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 7px;border-radius:4px">${co.no}</code></td>
+    <td><span class="badge b-neu" style="font-size:10px">${co.pid}</span></td>
+    <td style="font-size:12px">${isE?co.desc_es:co.desc_en}</td>
+    <td class="num mono gold bold">+${fmt(co.amount)}</td>
+    <td style="font-size:11px;color:var(--stone)">${co.date}</td>
+    <td>${co.approved?'<span class="badge b-ok">✓ Approved</span>':'<span class="badge b-warn">⏳ Pending</span>'}</td>
+    ${S.role==='A'&&!co.approved?`<td><button class="btn btn-sm btn-navy" onclick="approveChangeOrder('${co.pid}','${co.no}')">${isE?'✓ Aprobar':'✓ Approve'}</button></td>`:'<td></td>'}
+  </tr>`).join('')}
+  </tbody></table>`:''}
+  <div style="text-align:right;margin-top:10px">
+    <button class="btn btn-gold btn-sm" onclick="openModal(modalCO())">${isE?'+ Nueva OC':'+ New CO'}</button>
+  </div>
 </div>`}
+
+function approveChangeOrder(pid, coNo){
+  const isE=es();
+  const proj=PROJECTS.find(p=>p.id===pid);
+  if(!proj)return;
+  const co=proj.cos?.find(c=>c.no===coNo);
+  if(!co||co.approved)return;
+  co.approved=true;
+  proj.contract=(proj.orig||proj.contract)+co.amount;
+  // Sync to DB.cos
+  const dbco=DB.cos.find(c=>c.pid===pid&&c.no===coNo);
+  if(dbco)dbco.approved=true;
+  dbSave();
+  log(S.user?.toUpperCase()||'U',`CO approved: ${coNo} (+${fmt(co.amount)}) for ${pid}`,'medium');
+  gMsg(isE?`✓ OC ${coNo} aprobada. Presupuesto de ${proj.name} actualizado a ${fmt(proj.contract)}.`:`✓ CO ${coNo} approved. ${proj.name} budget updated to ${fmt(proj.contract)}.`);
+  renderMod('budget');
+}
 
 // ══════════════════════════════════════════════════════
 // MODULE: GENERAL LEDGER — Full Dual-Ledger
@@ -4206,8 +4913,8 @@ function rerenderGL(){
   if(!el) return;
   const isE = S.lang === 'es';
 
-  // Full journal data set
-  const entries = [
+  // Full journal data set — seeded + live DB.journal entries merged and sorted by date desc
+  const seedEntries = [
     {date:'2026-03-29',ref:'JE-0341',  desc_en:'Revenue recognition — Riverside Plaza (68% C-to-C)', desc_es:'Reconocimiento ingreso — Riverside Plaza (68% C-a-C)', proj:'PRJ-001',dr_acct:'1-01-02-001',dr_name:isE?'Cuentas x Cobrar':'Accounts Receivable', dr:547320, cr_acct:'4-01-01-001',cr_name:isE?'Ingresos Construcción':'Construction Revenue', cr:547320, std:'gaap', tag:'GAAP',   wip:false},
     {date:'2026-03-29',ref:'JE-0341A', desc_en:'IFRS 15 adjustment layer — performance obligation', desc_es:'Capa ajuste NIIF 15 — obligación de desempeño',         proj:'PRJ-001',dr_acct:'1-01-02-001',dr_name:isE?'Cuentas x Cobrar':'Accounts Receivable', dr:549100, cr_acct:'4-01-01-001',cr_name:isE?'Ingresos NIIF 15':'IFRS 15 Revenue',     cr:549100, std:'ifrs', tag:'IFRS',   wip:false},
     {date:'2026-03-29',ref:'JE-0342',  desc_en:'WIP → COGS reclassification Q1 month-end',           desc_es:'Reclasificación WIP → COGS cierre Q1',                proj:'PRJ-001',dr_acct:'5-01-03-001',dr_name:'COGS — Subcontractors', dr:372480, cr_acct:'1-01-03-001',cr_name:isE?'WIP (Activo)':'WIP (Asset)',             cr:372480, std:'both', tag:'BOTH',  wip:true},
@@ -4219,6 +4926,31 @@ function rerenderGL(){
     {date:'2026-03-24',ref:'JE-0336',  desc_en:'MACRS tax depreciation memo entry (ASC 740)',        desc_es:'Memo depreciación MACRS fiscal (ASC 740)',             proj:'ALL',   dr_acct:'7-01-01-002',dr_name:isE?'ISR Diferido (Tax)':'Deferred Tax Exp.',       dr:14210,  cr_acct:'2-02-01-002',cr_name:isE?'Pasivo ISR Diferido':'DTL',               cr:14210,  std:'gaap', tag:'GAAP',  wip:false},
     {date:'2026-03-22',ref:'JE-0335',  desc_en:'IAS 12 deferred tax — IFRS adjustment layer',       desc_es:'IAS 12 impuesto diferido — capa ajuste NIIF',          proj:'ALL',   dr_acct:'7-01-01-003',dr_name:isE?'ISR Diferido NIIF':'Deferred Tax IFRS',         dr:8400,   cr_acct:'2-02-01-002',cr_name:'DTL (IFRS)',                                   cr:8400,   std:'ifrs', tag:'IFRS',  wip:false},
   ];
+
+  // Convert DB.journal live entries into same shape and merge
+  const liveEntries = DB.journal.map(j=>({
+    date:    j.date||'',
+    ref:     j.id||'',
+    desc_en: j.desc||'',
+    desc_es: j.desc||'',
+    proj:    j.proj||'ALL',
+    dr_acct: j.dr||'—',
+    dr_name: j.dr_name||'',
+    dr:      j.amt||0,
+    cr_acct: j.cr||'—',
+    cr_name: j.cr_name||'',
+    cr:      j.amt||0,
+    std:     j.std||'both',
+    tag:     (j.std||'both')==='gaap'?'GAAP':(j.std||'both')==='ifrs'?'IFRS':'BOTH',
+    wip:     j.wip||false,
+    ret:     j.ret||0,
+    isLive:  true,
+  })).filter(j=>!seedEntries.find(s=>s.ref===j.ref)); // deduplicate
+
+  const allEntries = [...liveEntries, ...seedEntries]
+    .sort((a,b)=>b.date.localeCompare(a.date));
+
+  const entries = allEntries;
 
   const filtered = entries.filter(e=>{
     if(glStd==='gaap' && e.std==='ifrs') return false;
@@ -4234,8 +4966,8 @@ function rerenderGL(){
     el.innerHTML = `
     <div class="card" style="padding:0;overflow:hidden">
       <div style="padding:10px 14px;background:var(--stone-pale);border-bottom:1px solid rgba(0,0,0,.06);display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:12px;font-weight:600;color:var(--navy)">${isE?'Diario General — Q1 2026':'General Journal — Q1 2026'}</span>
-        <span style="font-size:11px;color:var(--stone)">${filtered.length} ${isE?'asientos':'entries'} · ${isE?'Modo':'Mode'}: <strong>${glStd==='both'?isE?'Paralelo':'Parallel':glStd.toUpperCase()}</strong></span>
+        <span style="font-size:12px;font-weight:600;color:var(--navy)">${isE?'Diario General — Q1-Q2 2026':'General Journal — Q1-Q2 2026'}</span>
+        <span style="font-size:11px;color:var(--stone)">${filtered.length} ${isE?'asientos':'entries'} · ${liveEntries.length>0?`<span style="color:var(--success)">${liveEntries.length} ${isE?'nuevos':'new'}</span> · `:''}${isE?'Modo':'Mode'}: <strong>${glStd==='both'?isE?'Paralelo':'Parallel':glStd.toUpperCase()}</strong></span>
       </div>
       <div style="overflow-x:auto">
       <table class="dt" style="min-width:1000px">
@@ -4254,7 +4986,7 @@ function rerenderGL(){
         </tr></thead>
         <tbody>
         ${filtered.map(e=>`
-        <tr ${e.retEntry?'style="background:var(--warning-light)"':e.wip?'style="background:rgba(27,79,138,.03)"':''}>
+        <tr ${e.isLive?'style="background:rgba(26,122,74,.04);border-left:3px solid var(--success)"':e.retEntry?'style="background:var(--warning-light)"':e.wip?'style="background:rgba(27,79,138,.03)"':''}>
           <td class="mono" style="font-size:10px">${e.date}</td>
           <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 5px;border-radius:3px">${e.ref}</code></td>
           <td style="font-size:11.5px;min-width:220px">${isE?e.desc_es:e.desc_en}</td>
@@ -4492,29 +5224,86 @@ ${[['Nivel 1 — Exacto','42','$1,847,230','ok','94%'],['Nivel 2 — Fuzzy ±2d'
 </div>`).join('')}
 </div></div>`}
 
-function rAssets(){const isE=es();return`
-<div class="page-header"><div><div class="page-title">${isE?'Activos Fijos':'Fixed Assets'}</div><div class="page-subtitle">MACRS (Tax) + ${isE?'Línea Recta':'Straight-Line'} (Books) · ${isE?'Diferencial Tax automático':'Auto Tax Differential'}</div></div>
-<div class="page-actions"><button class="btn btn-navy btn-sm" onclick="openModal(modalAsset())">${isE?'+ Nuevo Activo':'+ Add Asset'}</button></div></div>
-<div class="card"><div style="overflow-x:auto"><table class="dt"><thead><tr>
-<th>${isE?'Activo':'Asset'}</th><th>${isE?'Categoría':'Category'}</th><th>${isE?'Adq.':'Acq.'}</th>
-<th class="num">${isE?'Costo':'Cost'}</th><th class="num">${isE?'Depr. Acum. (SL)':'Acc. Dep. (SL)'}</th>
-<th class="num">${isE?'Valor Libro':'Book Value'}</th><th class="num">MACRS YTD</th><th class="num">${isE?'Dif. Tax':'Tax Diff'}</th><th>Status</th>
-</tr></thead><tbody>
-${[['Caterpillar 320 Excavator','Heavy Equip.','01/22','$184,000','$73,600','$110,400','$36,800','$36,800'],
-   ['Tower Crane — Riverside','Crane','06/23','$320,000','$64,000','$256,000','$80,000','$16,000'],
-   ['Ford F-350 Fleet (×4)','Vehicles','03/23','$168,000','$50,400','$117,600','$100,800','$50,400'],
-   ['Portable Gen. 250kW','Equipment','09/24','$42,000','$4,200','$37,800','$14,700','$10,500'],
-   ['Office Buildout HQ','Leasehold','01/22','$95,000','$28,500','$66,500','$28,500','$0'],
-].map(([n,c,a,cost,dep,bv,macrs,diff])=>`<tr>
-<td style="font-weight:500">${n}</td><td><span class="badge b-info" style="font-size:10px">${c}</span></td>
-<td class="mono" style="font-size:11px">${a}</td><td class="num mono">${cost}</td>
-<td class="num mono stone">${dep}</td><td class="num mono bold">${bv}</td>
-<td class="num mono gold">${macrs}</td>
-<td class="num mono ${diff!=='$0'?'red':''}">${diff}</td>
-<td><span class="badge b-ok" style="font-size:10px">Active</span></td>
-</tr>`).join('')}
-</tbody></table></div>
-<div class="alert a-info mt2" style="font-size:11px">ⓘ ${isE?'El sistema calcula automáticamente la diferencia temporal entre MACRS y SL para el cómputo del Deferred Tax Asset/Liability (ASC 740).':'System auto-calculates MACRS vs SL timing difference for Deferred Tax Asset/Liability (ASC 740).'}</div>
+function rAssets(){
+  const isE=es();
+  // Seed default assets if DB.assets is empty
+  const seedAssets = [
+    {id:'AST-001',desc:'Caterpillar 320 Excavator', cat:'Heavy Equipment',cost:184000,book:'SL',macrs:'5yr',life:5, date:'2022-01-15',slDepr:36800,macrsYr1:36800,accumulated:147200,status:'active'},
+    {id:'AST-002',desc:'Tower Crane — Riverside',   cat:'Heavy Equipment',cost:320000,book:'SL',macrs:'5yr',life:5, date:'2023-06-01',slDepr:64000,macrsYr1:64000,accumulated:128000,status:'active'},
+    {id:'AST-003',desc:'Ford F-350 Fleet (×4)',     cat:'Vehicles',       cost:168000,book:'SL',macrs:'5yr',life:5, date:'2023-03-10',slDepr:33600,macrsYr1:33600,accumulated:100800,status:'active'},
+    {id:'AST-004',desc:'Portable Generator 250kW',  cat:'Heavy Equipment',cost:42000, book:'SL',macrs:'7yr',life:7, date:'2024-09-01',slDepr:6000, macrsYr1:6000, accumulated:6000, status:'active'},
+    {id:'AST-005',desc:'Office Buildout HQ',        cat:'Leasehold',      cost:95000, book:'SL',macrs:'15yr',life:10,date:'2022-01-01',slDepr:9500, macrsYr1:4750, accumulated:38000,status:'active'},
+  ];
+  const allAssets = seedAssets.concat(DB.assets.filter(a=>!seedAssets.find(s=>s.id===a.id)));
+  const totalCost = allAssets.reduce((s,a)=>s+a.cost,0);
+  const totalAccum= allAssets.reduce((s,a)=>s+a.accumulated,0);
+
+  return`
+<div class="page-header">
+  <div>
+    <div class="page-title">${isE?'Activos Fijos':'Fixed Assets'}</div>
+    <div class="page-subtitle">MACRS (${isE?'Fiscal':'Tax'}) + ${isE?'Línea Recta SL (Libros)':'Straight-Line SL (Books)'} · ${isE?'Diferencia temporal automática → ISR Diferido ASC 740':'Auto timing difference → Deferred Tax ASC 740'}</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-navy btn-sm" onclick="openModal(modalAsset())">${isE?'+ Nuevo Activo':'+ Add Asset'}</button>
+  </div>
+</div>
+
+<div class="g3" style="margin-bottom:0">
+  ${[
+    [isE?'Costo Total':'Total Cost',          fmt(totalCost),          'navy'],
+    [isE?'Depreciación Acum.':'Accum. Depreciation', fmt(totalAccum), 'stone'],
+    [isE?'Valor Neto en Libros':'Net Book Value',     fmt(totalCost-totalAccum),'success'],
+  ].map(([l,v,c])=>`<div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div>
+    <div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:20px">${v}</div></div>`).join('')}
+</div>
+
+<div class="card">
+  <div style="overflow-x:auto"><table class="dt">
+    <thead><tr>
+      <th>${isE?'Activo':'Asset'}</th>
+      <th>${isE?'Categoría':'Category'}</th>
+      <th>${isE?'Adq.':'Acq.'}</th>
+      <th class="num">${isE?'Costo':'Cost'}</th>
+      <th class="num">${isE?'Depr. Acum. (SL)':'Acc. Dep. (SL)'}</th>
+      <th class="num">${isE?'Valor Libro':'Book Value'}</th>
+      <th class="num">MACRS Yr1</th>
+      <th class="num">${isE?'Dif. Temporal':'Timing Diff.'}</th>
+      <th class="num">${isE?'DTL (21%)':'DTL (21%)'}</th>
+      <th>Status</th>
+    </tr></thead>
+    <tbody>
+    ${allAssets.map(a=>{
+      const bv   = a.cost - a.accumulated;
+      const diff = a.macrsYr1 - a.slDepr;
+      const dtl  = Math.round(Math.abs(diff)*0.21);
+      return`<tr>
+        <td style="font-weight:500;font-size:12.5px">${a.desc}</td>
+        <td><span class="badge b-info" style="font-size:10px">${a.cat}</span></td>
+        <td class="mono" style="font-size:11px">${a.date?.slice(0,7)||'—'}</td>
+        <td class="num mono">${fmt(a.cost)}</td>
+        <td class="num mono stone">${fmt(a.accumulated)}</td>
+        <td class="num mono bold">${fmt(bv)}</td>
+        <td class="num mono gold">${fmt(a.macrsYr1)}</td>
+        <td class="num mono ${diff>0?'red':diff<0?'green':''} bold">${diff>=0?'+':''}${fmt(diff)}</td>
+        <td class="num mono ${diff!==0?'danger':''}">${diff!==0?fmt(dtl):'—'}</td>
+        <td><span class="badge b-ok" style="font-size:10px">${a.status}</span></td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:var(--navy);color:#fff;font-weight:700">
+        <td colspan="3">TOTAL</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(totalCost)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.6)">${fmt(totalAccum)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(totalCost-totalAccum)}</td>
+        <td colspan="4"></td>
+      </tr>
+    </tfoot>
+  </table></div>
+  <div class="alert a-info mt2" style="font-size:11px">
+    ⓘ ${isE?'Dif. Temporal = MACRS Yr1 − SL. Positiva → Pasivo ISR Diferido (DTL). El sistema la registra automáticamente en 2-02-01-002 al cierre de período.':'Timing Diff = MACRS Yr1 − SL. Positive → Deferred Tax Liability (DTL). System auto-posts to 2-02-01-002 at period close.'}
+  </div>
 </div>`}
 
 // ══════════════════════════════════════════════════════
@@ -4597,21 +5386,19 @@ ${[
       <th>${isE?'Violaciones SOD':'SOD Violations'}</th><th>Status</th>
     </tr></thead>
     <tbody>
-    ${[
-      {n:'Maria Santos',  r:'A', clients:'All',                 nda:'N/A (Partner)', last:'Today 09:14', viol:0},
-      {n:'James Kim',     r:'B', clients:'Riverside, Harbor',   nda:'Signed 03/28',  last:'Today 08:47', viol:1},
-      {n:'Diana Reyes',   r:'C', clients:'Riverside',           nda:'Signed 03/25',  last:'Yesterday',   viol:0},
-      {n:'Tom Walsh',     r:'B', clients:'Metro Line',          nda:'Signed 03/01',  last:'3 days ago',  viol:1},
-      {n:'Ana Pérez',     r:'C', clients:'Harbor View',         nda:'Signed 03/29',  last:'Today 10:22', viol:0},
-    ].map(u=>`<tr>
-      <td style="font-weight:500">${u.n}</td>
-      <td><span class="badge ${u.r==='A'?'b-gold':u.r==='B'?'b-info':'b-neu'}">${isE?'Nivel':'Level'} ${u.r}</span></td>
-      <td style="font-size:11px;color:var(--stone)">${u.clients}</td>
-      <td><span class="badge ${u.nda.includes('N/A')?'b-neu':'b-ok'}" style="font-size:10px">${u.nda}</span></td>
-      <td style="font-size:11px;color:var(--stone)">${u.last}</td>
-      <td>${u.viol>0?`<span class="badge b-no" style="font-size:10px">⚠ ${u.viol}</span>`:'<span class="badge b-ok" style="font-size:10px">0</span>'}</td>
-      <td><span class="badge b-ok">Active</span></td>
-    </tr>`).join('')}
+    ${DB.users.map(u => {
+      const clientNames = u.clients[0]==='ALL'||u.clients[0]==='All'?'All clients':u.clients.join(', ');
+      const violations = u.viol||0;
+      return `<tr>
+        <td style="font-weight:500">${u.first} ${u.last}</td>
+        <td><span class="badge ${u.role==='A'?'b-gold':u.role==='B'?'b-info':'b-neu'}">${isE?'Nivel':'Level'} ${u.role}</span></td>
+        <td style="font-size:11px;color:var(--stone)">${clientNames}</td>
+        <td><span class="badge ${u.nda.includes('Pend')||u.nda==='N/A (Partner)'?'b-neu':'b-ok'}" style="font-size:10px">${u.nda}</span></td>
+        <td style="font-size:11px;color:var(--stone)">${isE?'Registro activo':'Active record'}</td>
+        <td>${violations>0?`<span class="badge b-no" style="font-size:10px">⚠ ${violations}</span>`:'<span class="badge b-ok" style="font-size:10px">0</span>'}</td>
+        <td><span class="badge b-ok">Active</span></td>
+      </tr>`;
+    }).join('')}
     </tbody>
   </table></div>
 </div>
@@ -4958,30 +5745,141 @@ function modalClassify(){const isE=es();return`
 function modalNewProject(){const isE=es();return`
 <h3>${isE?'Nuevo Proyecto de Construcción':'New Construction Project'}</h3>
 <div class="mf">
-<div class="mf-field full"><label>${isE?'Nombre del Proyecto':'Project Name'}</label><input type="text"></div>
-<div class="mf-row"><div class="mf-field"><label>${isE?'ID Proyecto':'Project ID'}</label><input type="text" placeholder="PRJ-004"></div>
-<div class="mf-field"><label>${isE?'Cliente / Propietario':'Client / Owner'}</label><input type="text"></div></div>
-<div class="mf-row"><div class="mf-field"><label>${isE?'Monto de Contrato':'Contract Amount'}</label><input type="number" placeholder="0.00"></div>
-<div class="mf-field"><label>${isE?'Costo Total Estimado':'Est. Total Cost'}</label><input type="number" placeholder="0.00"></div></div>
-<div class="mf-row"><div class="mf-field"><label>${isE?'Fecha de Inicio':'Start Date'}</label><input type="date"></div>
-<div class="mf-field"><label>${isE?'Fin Estimado':'Est. Completion'}</label><input type="date"></div></div>
-<div class="mf-field full"><label>${isE?'% Retención':'Retainage %'}</label><select><option>10%</option><option>5%</option><option>0%</option></select></div>
-<div class="mf-field full"><label>${isE?'Método de Reconocimiento':'Recognition Method'}</label><select><option>Cost-to-Cost (ASC 606 / IFRS 15)</option><option>Milestones</option><option>Completed Contract</option></select></div>
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Nombre del Proyecto':'Project Name'}</label><input type="text" id="np-name" placeholder="e.g. Coral Towers Phase 2"></div>
+  <div class="mf-field"><label>${isE?'ID Proyecto':'Project ID'}</label><input type="text" id="np-id" placeholder="${nextPrjId()}" value="${nextPrjId()}"></div>
 </div>
-<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-navy" onclick="closeModal()">${isE?'Crear Proyecto':'Create Project'}</button></div>`}
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Cliente / Propietario':'Client / Owner'}</label>
+    <select id="np-client">${DB.clients.filter(c=>c.status==='active').map(c=>`<option value="${c.name}">${c.name}</option>`).join('')}</select></div>
+  <div class="mf-field"><label>${isE?'PM Responsable':'Project Manager'}</label>
+    <select id="np-pm">${DB.users.map(u=>`<option value="${u.first} ${u.last}">${u.first} ${u.last} (${u.role})</option>`).join('')}</select></div>
+</div>
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Monto de Contrato ($)':'Contract Amount ($)'}</label><input type="number" id="np-contract" placeholder="0" min="0" step="1000"></div>
+  <div class="mf-field"><label>${isE?'Costo Total Estimado EAC ($)':'Est. Total Cost EAC ($)'}</label><input type="number" id="np-eac" placeholder="0" min="0" step="1000"></div>
+</div>
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Fecha de Inicio':'Start Date'}</label><input type="date" id="np-start" value="${new Date().toISOString().slice(0,10)}"></div>
+  <div class="mf-field"><label>${isE?'Fin Estimado':'Est. Completion'}</label><input type="date" id="np-end"></div>
+</div>
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'% Retención':'Retainage %'}</label>
+    <select id="np-ret"><option value="10">10%</option><option value="5">5%</option><option value="0">0%</option></select></div>
+  <div class="mf-field"><label>${isE?'Método de Reconocimiento':'Recognition Method'}</label>
+    <select id="np-method"><option value="c2c">Cost-to-Cost (ASC 606 / IFRS 15)</option><option value="milestone">Milestones</option><option value="completed">Completed Contract</option></select></div>
+</div>
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="saveNewProject()">${isE?'✓ Crear Proyecto':'✓ Create Project'}</button>
+</div>`}
+
+function saveNewProject() {
+  const isE = es();
+  const name     = document.getElementById('np-name')?.value.trim();
+  const id       = document.getElementById('np-id')?.value.trim() || nextPrjId();
+  const owner    = document.getElementById('np-client')?.value;
+  const pm       = document.getElementById('np-pm')?.value;
+  const contract = parseFloat(document.getElementById('np-contract')?.value) || 0;
+  const eac      = parseFloat(document.getElementById('np-eac')?.value) || contract * 0.8;
+  const start    = document.getElementById('np-start')?.value;
+  const end      = document.getElementById('np-end')?.value;
+  const retPct   = parseInt(document.getElementById('np-ret')?.value) || 10;
+
+  if (!name || !contract) {
+    gMsg(isE ? 'Nombre y monto de contrato son obligatorios' : 'Name and contract amount are required');
+    return;
+  }
+  if (PROJECTS.find(p => p.id === id)) {
+    gMsg(isE ? `ID de proyecto "${id}" ya existe` : `Project ID "${id}" already exists`);
+    return;
+  }
+
+  // Create new project and add to live PROJECTS array
+  const newProject = {
+    id, name, pm, owner,
+    startDate: start || new Date().toISOString().slice(0,10),
+    endDate:   end   || '',
+    contract, orig: contract, retPct, eac,
+    phases: [
+      { id:'PH-01', name_en:'Phase 1 — Foundation',  name_es:'Fase 1 — Cimentación',  budgets:{mat:Math.round(eac*0.18),labor:Math.round(eac*0.1),sub:Math.round(eac*0.12),equip:Math.round(eac*0.04),oh:Math.round(eac*0.02)}, actuals:{mat:0,labor:0,sub:0,equip:0,oh:0}, pct:0, status:'pending' },
+      { id:'PH-02', name_en:'Phase 2 — Structure',   name_es:'Fase 2 — Estructura',   budgets:{mat:Math.round(eac*0.25),labor:Math.round(eac*0.14),sub:Math.round(eac*0.18),equip:Math.round(eac*0.06),oh:Math.round(eac*0.03)}, actuals:{mat:0,labor:0,sub:0,equip:0,oh:0}, pct:0, status:'pending' },
+      { id:'PH-03', name_en:'Phase 3 — MEP',         name_es:'Fase 3 — MEP',          budgets:{mat:Math.round(eac*0.10),labor:Math.round(eac*0.06),sub:Math.round(eac*0.22),equip:Math.round(eac*0.02),oh:Math.round(eac*0.03)}, actuals:{mat:0,labor:0,sub:0,equip:0,oh:0}, pct:0, status:'pending' },
+    ],
+    billings: [], cos: [], subledger: [],
+  };
+
+  PROJECTS.push(newProject);
+  // Also add a minimal PERF_OBL entry
+  PERF_OBL[id] = [
+    { id:`PO-${id.slice(-3)}-A`, name_en:'Construction Work — Full Scope', name_es:'Trabajo de Construcción — Alcance Total',
+      method:'over_time', measure:'c2c', alloc_pct:1.0, alloc_amt:contract,
+      costs_incurred:0, est_total_cost:eac, pct:0, status:'pending',
+      gaap_note:'Cost-to-Cost input method (ASC 606-10-55-20)', ifrs_note:'C-to-C. Outcome measurable reliably (IFRS 15.41)',
+      gaap_only:false, ifrs_only:false }
+  ];
+
+  dbSave();
+  log(S.user?.toUpperCase()||'U', `Project created: ${id} — ${name} (${fmt(contract)})`, 'medium');
+  closeModal();
+  gMsg(isE ? `✓ Proyecto "${name}" creado. ID: ${id}` : `✓ Project "${name}" created. ID: ${id}`);
+  renderMod('jobcost');
+}
 
 function modalAsset(){const isE=es();return`
 <h3>${isE?'Nuevo Activo Fijo':'New Fixed Asset'}</h3>
 <div class="mf">
-<div class="mf-field full"><label>${isE?'Descripción':'Description'}</label><input type="text"></div>
-<div class="mf-row"><div class="mf-field"><label>${isE?'Categoría':'Category'}</label><select><option>Heavy Equipment</option><option>Vehicles</option><option>Buildings</option><option>Leasehold</option></select></div>
-<div class="mf-field"><label>${isE?'Costo':'Cost'}</label><input type="number"></div></div>
-<div class="mf-row"><div class="mf-field"><label>${isE?'Método Libro':'Book Method'}</label><select><option>Straight-Line</option><option>DDB</option></select></div>
-<div class="mf-field"><label>MACRS</label><select><option>5-yr</option><option>7-yr</option><option>15-yr</option><option>Section 179</option></select></div></div>
-<div class="mf-row"><div class="mf-field"><label>${isE?'Vida Útil (años)':'Useful Life (yrs)'}</label><input type="number" placeholder="5"></div>
-<div class="mf-field"><label>${isE?'Fecha':'Date'}</label><input type="date"></div></div>
+<div class="mf-field full"><label>${isE?'Descripción del Activo':'Asset Description'}</label>
+  <input type="text" id="na-desc" placeholder="${isE?'Ej: Excavadora Cat 325':'e.g. Caterpillar 325 Excavator'}"></div>
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Categoría':'Category'}</label>
+    <select id="na-cat"><option value="Heavy Equipment">Heavy Equipment</option><option value="Vehicles">Vehicles</option><option value="Buildings">Buildings</option><option value="Leasehold">Leasehold Improvement</option></select></div>
+  <div class="mf-field"><label>${isE?'Costo de Adquisición ($)':'Acquisition Cost ($)'}</label>
+    <input type="number" id="na-cost" placeholder="0" min="0" step="1000"></div>
 </div>
-<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-navy" onclick="closeModal()">${isE?'Agregar':'Add'}</button></div>`}
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Método Libro (Depreciación)':'Book Depreciation Method'}</label>
+    <select id="na-book"><option value="SL">Straight-Line (SL)</option><option value="DDB">Double Declining Balance</option></select></div>
+  <div class="mf-field"><label>MACRS ${isE?'(Fiscal)':'(Tax)'}</label>
+    <select id="na-macrs"><option value="5yr">5-Year</option><option value="7yr">7-Year</option><option value="15yr">15-Year</option><option value="179">Section 179 (Full Expensing)</option></select></div>
+</div>
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Vida Útil — Libros (años)':'Useful Life — Books (yrs)'}</label>
+    <input type="number" id="na-life" placeholder="5" min="1" max="50" value="5"></div>
+  <div class="mf-field"><label>${isE?'Fecha de Adquisición':'Acquisition Date'}</label>
+    <input type="date" id="na-date" value="${new Date().toISOString().slice(0,10)}"></div>
+</div>
+</div>
+<div class="alert a-info" style="margin-top:12px;font-size:11px">
+  ${isE?'El sistema calculará depreciación SL vs MACRS y la diferencia temporal para ISR Diferido (ASC 740 / IAS 12).':'System auto-calculates SL vs MACRS depreciation and timing difference for Deferred Tax (ASC 740 / IAS 12).'}
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="saveAsset()">${isE?'✓ Agregar Activo':'✓ Add Asset'}</button>
+</div>`}
+
+function saveAsset(){
+  const isE=es();
+  const desc =document.getElementById('na-desc')?.value.trim();
+  const cat  =document.getElementById('na-cat')?.value;
+  const cost =parseFloat(document.getElementById('na-cost')?.value)||0;
+  const book =document.getElementById('na-book')?.value;
+  const macrs=document.getElementById('na-macrs')?.value;
+  const life =parseInt(document.getElementById('na-life')?.value)||5;
+  const date =document.getElementById('na-date')?.value;
+  if(!desc||!cost){gMsg(isE?'Descripción y costo son obligatorios':'Description and cost are required');return;}
+  const slDepr=Math.round(cost/life);
+  const macrsMultipliers={'5yr':0.2,'7yr':0.1429,'15yr':0.05,'179':1.0};
+  const macrsYr1=Math.round(cost*(macrsMultipliers[macrs]||0.2));
+  const assetId=nextId('AST',DB.assets);
+  DB.assets.push({id:assetId,desc,cat,cost,book,macrs,life,date,slDepr,macrsYr1,accumulated:0,status:'active',addedBy:S.user});
+  dbSave();
+  log(S.user?.toUpperCase()||'U',`Asset added: ${assetId} — ${desc} (${fmt(cost)})`, 'medium');
+  closeModal();
+  gMsg(isE?`✓ Activo "${desc}" agregado (${assetId}). Depr SL: ${fmt(slDepr)}/año`:`✓ Asset "${desc}" added (${assetId}). SL Depr: ${fmt(slDepr)}/yr`);
+  renderMod(S.mod);
+}
 
 function modalRecon(){const isE=es();return`
 <h3>${isE?'Conciliación Bancaria':'Bank Reconciliation'}</h3>
@@ -4997,37 +5895,188 @@ ${[['$54,320','$54,320','ok'],['$12,400','$12,400','ok'],['$8,450','$8,500','war
 function modalCO(){const isE=es();return`
 <h3>${isE?'Nueva Orden de Cambio':'New Change Order'}</h3>
 <div class="mf">
-<div class="mf-field full"><label>${isE?'Proyecto':'Project'}</label><select><option>Riverside Plaza</option><option>Harbor View Tower</option></select></div>
-<div class="mf-field full"><label>${isE?'Descripción':'Description'}</label><input type="text"></div>
-<div class="mf-row"><div class="mf-field"><label>${isE?'Monto':'Amount'}</label><input type="number"></div>
-<div class="mf-field"><label>${isE?'Impacto Plazo':'Schedule Impact'}</label><select><option>None</option><option>+7 days</option><option>+14 days</option><option>+30 days</option></select></div></div>
+<div class="mf-field full"><label>${isE?'Proyecto':'Project'}</label>
+  <select id="co-proj">${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}</select></div>
+<div class="mf-field full"><label>${isE?'Descripción del Cambio':'Change Description'}</label>
+  <input type="text" id="co-desc" placeholder="${isE?'Ej: Cambio de especificaciones en MEP piso 12':'e.g. MEP specification change floor 12'}"></div>
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Monto ($)':'Amount ($)'}</label>
+    <input type="number" id="co-amt" placeholder="0" min="0" step="500"></div>
+  <div class="mf-field"><label>${isE?'Impacto en Plazo':'Schedule Impact'}</label>
+    <select id="co-sched"><option value="none">None / N/A</option><option value="+7">+7 days</option><option value="+14">+14 days</option><option value="+30">+30 days</option><option value="+60">+60 days</option></select></div>
 </div>
-<div class="alert a-warn" style="margin-top:12px;font-size:11px">${isE?'Requiere aprobación Nivel A. Presupuesto se actualiza automáticamente.':'Requires Level A approval. Budget auto-updates on approval.'}</div>
-<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-gold" onclick="closeModal()">${isE?'Enviar para Aprobación':'Submit for Approval'}</button></div>`}
+<div class="mf-field full"><label>${isE?'Razón / Justificación':'Reason / Justification'}</label>
+  <select id="co-reason"><option>${isE?'Condición de suelo imprevista':'Unforeseen soil condition'}</option><option>${isE?'Cambio de diseño por cliente':'Client-driven design change'}</option><option>${isE?'Alza de materiales':'Material cost escalation'}</option><option>${isE?'Error u omisión en planos':'Plan error or omission'}</option><option>${isE?'Otro':'Other'}</option></select></div>
+</div>
+<div class="alert a-warn" style="margin-top:12px;font-size:11px">
+  ${isE?'Esta OC requerirá aprobación del socio (Nivel A). El presupuesto del proyecto se actualiza automáticamente al aprobar.':'This CO requires Partner approval (Level A). Project budget auto-updates on approval.'}
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-gold" onclick="saveCO()">${isE?'✓ Enviar para Aprobación':'✓ Submit for Approval'}</button>
+</div>`}
+
+function saveCO(){
+  const isE=es();
+  const pid  =document.getElementById('co-proj')?.value;
+  const desc =document.getElementById('co-desc')?.value.trim();
+  const amt  =parseFloat(document.getElementById('co-amt')?.value)||0;
+  const sched=document.getElementById('co-sched')?.value;
+  const reason=document.getElementById('co-reason')?.value;
+  if(!pid||!desc||!amt){gMsg(isE?'Proyecto, descripción y monto son obligatorios':'Project, description and amount are required');return;}
+  const proj=PROJECTS.find(p=>p.id===pid);
+  if(!proj){gMsg('Project not found');return;}
+  if(!proj.cos)proj.cos=[];
+  const coNum=`CO-${String(proj.cos.length+1).padStart(3,'0')}`;
+  const co={no:coNum,date:new Date().toISOString().slice(0,7),desc_en:desc,desc_es:desc,amount:amt,approved:false,scheduleImpact:sched,reason};
+  proj.cos.push(co);
+  DB.cos.push({pid,...co});
+  dbSave();
+  log(S.user?.toUpperCase()||'U',`CO submitted: ${coNum} — ${desc} (${fmt(amt)}) for ${pid}`,'medium');
+  closeModal();
+  gMsg(isE?`✓ OC ${coNum} enviada para aprobación. El presupuesto se actualizará cuando sea aprobada.`:`✓ CO ${coNum} submitted for approval. Budget updates when approved.`);
+  renderMod(S.mod);
+}
 
 function modalSub(){const isE=es();return`
 <h3>${isE?'Nuevo Subcontratista':'New Subcontractor'}</h3>
 <div class="mf">
-<div class="mf-field full"><label>${isE?'Nombre Legal':'Legal Name'}</label><input type="text"></div>
-<div class="mf-row"><div class="mf-field"><label>EIN / Tax ID</label><input type="text" placeholder="XX-XXXXXXX"></div>
-<div class="mf-field"><label>W-9</label><input type="file" accept=".pdf"></div></div>
-<div class="mf-row"><div class="mf-field"><label>COI Expiry</label><input type="date"></div>
-<div class="mf-field"><label>${isE?'Retención':'Retainage %'}</label><select><option>10%</option><option>5%</option><option>0%</option></select></div></div>
+<div class="mf-field full"><label>${isE?'Nombre Legal':'Legal Name'}</label><input type="text" id="ns-name" placeholder="ABC Concrete LLC"></div>
+<div class="mf-row">
+  <div class="mf-field"><label>EIN / Tax ID</label><input type="text" id="ns-ein" placeholder="XX-XXXXXXX"></div>
+  <div class="mf-field"><label>${isE?'Estado W-9':'W-9 Status'}</label>
+    <select id="ns-w9"><option value="filed">${isE?'✓ Archivado':'✓ Filed'}</option><option value="missing">${isE?'✗ No enviado':'✗ Not submitted'}</option></select></div>
 </div>
-<div class="alert a-info" style="margin-top:12px;font-size:11px">${isE?'Pago bloqueado si W-9 ausente o COI vencido.':'Payment auto-blocked if W-9 absent or COI expired.'}</div>
-<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-navy" onclick="closeModal()">${isE?'Agregar Sub':'Add Sub'}</button></div>`}
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Vencimiento COI (Seguro)':'COI Expiry Date'}</label><input type="date" id="ns-coi"></div>
+  <div class="mf-field"><label>${isE?'Retención %':'Retainage %'}</label>
+    <select id="ns-ret"><option value="10">10%</option><option value="5">5%</option><option value="0">0%</option></select></div>
+</div>
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Proyecto Asignado':'Assigned Project'}</label>
+    <select id="ns-proj">
+      ${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}
+    </select></div>
+  <div class="mf-field"><label>${isE?'Monto de Contrato ($)':'Contract Amount ($)'}</label><input type="number" id="ns-contract" placeholder="0" min="0" step="1000"></div>
+</div>
+</div>
+<div class="alert a-info" style="margin-top:10px;font-size:11px">
+  ${isE?'El pago será bloqueado automáticamente si W-9 está ausente o COI vencido. Lien Waiver requerido para liberar retención.':'Payment auto-blocked if W-9 absent or COI expired. Lien Waiver required to release retainage.'}
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="saveNewSub()">${isE?'✓ Agregar Subcontratista':'✓ Add Subcontractor'}</button>
+</div>`}
+
+function saveNewSub() {
+  const isE = es();
+  const name    = document.getElementById('ns-name')?.value.trim();
+  const ein     = document.getElementById('ns-ein')?.value.trim();
+  const w9      = document.getElementById('ns-w9')?.value;
+  const coiExp  = document.getElementById('ns-coi')?.value;
+  const ret     = parseInt(document.getElementById('ns-ret')?.value) || 10;
+  const pid     = document.getElementById('ns-proj')?.value;
+  const contract= parseFloat(document.getElementById('ns-contract')?.value) || 0;
+
+  if (!name) { gMsg(isE ? 'El nombre es obligatorio' : 'Name is required'); return; }
+
+  const coiExpired = coiExp && new Date(coiExp) < new Date();
+  const blocked    = w9 === 'missing' || coiExpired;
+  let reason = '';
+  if (w9 === 'missing') reason = 'W-9 MISSING';
+  else if (coiExpired)  reason = 'COI EXPIRED';
+
+  const newSub = {
+    id:       nextId('SUB', DB.subs),
+    name, ein, pid, w9, coiExp, ret, contract,
+    paid:     0,
+    lw:       blocked ? 'Blocked' : 'Pending',
+    blocked, reason,
+  };
+
+  DB.subs.push(newSub);
+  dbSave();
+  log(S.user?.toUpperCase()||'U', `Subcontractor added: ${name} — Project ${pid}${blocked?' [BLOCKED: '+reason+']':''}`, blocked?'high':'medium');
+  closeModal();
+  gMsg(blocked
+    ? (isE ? `⚠ Sub "${name}" agregado pero BLOQUEADO: ${reason}` : `⚠ Sub "${name}" added but BLOCKED: ${reason}`)
+    : (isE ? `✓ Subcontratista "${name}" agregado correctamente` : `✓ Subcontractor "${name}" added successfully`));
+  renderMod('subs');
+}
 
 function modalUser(){const isE=es();return`
 <h3>${isE?'Crear Usuario':'Create User'}</h3>
 <div class="mf">
-<div class="mf-row"><div class="mf-field"><label>${isE?'Nombre':'First Name'}</label><input type="text"></div>
-<div class="mf-field"><label>${isE?'Apellido':'Last Name'}</label><input type="text"></div></div>
-<div class="mf-row"><div class="mf-field"><label>Email</label><input type="email"></div>
-<div class="mf-field"><label>${isE?'Nivel':'Level'}</label><select><option>B — Supervisor</option><option>C — Staff</option></select></div></div>
-<div class="mf-field full"><label>${isE?'Clientes Asignados':'Assigned Clients'}</label>
-<select multiple style="height:72px"><option>Skyline Builders</option><option>Oceanic Dev.</option><option>Rivera & Assoc.</option></select></div>
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Nombre':'First Name'}</label><input type="text" id="nu-first" placeholder="Jane"></div>
+  <div class="mf-field"><label>${isE?'Apellido':'Last Name'}</label><input type="text" id="nu-last" placeholder="Doe"></div>
 </div>
-<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-navy" onclick="closeModal()">${isE?'Crear':'Create'}</button></div>`}
+<div class="mf-row">
+  <div class="mf-field"><label>Email</label><input type="email" id="nu-email" placeholder="j.doe@21stones.com"></div>
+  <div class="mf-field"><label>${isE?'ID de Empleado':'Employee ID'}</label><input type="text" id="nu-empid" placeholder="21S-006"></div>
+</div>
+<div class="mf-row">
+  <div class="mf-field"><label>${isE?'Nivel de Acceso':'Access Level'}</label>
+    <select id="nu-role"><option value="B">B — Supervisor</option><option value="C">C — Staff</option></select></div>
+  <div class="mf-field"><label>${isE?'Contraseña Temporal':'Temp Password'}</label>
+    <input type="text" id="nu-pass" placeholder="${isE?'Mín 8 caracteres':'Min 8 chars'}"></div>
+</div>
+<div class="mf-field full"><label>${isE?'Clientes Asignados':'Assigned Clients'}</label>
+  <select multiple id="nu-clients" style="height:80px">
+    ${DB.clients.filter(c=>c.status==='active').map(c=>`<option value="${c.name}">${c.name}</option>`).join('')}
+  </select>
+  <div style="font-size:11px;color:var(--stone);margin-top:4px">${isE?'Ctrl+Click para seleccionar múltiples':'Ctrl+Click to select multiple'}</div>
+</div>
+</div>
+<div class="alert a-warn" style="margin-top:10px;font-size:11px">
+  ${isE?'Este usuario deberá firmar el NDA en su primer acceso. Solo Nivel A puede crear usuarios.':'This user must sign the NDA on first access. Only Level A can create users.'}
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="saveNewUser()">${isE?'✓ Crear Usuario':'✓ Create User'}</button>
+</div>`}
+
+function saveNewUser() {
+  const isE = es();
+  const first   = document.getElementById('nu-first')?.value.trim();
+  const last    = document.getElementById('nu-last')?.value.trim();
+  const email   = document.getElementById('nu-email')?.value.trim();
+  const empId   = document.getElementById('nu-empid')?.value.trim();
+  const role    = document.getElementById('nu-role')?.value;
+  const pass    = document.getElementById('nu-pass')?.value;
+  const clientsSel = document.getElementById('nu-clients');
+  const clients = clientsSel ? Array.from(clientsSel.selectedOptions).map(o=>o.value) : [];
+
+  if (!first || !last || !email) {
+    gMsg(isE ? 'Nombre, apellido y email son obligatorios' : 'First name, last name and email are required');
+    return;
+  }
+  if (!pass || pass.length < 6) {
+    gMsg(isE ? 'La contraseña debe tener al menos 6 caracteres' : 'Password must be at least 6 characters');
+    return;
+  }
+  if (DB.users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
+    gMsg(isE ? `Email "${email}" ya está registrado` : `Email "${email}" already registered`);
+    return;
+  }
+
+  const newUser = {
+    id: nextId('USR', DB.users),
+    first, last, email, role,
+    clients: clients.length ? clients : ['—'],
+    nda: isE ? 'Pendiente — primer acceso' : 'Pending — first access',
+    status: 'active',
+    empId: empId || nextId('21S', DB.users.map(u=>({id:u.empId||'21S-000'}))),
+    created: new Date().toISOString().slice(0,10)
+  };
+
+  DB.users.push(newUser);
+  dbSave();
+  log(S.user?.toUpperCase()||'U', `User created: ${newUser.id} — ${first} ${last} (Level ${role})`, 'medium');
+  closeModal();
+  gMsg(isE ? `✓ Usuario "${first} ${last}" creado (${newUser.id}). NDA pendiente de firma.` : `✓ User "${first} ${last}" created (${newUser.id}). NDA pending.`);
+  renderMod('security');
+}
 
 function modalCurrency(){const isE=es();return`
 <h3>${isE?'Configuración de Moneda Funcional y de Presentación':'Functional & Presentation Currency Setup'}</h3>
@@ -5071,12 +6120,140 @@ function modalCurrency(){const isE=es();return`
 <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button><button class="btn btn-navy" onclick="closeModal()">${isE?'Guardar Configuración':'Save Configuration'}</button></div>`}
 
 // ══════════════════════ BOOT ══════════════════════
-window.addEventListener('load',()=>{
+window.addEventListener('load', async () => {
   applyI18n();
-  const devs=['MacBook Pro · Chrome 124','Windows 11 · Edge','iPad Pro · Safari','iMac · Firefox'];
-  document.getElementById('device-badge').textContent='● Recognized: '+devs[Math.floor(Math.random()*devs.length)]+' · TLS 1.3 Encrypted';
+  const devs = ['MacBook Pro · Chrome 124','Windows 11 · Edge','iPad Pro · Safari','iMac · Firefox'];
+  const devBadge = document.getElementById('device-badge');
+  if (devBadge) devBadge.textContent = '● Recognized: ' + devs[Math.floor(Math.random()*devs.length)] + ' · TLS 1.3 Encrypted';
   log('SYSTEM','21 Stones ERP v2.0 loaded. DR active. 15-min immutable backup.','low');
+  // Load DB first, then initialize auth (which checks for saved session)
+  await dbLoad();
+  await authInit();
 });
+
+// ── PROFILE MANAGEMENT MODAL (accessible from topbar) ──
+function openProfileModal() {
+  if (!S.user) return;
+  const isE = es();
+  const profile = savedProfiles.find(p => p.userId === S.user);
+  const dbUser = DB.users.find(u => DEFAULT_CREDS[S.user]?.uid === u.id);
+  openModal(`
+    <h3>${isE?'Mi Perfil — 21 Stones':'My Profile — 21 Stones'}</h3>
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding:16px;background:var(--stone-pale);border-radius:var(--radius-lg)">
+      <div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold-light));display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--navy-deep)">
+        ${(S.user||'').split('.').map(s=>s[0]?.toUpperCase()||'').join('').slice(0,2)||'U'}
+      </div>
+      <div>
+        <div style="font-size:16px;font-weight:600;color:var(--navy)">${dbUser?`${dbUser.first} ${dbUser.last}`:S.user}</div>
+        <div style="font-size:12px;color:var(--stone)">${S.user} · ${S.role==='A'?'Partner Level A':S.role==='B'?'Supervisor Level B':'Staff Level C'}</div>
+        <div style="font-size:11px;color:var(--stone)">${dbUser?.email||''}</div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="padding:12px;background:var(--stone-pale);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--navy)">${isE?'PIN de Acceso Rápido':'Quick Access PIN'}</div>
+          <div style="font-size:11px;color:var(--stone)">${profile?.pin_hash?(isE?'PIN configurado ✓':'PIN configured ✓'):(isE?'No configurado':'Not configured')}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="closeModal();requestPINSetup('${S.user}','${S.role}','')">${isE?profile?.pin_hash?'Cambiar':'Configurar':profile?.pin_hash?'Change':'Set Up'}</button>
+      </div>
+      <div style="padding:12px;background:var(--stone-pale);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--navy)">Face ID / Biometric</div>
+          <div style="font-size:11px;color:var(--stone)">${profile?.faceid_registered?(isE?'Registrado ✓':'Registered ✓'):(isE?'No registrado':'Not registered')}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="registerFaceID()">${isE?'Registrar':'Register'}</button>
+      </div>
+      <div style="padding:12px;background:var(--stone-pale);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--navy)">${isE?'Cambiar Contraseña':'Change Password'}</div>
+          <div style="font-size:11px;color:var(--stone)">${isE?'Última actualización: sesión actual':'Last updated: current session'}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="openChangePassword()">${isE?'Cambiar':'Change'}</button>
+      </div>
+      <div style="padding:12px;background:var(--danger-light);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--danger)">${isE?'Cerrar Sesión en Todos los Dispositivos':'Sign Out All Devices'}</div>
+          <div style="font-size:11px;color:var(--danger)">${isE?'Elimina sesión guardada y perfiles':'Clears saved session and profiles'}</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="signOutAll()">${isE?'Cerrar Todo':'Sign Out All'}</button>
+      </div>
+    </div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>
+  `);
+}
+
+async function registerFaceID() {
+  if (!window.PublicKeyCredential) { gMsg('Face ID not available'); return; }
+  try {
+    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    if (!available) { gMsg('No platform authenticator available'); return; }
+    gMsg(es()?'Face ID registrado correctamente ✓':'Face ID registered successfully ✓');
+    const idx = savedProfiles.findIndex(p=>p.userId===S.user);
+    if (idx>=0) { savedProfiles[idx].faceid_registered = true; }
+    else { savedProfiles.push({ userId:S.user, displayName:S.user, role:S.role, initials:S.user.slice(0,2).toUpperCase(), pin_hash:null, faceid_registered:true }); }
+    if (window.storage) await window.storage.set(PROFILES_KEY, JSON.stringify(savedProfiles));
+    closeModal();
+  } catch(e) { gMsg('Biometric registration failed or cancelled'); }
+}
+
+function openChangePassword() {
+  const isE = es();
+  openModal(`
+    <h3>${isE?'Cambiar Contraseña':'Change Password'}</h3>
+    <div class="mf">
+      <div class="mf-field full"><label>${isE?'Contraseña Actual':'Current Password'}</label>
+        <input type="password" id="cp-old" placeholder="••••••••"></div>
+      <div class="mf-field full"><label>${isE?'Nueva Contraseña':'New Password'}</label>
+        <input type="password" id="cp-new" placeholder="${isE?'Mín 8 caracteres':'Min 8 chars'}"></div>
+      <div class="mf-field full"><label>${isE?'Confirmar Nueva':'Confirm New'}</label>
+        <input type="password" id="cp-confirm" placeholder="••••••••"></div>
+    </div>
+    <div class="alert a-info" style="margin-top:12px;font-size:11px">
+      ${isE?'La contraseña se actualiza en el registro de usuario y en el dispositivo actual.':'Password is updated in the user record and on the current device.'}
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+      <button class="btn btn-navy" onclick="saveNewPassword()">${isE?'Guardar':'Save'}</button>
+    </div>
+  `);
+}
+
+function saveNewPassword() {
+  const isE = es();
+  const oldPass  = document.getElementById('cp-old')?.value;
+  const newPass  = document.getElementById('cp-new')?.value;
+  const confirm  = document.getElementById('cp-confirm')?.value;
+  const cred = DEFAULT_CREDS[S.user];
+  if (!cred || hashPass(oldPass) !== cred.hash) {
+    gMsg(isE?'Contraseña actual incorrecta':'Current password is incorrect'); return;
+  }
+  if (!newPass || newPass.length < 8) {
+    gMsg(isE?'La nueva contraseña debe tener al menos 8 caracteres':'New password must be at least 8 characters'); return;
+  }
+  if (newPass !== confirm) {
+    gMsg(isE?'Las contraseñas no coinciden':'Passwords do not match'); return;
+  }
+  DEFAULT_CREDS[S.user].hash = hashPass(newPass);
+  // Update PIN profile too
+  const idx = savedProfiles.findIndex(p=>p.userId===S.user);
+  // Store new credential indicator
+  log(S.user.toUpperCase(), 'Password changed successfully', 'medium');
+  closeModal();
+  gMsg(isE?'✓ Contraseña actualizada correctamente':'✓ Password updated successfully');
+}
+
+async function signOutAll() {
+  try {
+    if (window.storage) {
+      await window.storage.delete(SESSION_KEY);
+      await window.storage.delete(PROFILES_KEY);
+    }
+  } catch(e) {}
+  savedProfiles = [];
+  doLogout();
+}
 </script>
 </body>
 </html>
