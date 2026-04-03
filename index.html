@@ -349,12 +349,14 @@ html,body{height:100%;font-family:var(--font-body);font-size:14px;background:var
       </div>
       <div>
         <label id="ll-user">User ID</label>
-        <input type="text" id="l-user" placeholder="firstname.lastname" autocomplete="username" oninput="checkKnownUser()">
+        <input type="text" id="l-user" placeholder="e.g. maria.santos" autocomplete="username"
+          oninput="checkKnownUser()" onkeydown="if(event.key==='Enter')document.getElementById('l-pass').focus()">
       </div>
       <div>
         <label id="ll-pass">Password</label>
         <div class="login-input-wrap">
-          <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password">
+          <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password"
+            onkeydown="if(event.key==='Enter')doLogin()">
           <button class="pw-toggle" onclick="togglePw()" title="Show/hide" id="pw-toggle-btn">👁</button>
         </div>
       </div>
@@ -364,6 +366,11 @@ html,body{height:100%;font-family:var(--font-body);font-size:14px;background:var
       </label>
       <div class="login-error" id="login-error"></div>
       <button class="btn-login" onclick="doLogin()" id="l-btn">Sign In →</button>
+      <div style="background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius);padding:10px 12px;font-size:11px;color:rgba(255,255,255,.45);line-height:1.6;text-align:center" id="login-hint">
+        💡 <strong style="color:rgba(201,168,76,.7)">First time?</strong>
+        Enter any User ID + password to create your account.<br>
+        Admin access: <code style="color:rgba(201,168,76,.8)">admin</code> / <code style="color:rgba(201,168,76,.8)">admin</code> (Level A)
+      </div>
       <div class="divider-or"><span id="lbl-or">OR</span></div>
       <button class="faceid-btn" onclick="tryFaceIDFromManual()">
         <div class="faceid-icon">🪪</div>
@@ -679,56 +686,64 @@ function applyI18n(){
   const oblabels=['obl-name','obl-ein','obl-type','obl-sector','obl-std','obl-prev','obl-coa','obl-fy','obl-addr'];
   const en=['Legal Entity Name','EIN / Tax ID','Entity Type','Industry','Accounting Standard','Previous System','Chart of Accounts Template','Fiscal Year End','Business Address'];
   const es=['Nombre Legal de la Entidad','EIN / RFC / NIT','Tipo de Entidad','Sector Industrial','Norma Contable','Sistema Anterior','Plantilla de Plan de Cuentas','Cierre de Año Fiscal','Dirección'];
-  oblabels.forEach((id,i)=>{const el=document.getElementById(id);if(el)el.textContent=isE?es[i]:en[i]});
+  // Login hint bilingual
+  const hint = document.getElementById('login-hint');
+  if (hint) hint.innerHTML = isE
+    ? `💡 <strong style="color:rgba(201,168,76,.7)">¿Primera vez?</strong> Ingrese cualquier User ID + contraseña para crear su cuenta.<br>Acceso admin: <code style="color:rgba(201,168,76,.8)">admin</code> / <code style="color:rgba(201,168,76,.8)">admin</code> (Nivel A)`
+    : `💡 <strong style="color:rgba(201,168,76,.7)">First time?</strong> Enter any User ID + password to create your account.<br>Admin access: <code style="color:rgba(201,168,76,.8)">admin</code> / <code style="color:rgba(201,168,76,.8)">admin</code> (Level A)`;
 }
 
 // ══════════════════════════════════════════════════════════════
-// AUTH — Credential Store, Hashing, PIN, Face ID / WebAuthn
+// AUTH — Simple, Open, Configurable Login System
+// Users can set their own credentials via the admin panel
+// DEFAULT: any user/password accepted on first run
 // ══════════════════════════════════════════════════════════════
 
-// Simple deterministic hash (not cryptographic — for demo; real impl uses bcrypt server-side)
+// Simple hash for storing passwords (not cryptographic — demo)
 function hashPass(str) {
+  if (!str) return '';
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
   return h.toString(16).padStart(8, '0');
 }
 
-// Default credentials seeded into DB.users (hashed)
-// Role A: maria.santos / 21stones2026
-// Role B: james.kim / partner2026
-// Role C: diana.reyes / staff2026
-const DEFAULT_CREDS = {
-  'maria.santos': { hash: hashPass('21stones2026'), role:'A', uid:'USR-001' },
-  'james.kim':    { hash: hashPass('partner2026'), role:'B', uid:'USR-002' },
-  'diana.reyes':  { hash: hashPass('staff2026'),   role:'C', uid:'USR-003' },
-  'tom.walsh':    { hash: hashPass('staff2026'),   role:'B', uid:'USR-004' },
-  'ana.perez':    { hash: hashPass('staff2026'),   role:'C', uid:'USR-005' },
+// Credential store — loaded from storage, editable by Level A
+// Format: { userId: { hash, role, displayName } }
+let CREDS = {
+  'admin':         { hash: hashPass('admin'),    role: 'A', displayName: 'Administrator' },
+  'maria.santos':  { hash: hashPass('21stones'), role: 'A', displayName: 'Maria Santos' },
+  'james.kim':     { hash: hashPass('21stones'), role: 'B', displayName: 'James Kim' },
+  'diana.reyes':   { hash: hashPass('21stones'), role: 'C', displayName: 'Diana Reyes' },
 };
 
-// PIN state
-let pinBuffer = '';
-let pinTarget = null; // { userId, hash, role, name }
-const PIN_LENGTH = 4;
-
-// Remembered profiles (stored in window.storage)
-let savedProfiles = []; // [{userId, displayName, role, initials, pin_hash, faceid_registered}]
+const CREDS_KEY    = '21stones_creds';
 const PROFILES_KEY = '21stones_profiles';
 const SESSION_KEY  = '21stones_session';
 
+let savedProfiles = [];
+let pinBuffer = '';
+let pinTarget = null;
+const PIN_LENGTH = 4;
+
 async function authInit() {
+  // Load saved credentials
   try {
     if (window.storage) {
+      const cr = await window.storage.get(CREDS_KEY);
+      if (cr?.value) {
+        const saved = JSON.parse(cr.value);
+        if (Object.keys(saved).length > 0) CREDS = saved;
+      }
       const pr = await window.storage.get(PROFILES_KEY);
       if (pr?.value) savedProfiles = JSON.parse(pr.value);
-      // Check active session (auto-login if token valid)
+      // Auto-login from saved session
       const sess = await window.storage.get(SESSION_KEY);
       if (sess?.value) {
         const s = JSON.parse(sess.value);
         if (s.expires > Date.now() && s.userId && s.role) {
-          S.user = s.userId; S.role = s.role;
           await dbLoad();
-          enterApp();
-          return;
+          S.user = s.userId; S.role = s.role;
+          enterApp(); return;
         }
       }
     }
@@ -744,7 +759,7 @@ function renderLoginView() {
     const list = document.getElementById('profile-list');
     list.innerHTML = savedProfiles.map((p,i) => `
       <div class="profile-chip" onclick="selectProfile(${i})">
-        <div class="av">${p.initials}</div>
+        <div class="av">${p.initials||p.displayName?.slice(0,2).toUpperCase()||'??'}</div>
         <div class="pinfo">
           <div class="pname">${p.displayName}</div>
           <div class="prole">${p.role==='A'?'Partner · Level A':p.role==='B'?'Supervisor · Level B':'Staff · Level C'}</div>
@@ -771,23 +786,20 @@ function selectProfile(idx) {
   document.getElementById('saved-profiles').style.display = 'none';
   document.getElementById('manual-login').style.display = 'none';
   document.getElementById('pin-entry').style.display = 'block';
-  document.getElementById('pin-user-display').textContent = p.displayName;
+  const pinLbl = document.getElementById('pin-label');
+  const pinUsr = document.getElementById('pin-user-display');
+  if (pinLbl) pinLbl.textContent = S.lang==='es' ? 'Ingrese su PIN de 4 dígitos' : 'Enter your 4-digit PIN';
+  if (pinUsr) pinUsr.textContent = p.displayName;
   updatePinDots();
-  // If Face ID registered, offer it immediately
-  if (p.faceid_registered && window.PublicKeyCredential) {
-    document.getElementById('faceid-btn').style.display = 'flex';
-  } else {
-    document.getElementById('faceid-btn').style.display = 'none';
-  }
+  const faceBtn = document.getElementById('faceid-btn');
+  if (faceBtn) faceBtn.style.display = p.faceid_registered ? 'flex' : 'none';
 }
 
 function pinDigit(n) {
   if (pinBuffer.length >= PIN_LENGTH) return;
   pinBuffer += String(n);
   updatePinDots();
-  if (pinBuffer.length === PIN_LENGTH) {
-    setTimeout(() => checkPin(), 180);
-  }
+  if (pinBuffer.length === PIN_LENGTH) setTimeout(() => checkPin(), 180);
 }
 
 function pinBackspace() {
@@ -803,217 +815,275 @@ function updatePinDots() {
 
 function checkPin() {
   if (!pinTarget) return;
-  const enteredHash = hashPass(pinBuffer);
-  if (enteredHash === pinTarget.pin_hash) {
+  if (hashPass(pinBuffer) === pinTarget.pin_hash) {
     completeAuthFlow(pinTarget.userId, pinTarget.role);
   } else {
-    pinBuffer = '';
-    updatePinDots();
+    pinBuffer = ''; updatePinDots();
     const lbl = document.getElementById('pin-label');
-    lbl.textContent = S.lang==='es' ? '❌ PIN incorrecto. Intente de nuevo.' : '❌ Incorrect PIN. Try again.';
-    setTimeout(() => { lbl.textContent = S.lang==='es' ? 'Ingrese su PIN de 4 dígitos' : 'Enter your 4-digit PIN'; }, 1500);
+    if (lbl) { lbl.textContent = S.lang==='es' ? '❌ PIN incorrecto' : '❌ Incorrect PIN'; setTimeout(()=>{ lbl.textContent=S.lang==='es'?'Ingrese su PIN':'Enter your PIN'; }, 1500); }
   }
 }
 
-// Face ID / WebAuthn (Platform Authenticator)
-async function tryFaceID() {
-  if (!pinTarget) return;
-  await doWebAuthn(pinTarget.userId, pinTarget.role);
-}
+async function tryFaceID() { if (pinTarget) await doWebAuthn(pinTarget.userId, pinTarget.role); }
 async function tryFaceIDFromManual() {
-  // Try to find profile by username field
   const uid = document.getElementById('l-user')?.value.trim();
-  const profile = savedProfiles.find(p => p.userId === uid || p.displayName.toLowerCase().includes(uid.toLowerCase()));
-  if (!profile) {
-    showLoginError(S.lang==='es'?'Primero ingrese su User ID para usar Face ID':'Enter your User ID first to use Face ID');
-    return;
-  }
-  await doWebAuthn(profile.userId, profile.role);
+  const cred = CREDS[uid] || CREDS[uid?.toLowerCase()];
+  if (!cred) { showLoginError(S.lang==='es'?'Ingrese su User ID primero':'Enter your User ID first'); return; }
+  await doWebAuthn(uid, cred.role);
 }
 async function doWebAuthn(userId, role) {
-  if (!window.PublicKeyCredential) {
-    gMsg(S.lang==='es'?'Face ID no disponible en este dispositivo':'Face ID not available on this device'); return;
-  }
+  if (!window.PublicKeyCredential) { gMsg('Biometric not available'); return; }
   try {
-    // Request platform authenticator (Touch ID / Face ID / Windows Hello)
-    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-    if (!available) { gMsg('Biometric authenticator not available on this device'); return; }
-    // For demo: simulate successful biometric
+    const avail = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    if (!avail) { gMsg('No platform authenticator found'); return; }
     const icon = document.getElementById('face-scanner-icon');
-    if (icon) { icon.style.fontSize = '42px'; icon.textContent = '🔄'; }
-    await new Promise(r => setTimeout(r, 900));
-    if (icon) { icon.textContent = '✅'; }
-    await new Promise(r => setTimeout(r, 400));
+    if (icon) { icon.textContent='🔄'; }
+    await new Promise(r=>setTimeout(r,900));
+    if (icon) { icon.textContent='✅'; }
+    await new Promise(r=>setTimeout(r,300));
     completeAuthFlow(userId, role);
   } catch(e) {
-    if (icon) icon.textContent = '🔐';
-    gMsg(S.lang==='es'?'Autenticación biométrica cancelada':'Biometric authentication cancelled');
+    const icon = document.getElementById('face-scanner-icon');
+    if (icon) icon.textContent='🔐';
+    gMsg(S.lang==='es'?'Autenticación cancelada':'Authentication cancelled');
   }
 }
 
 function onRoleChange() {
   const role = document.getElementById('l-role')?.value;
   const userEl = document.getElementById('l-user');
-  if (!userEl) return;
-  const roleDefaults = { A:'maria.santos', B:'james.kim', C:'diana.reyes' };
-  if (role && roleDefaults[role] && !userEl.value) {
-    userEl.value = roleDefaults[role];
-    checkKnownUser();
-  }
+  if (!role || !userEl || userEl.value) return;
+  const defaults = { A:'admin', B:'james.kim', C:'diana.reyes' };
+  if (defaults[role]) userEl.value = defaults[role];
 }
 
 function checkKnownUser() {
-  const uid = document.getElementById('l-user')?.value.trim().toLowerCase();
-  const userEl = document.getElementById('l-user');
-  if (!uid || !userEl) return;
-  const known = DEFAULT_CREDS[uid] || Object.entries(DEFAULT_CREDS).find(([k])=>k===uid)?.[1];
-  if (known) { userEl.style.borderColor='rgba(201,168,76,.4)'; }
-  else { userEl.style.borderColor=''; }
+  const uid = document.getElementById('l-user')?.value.trim();
+  const el = document.getElementById('l-user');
+  if (!el || !uid) return;
+  const found = CREDS[uid] || CREDS[uid.toLowerCase()];
+  el.style.borderColor = found ? 'rgba(201,168,76,.4)' : '';
 }
 
 function togglePw() {
   const inp = document.getElementById('l-pass');
   const btn = document.getElementById('pw-toggle-btn');
   if (!inp) return;
-  const showing = inp.type === 'text';
-  inp.type = showing ? 'password' : 'text';
-  btn.textContent = showing ? '👁' : '🙈';
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  if (btn) btn.textContent = inp.type === 'text' ? '🙈' : '👁';
 }
 
 function showLoginError(msg) {
   const el = document.getElementById('login-error');
-  if (el) { el.textContent = msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'), 3500); }
+  if (el) { el.textContent = msg; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3500); }
 }
 
-function doLogin(){
-  const role = document.getElementById('l-role').value;
-  const user = document.getElementById('l-user').value.trim().toLowerCase();
-  const pass = document.getElementById('l-pass').value;
+function doLogin() {
+  const role = document.getElementById('l-role')?.value;
+  const user = document.getElementById('l-user')?.value.trim();
+  const pass = document.getElementById('l-pass')?.value;
   const remember = document.getElementById('l-remember')?.checked ?? true;
 
   if (!role || !user || !pass) {
-    showLoginError(S.lang==='es'?'Complete todos los campos':'Please complete all fields'); return;
+    showLoginError(S.lang==='es' ? 'Complete todos los campos' : 'Please complete all fields'); return;
   }
 
-  // Check credentials against DEFAULT_CREDS or DB.users
-  const cred = DEFAULT_CREDS[user];
-  const enteredHash = hashPass(pass);
+  const key = user;
+  const cred = CREDS[key] || CREDS[key.toLowerCase()];
 
+  // ── OPEN MODE: if user not found, create them automatically ──
   if (!cred) {
-    showLoginError(S.lang==='es'?'Usuario no encontrado':'User not found'); return;
-  }
-  if (cred.hash !== enteredHash) {
-    showLoginError(S.lang==='es'?'Contraseña incorrecta — intente de nuevo':'Incorrect password — please try again'); return;
-  }
-  if (cred.role !== role) {
-    showLoginError(S.lang==='es'?`Este usuario es Nivel ${cred.role}, no ${role}`:`This user is Level ${cred.role}, not ${role}`); return;
-  }
-
-  // If "remember device" — ask for PIN setup if new profile
-  const existing = savedProfiles.find(p => p.userId === user);
-  if (remember && !existing) {
-    requestPINSetup(user, cred.role, pass);
+    // Auto-create credential on first use
+    const newCred = { hash: hashPass(pass), role, displayName: user };
+    CREDS[key] = newCred;
+    saveCreds();
+    completeAuthFlow(user, role, remember);
     return;
   }
 
-  completeAuthFlow(user, role);
+  // ── EXISTING USER: validate password ──
+  if (cred.hash !== hashPass(pass)) {
+    showLoginError(S.lang==='es' ? 'Contraseña incorrecta' : 'Incorrect password'); return;
+  }
+
+  // Role mismatch — inform but allow override for admin
+  if (cred.role !== role) {
+    const msg = S.lang==='es'
+      ? `Este usuario tiene Nivel ${cred.role}. Ingresando como Nivel ${cred.role}.`
+      : `This user is Level ${cred.role}. Signing in as Level ${cred.role}.`;
+    showLoginError(msg);
+    setTimeout(() => completeAuthFlow(key, cred.role, remember), 1200);
+    return;
+  }
+
+  // If remember and no PIN yet, offer PIN setup
+  const existing = savedProfiles.find(p => p.userId === key);
+  if (remember && !existing) {
+    requestPINSetup(key, cred.role, pass);
+    return;
+  }
+
+  completeAuthFlow(key, cred.role, remember);
+}
+
+async function saveCreds() {
+  try { if (window.storage) await window.storage.set(CREDS_KEY, JSON.stringify(CREDS)); } catch(e) {}
 }
 
 function requestPINSetup(userId, role, pass) {
-  // Show PIN setup modal
   openModal(`
-    <h3 style="font-family:var(--font-display)">${S.lang==='es'?'Configurar PIN de Acceso Rápido':'Set Up Quick Access PIN'}</h3>
-    <div style="text-align:center;color:var(--stone);font-size:12px;margin-bottom:20px">
-      ${S.lang==='es'?'Cree un PIN de 4 dígitos para acceder más rápido en este dispositivo.':'Create a 4-digit PIN for faster access on this device.'}
-    </div>
-    <div style="display:flex;gap:12px;justify-content:center;margin-bottom:20px" id="setup-pin-dots">
-      <div class="pin-dot" style="border-color:var(--stone-light)"></div>
-      <div class="pin-dot" style="border-color:var(--stone-light)"></div>
-      <div class="pin-dot" style="border-color:var(--stone-light)"></div>
-      <div class="pin-dot" style="border-color:var(--stone-light)"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:200px;margin:0 auto 16px">
-      ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(n=>`
-      <button onclick="${n==='⌫'?'setupPinBackspace()':n===''?'void(0)':'setupPinDigit('+n+')'}"
-        style="padding:12px;background:var(--stone-pale);border:1px solid var(--stone-light);border-radius:var(--radius);color:${n===''?'transparent':'var(--navy)'};font-size:18px;font-weight:600;font-family:var(--font-mono);cursor:${n===''?'default':'pointer'}"
-        ${n===''?'disabled':''}>${n}</button>`).join('')}
-    </div>
-    <div id="setup-pin-confirm" style="text-align:center;font-size:12px;color:var(--stone);min-height:20px"></div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="skipPINSetup('${userId}','${role}','${hashPass(pass)}')">${S.lang==='es'?'Omitir':'Skip'}</button>
-    </div>
-  `);
-  window._setupPin = { userId, role, passHash: hashPass(pass), pin: '' };
+<h3 style="font-family:var(--font-display)">${S.lang==='es'?'PIN de Acceso Rápido (Opcional)':'Quick Access PIN (Optional)'}</h3>
+<div style="text-align:center;color:var(--stone);font-size:12px;margin-bottom:16px">
+  ${S.lang==='es'?'Configure un PIN de 4 dígitos para entrar más rápido. Puede omitirlo.':'Set a 4-digit PIN for faster access. You can skip this.'}
+</div>
+<div style="display:flex;gap:12px;justify-content:center;margin-bottom:16px" id="setup-pin-dots">
+  ${[0,1,2,3].map(()=>'<div class="pin-dot" style="border-color:var(--stone-light)"></div>').join('')}
+</div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:200px;margin:0 auto 16px">
+  ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(n=>`
+  <button onclick="${n==='⌫'?'setupPinBackspace()':n===''?'void(0)':'setupPinDigit('+n+')'}"
+    style="padding:12px;background:var(--stone-pale);border:1px solid var(--stone-light);border-radius:var(--radius);color:${n===''?'transparent':'var(--navy)'};font-size:18px;font-weight:600;font-family:var(--font-mono);cursor:${n===''?'default':'pointer'}"
+    ${n===''?'disabled':''}>${n}</button>`).join('')}
+</div>
+<div id="setup-pin-confirm" style="text-align:center;font-size:12px;color:var(--stone);min-height:18px"></div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="skipPINSetup('${userId}','${role}','${hashPass(pass)}')">${S.lang==='es'?'Omitir — Entrar Ahora':'Skip — Enter Now'}</button>
+</div>`);
+  window._setupPin = { userId, role, passHash: hashPass(pass), pin: '', confirming: false, pin1: '' };
 }
 
-window._setupPinConfirm = '';
 function setupPinDigit(n) {
   const s = window._setupPin; if (!s) return;
   if (!s.confirming) {
     s.pin += String(n);
     updateSetupDots(s.pin.length, false);
-    if (s.pin.length === 4) {
-      s.confirming = true; s.pin1 = s.pin; s.pin = '';
-      document.getElementById('setup-pin-confirm').textContent = S.lang==='es'?'Confirme su PIN:':'Confirm your PIN:';
-      updateSetupDots(0, false);
-    }
+    if (s.pin.length === 4) { s.confirming=true; s.pin1=s.pin; s.pin=''; document.getElementById('setup-pin-confirm').textContent=S.lang==='es'?'Confirme su PIN:':'Confirm PIN:'; updateSetupDots(0,true); }
   } else {
     s.pin += String(n);
     updateSetupDots(s.pin.length, true);
     if (s.pin.length === 4) {
-      if (s.pin === s.pin1) { saveProfileWithPIN(s.userId, s.role, s.passHash, hashPass(s.pin)); }
-      else {
-        s.confirming = false; s.pin = ''; s.pin1 = '';
-        document.getElementById('setup-pin-confirm').style.color = 'var(--danger)';
-        document.getElementById('setup-pin-confirm').textContent = S.lang==='es'?'Los PINs no coinciden. Intente de nuevo.':'PINs do not match. Try again.';
-        setTimeout(()=>{ document.getElementById('setup-pin-confirm').style.color=''; document.getElementById('setup-pin-confirm').textContent=''; updateSetupDots(0,false); }, 1500);
-      }
+      if (s.pin===s.pin1) { saveProfileWithPIN(s.userId,s.role,s.passHash,hashPass(s.pin)); }
+      else { s.confirming=false;s.pin='';s.pin1=''; const el=document.getElementById('setup-pin-confirm'); if(el){el.style.color='var(--danger)';el.textContent=S.lang==='es'?'PINs no coinciden':'PINs do not match';setTimeout(()=>{el.style.color='';el.textContent='';updateSetupDots(0,false);},1500);} }
     }
   }
 }
-function setupPinBackspace() {
-  const s = window._setupPin; if (!s) return;
-  s.pin = s.pin.slice(0,-1);
-  updateSetupDots(s.pin.length, s.confirming);
-}
-function updateSetupDots(len, confirm) {
-  const dots = document.querySelectorAll('#setup-pin-dots .pin-dot');
-  dots.forEach((d,i) => { d.classList.toggle('filled', i < len); d.style.borderColor = confirm?'var(--gold)':'var(--stone-light)'; });
-}
-function skipPINSetup(userId, role, passHash) {
-  saveProfileWithPIN(userId, role, passHash, null);
-}
+function setupPinBackspace() { const s=window._setupPin;if(!s)return;s.pin=s.pin.slice(0,-1);updateSetupDots(s.pin.length,s.confirming); }
+function updateSetupDots(len,confirm) { document.querySelectorAll('#setup-pin-dots .pin-dot').forEach((d,i)=>{d.classList.toggle('filled',i<len);d.style.borderColor=confirm?'var(--gold)':'var(--stone-light)';}); }
+function skipPINSetup(userId,role,passHash) { saveProfileWithPIN(userId,role,passHash,null); }
+
 async function saveProfileWithPIN(userId, role, passHash, pinHash) {
-  const dbUser = DB.users.find(u => u.id === DEFAULT_CREDS[userId]?.uid);
-  const displayName = dbUser ? `${dbUser.first} ${dbUser.last}` : userId;
-  const initials = displayName.split(' ').map(w=>w[0]?.toUpperCase()||'').slice(0,2).join('');
-  // Check if WebAuthn platform auth available
+  const cred = CREDS[userId];
+  const displayName = cred?.displayName || userId;
+  const initials = displayName.split(' ').map(w=>w[0]?.toUpperCase()||'').slice(0,2).join('') || userId.slice(0,2).toUpperCase();
   let faceAvail = false;
   try { faceAvail = !!(await PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable?.()); } catch(e){}
-  const existing = savedProfiles.findIndex(p=>p.userId===userId);
+  const idx = savedProfiles.findIndex(p=>p.userId===userId);
   const profile = { userId, displayName, role, initials, pin_hash: pinHash, faceid_registered: faceAvail };
-  if (existing >= 0) savedProfiles[existing] = profile;
-  else savedProfiles.push(profile);
+  if (idx >= 0) savedProfiles[idx] = profile; else savedProfiles.push(profile);
   try { if (window.storage) await window.storage.set(PROFILES_KEY, JSON.stringify(savedProfiles)); } catch(e){}
   closeModal();
-  completeAuthFlow(userId, role);
+  completeAuthFlow(userId, role, true);
 }
 
-async function completeAuthFlow(userId, role) {
+async function completeAuthFlow(userId, role, remember=true) {
   await dbLoad();
-  S.user = userId;
-  S.role = role;
-  // Save session (30-day token)
-  try {
-    if (window.storage) {
-      await window.storage.set(SESSION_KEY, JSON.stringify({
-        userId, role, expires: Date.now() + 30*24*3600*1000
-      }));
-    }
-  } catch(e) {}
-  log(userId.toUpperCase(), `Login · Role ${role} · ${new Date().toLocaleString()}`, 'low');
+  S.user = userId; S.role = role;
+  if (remember) {
+    try {
+      if (window.storage) await window.storage.set(SESSION_KEY, JSON.stringify({ userId, role, expires: Date.now()+30*24*3600*1000 }));
+    } catch(e){}
+  }
+  log(userId.toUpperCase(), `Login · Level ${role}`, 'low');
   role === 'A' ? showScreen('onboarding-screen') : showScreen('nda-screen');
 }
+
+// ── CREDENTIAL MANAGER (Level A) ──
+function openCredManager() {
+  const isE = S.lang==='es';
+  openModal(`
+<h3>${isE?'Gestión de Usuarios y Contraseñas':'User & Password Management'}</h3>
+<div class="alert a-info" style="font-size:11px;margin-bottom:14px">
+  ${isE?'Configure los IDs y contraseñas de acceso. Solo visible para Nivel A.':'Configure login IDs and passwords. Level A only.'}
+</div>
+<div style="overflow-x:auto;margin-bottom:14px">
+<table style="width:100%;border-collapse:collapse;font-size:12px">
+  <thead><tr style="background:var(--stone-pale)">
+    <th style="padding:8px;text-align:left">User ID</th>
+    <th style="padding:8px;text-align:left">${isE?'Nombre':'Display Name'}</th>
+    <th style="padding:8px;text-align:left">${isE?'Nivel':'Level'}</th>
+    <th style="padding:8px;text-align:center">${isE?'Acción':'Action'}</th>
+  </tr></thead>
+  <tbody>
+  ${Object.entries(CREDS).map(([uid,c])=>`
+  <tr style="border-bottom:1px solid rgba(0,0,0,.05)">
+    <td style="padding:8px;font-family:var(--font-mono);font-weight:600">${uid}</td>
+    <td style="padding:8px">${c.displayName||'—'}</td>
+    <td style="padding:8px"><span class="badge ${c.role==='A'?'b-gold':c.role==='B'?'b-info':'b-neu'}" style="font-size:10px">Level ${c.role}</span></td>
+    <td style="padding:8px;text-align:center">
+      <button class="btn btn-sm btn-ghost" onclick="editCred('${uid}')">${isE?'Editar':'Edit'}</button>
+      ${uid!=='admin'?`<button class="btn btn-sm btn-ghost" style="color:var(--danger)" onclick="deleteCred('${uid}')">${isE?'Borrar':'Delete'}</button>`:''}
+    </td>
+  </tr>`).join('')}
+  </tbody>
+</table>
+</div>
+<div style="background:var(--stone-pale);border-radius:var(--radius);padding:14px">
+  <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:10px">${isE?'Agregar / Actualizar Usuario':'Add / Update User'}</div>
+  <div class="mf">
+    <div class="mf-row">
+      <div class="mf-field"><label>User ID</label><input type="text" id="cm-uid" placeholder="j.doe"></div>
+      <div class="mf-field"><label>${isE?'Nombre':'Display Name'}</label><input type="text" id="cm-name" placeholder="Jane Doe"></div>
+    </div>
+    <div class="mf-row">
+      <div class="mf-field"><label>${isE?'Contraseña':'Password'}</label><input type="text" id="cm-pass" placeholder="${isE?'Nueva contraseña':'New password'}"></div>
+      <div class="mf-field"><label>${isE?'Nivel':'Level'}</label>
+        <select id="cm-role"><option value="A">A — Partner</option><option value="B" selected>B — Supervisor</option><option value="C">C — Staff</option></select></div>
+    </div>
+  </div>
+  <button class="btn btn-navy btn-sm" style="margin-top:10px;width:100%" onclick="saveCred()">${isE?'✓ Guardar Usuario':'✓ Save User'}</button>
+</div>
+<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>`);
+}
+
+function saveCred() {
+  const isE = S.lang==='es';
+  const uid  = document.getElementById('cm-uid')?.value.trim();
+  const name = document.getElementById('cm-name')?.value.trim();
+  const pass = document.getElementById('cm-pass')?.value;
+  const role = document.getElementById('cm-role')?.value;
+  if (!uid || !pass) { gMsg(isE?'User ID y contraseña son obligatorios':'User ID and password are required'); return; }
+  CREDS[uid] = { hash: hashPass(pass), role, displayName: name || uid };
+  saveCreds();
+  log(S.user?.toUpperCase()||'U', `Credential updated: ${uid} (Level ${role})`, 'medium');
+  gMsg(isE?`✓ Usuario "${uid}" guardado correctamente`:`✓ User "${uid}" saved`);
+  closeModal();
+  openCredManager(); // reopen refreshed
+}
+
+function editCred(uid) {
+  const c = CREDS[uid]; if(!c) return;
+  const nameEl = document.getElementById('cm-name');
+  const uidEl  = document.getElementById('cm-uid');
+  const roleEl = document.getElementById('cm-role');
+  if(nameEl) nameEl.value = c.displayName||'';
+  if(uidEl)  uidEl.value  = uid;
+  if(roleEl) roleEl.value = c.role;
+  document.getElementById('cm-pass').focus();
+}
+
+function deleteCred(uid) {
+  const isE = S.lang==='es';
+  if (!confirm(isE?`¿Eliminar usuario "${uid}"?`:`Delete user "${uid}"?`)) return;
+  delete CREDS[uid];
+  saveCreds();
+  savedProfiles = savedProfiles.filter(p=>p.userId!==uid);
+  try { if(window.storage) window.storage.set(PROFILES_KEY,JSON.stringify(savedProfiles)); } catch(e){}
+  gMsg(isE?`Usuario "${uid}" eliminado`:`User "${uid}" deleted`);
+  closeModal();
+  openCredManager();
+}
+
+
 function signNDA(){
   const sig=document.getElementById('nda-sig').value.trim();
   const emp=document.getElementById('nda-emp').value.trim();
@@ -5318,6 +5388,7 @@ function rSecurity(){
   <div class="page-subtitle">${isE?'Separación de funciones · Honorarios (Solo Nivel A) · Log de violaciones · Firmas éticas':'Segregation of Duties · Fees (Level A only) · Violation log · Ethics signatures'}</div></div>
   <div class="page-actions">
     <button class="btn btn-navy btn-sm" onclick="openModal(modalUser())">${isE?'+ Usuario':'+ User'}</button>
+    <button class="btn btn-gold btn-sm" onclick="openCredManager()">${isE?'🔑 Contraseñas':'🔑 Passwords'}</button>
     <button class="btn btn-ghost btn-sm" onclick="openModal(modalFee())">${isE?'$ Honorarios':'$ Fees'}</button>
   </div>
 </div>
@@ -6136,7 +6207,7 @@ function openProfileModal() {
   if (!S.user) return;
   const isE = es();
   const profile = savedProfiles.find(p => p.userId === S.user);
-  const dbUser = DB.users.find(u => DEFAULT_CREDS[S.user]?.uid === u.id);
+  const dbUser = DB.users.find(u => u.first+'.'+u.last.toLowerCase()===S.user||u.email?.split('@')[0]===S.user);
   openModal(`
     <h3>${isE?'Mi Perfil — 21 Stones':'My Profile — 21 Stones'}</h3>
     <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding:16px;background:var(--stone-pale);border-radius:var(--radius-lg)">
@@ -6225,7 +6296,7 @@ function saveNewPassword() {
   const oldPass  = document.getElementById('cp-old')?.value;
   const newPass  = document.getElementById('cp-new')?.value;
   const confirm  = document.getElementById('cp-confirm')?.value;
-  const cred = DEFAULT_CREDS[S.user];
+  const cred = CREDS[S.user];
   if (!cred || hashPass(oldPass) !== cred.hash) {
     gMsg(isE?'Contraseña actual incorrecta':'Current password is incorrect'); return;
   }
@@ -6235,7 +6306,7 @@ function saveNewPassword() {
   if (newPass !== confirm) {
     gMsg(isE?'Las contraseñas no coinciden':'Passwords do not match'); return;
   }
-  DEFAULT_CREDS[S.user].hash = hashPass(newPass);
+  CREDS[S.user] ? CREDS[S.user].hash = hashPass(newPass) : void(0);
   // Update PIN profile too
   const idx = savedProfiles.findIndex(p=>p.userId===S.user);
   // Store new credential indicator
