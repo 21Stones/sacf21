@@ -558,40 +558,73 @@ const DB = {
 };
 
 // ── STORAGE ENGINE ──────────────────────────────────────────
+// Uses window.storage (Claude artifacts) with localStorage fallback
 const STORE_KEY = '21stones_db';
 
+function dbSaveSync() {
+  // Synchronous save to localStorage (always available in browser)
+  try {
+    const payload = JSON.stringify({
+      clients:  DB.clients,
+      users:    DB.users,
+      subs:     DB.subs,
+      cos:      DB.cos,
+      assets:   DB.assets,
+      journal:  DB.journal,
+      lang:     S.lang,
+      projects: PROJECTS,          // ← persist user-created projects
+    });
+    localStorage.setItem(STORE_KEY, payload);
+  } catch(e) { /* storage full or unavailable */ }
+}
+
 async function dbSave() {
+  // Always save to localStorage immediately (synchronous, reliable)
+  dbSaveSync();
+  // Also save to window.storage if available (Claude artifact persistence)
   try {
     if (window.storage) {
-      await window.storage.set(STORE_KEY, JSON.stringify({
-        clients: DB.clients,
-        users:   DB.users,
-        subs:    DB.subs,
-        cos:     DB.cos,
-        assets:  DB.assets,
-        journal: DB.journal,
-        lang:    S.lang,
-      }));
+      await window.storage.set(STORE_KEY, localStorage.getItem(STORE_KEY));
     }
-  } catch(e) { /* storage not available — in-memory only */ }
+  } catch(e) {}
 }
 
 async function dbLoad() {
+  // First try window.storage (Claude artifact)
+  let raw = null;
   try {
     if (window.storage) {
       const res = await window.storage.get(STORE_KEY);
-      if (res && res.value) {
-        const saved = JSON.parse(res.value);
-        if (saved.clients?.length) DB.clients = saved.clients;
-        if (saved.users?.length)   DB.users   = saved.users;
-        if (saved.subs?.length)    DB.subs    = saved.subs;
-        if (saved.cos?.length)     DB.cos     = saved.cos;
-        if (saved.assets?.length)  DB.assets  = saved.assets;
-        if (saved.journal?.length) DB.journal = saved.journal;
-        if (saved.lang)            S.lang     = saved.lang;
-      }
+      if (res?.value) raw = res.value;
     }
-  } catch(e) { /* first load — use defaults */ }
+  } catch(e) {}
+  // Fall back to localStorage
+  if (!raw) {
+    try { raw = localStorage.getItem(STORE_KEY); } catch(e) {}
+  }
+  if (!raw) return; // first run — use defaults
+  try {
+    const saved = JSON.parse(raw);
+    if (saved.clients?.length) DB.clients = saved.clients;
+    if (saved.users?.length)   DB.users   = saved.users;
+    if (saved.subs?.length)    DB.subs    = saved.subs;
+    if (saved.cos?.length)     DB.cos     = saved.cos;
+    if (saved.assets?.length)  DB.assets  = saved.assets;
+    if (saved.journal?.length) DB.journal = saved.journal;
+    if (saved.lang)            S.lang     = saved.lang;
+    // Restore user-created projects (merge with seeds, avoid duplicates)
+    if (saved.projects?.length) {
+      saved.projects.forEach(sp => {
+        if (!PROJECTS.find(p => p.id === sp.id)) PROJECTS.push(sp);
+        else Object.assign(PROJECTS.find(p => p.id === sp.id), sp);
+      });
+    }
+  } catch(e) {}
+}
+
+// Quick check — has storage ever been used?
+function dbHasData() {
+  try { return !!localStorage.getItem(STORE_KEY); } catch(e) { return false; }
 }
 
 // ── CLIENT SELECTOR: rebuild from DB.clients ──
@@ -726,25 +759,35 @@ let pinTarget = null;
 const PIN_LENGTH = 4;
 
 async function authInit() {
+  // Helper: read from localStorage with window.storage fallback
+  const lsGet = async (key) => {
+    let val = null;
+    try { val = localStorage.getItem(key); } catch(e){}
+    if (!val) {
+      try {
+        if (window.storage) {
+          const r = await window.storage.get(key);
+          if (r?.value) { val = r.value; localStorage.setItem(key, val); }
+        }
+      } catch(e){}
+    }
+    return val;
+  };
+
   // Load saved credentials
   try {
-    if (window.storage) {
-      const cr = await window.storage.get(CREDS_KEY);
-      if (cr?.value) {
-        const saved = JSON.parse(cr.value);
-        if (Object.keys(saved).length > 0) CREDS = saved;
-      }
-      const pr = await window.storage.get(PROFILES_KEY);
-      if (pr?.value) savedProfiles = JSON.parse(pr.value);
-      // Auto-login from saved session
-      const sess = await window.storage.get(SESSION_KEY);
-      if (sess?.value) {
-        const s = JSON.parse(sess.value);
-        if (s.expires > Date.now() && s.userId && s.role) {
-          await dbLoad();
-          S.user = s.userId; S.role = s.role;
-          enterApp(); return;
-        }
+    const cr = await lsGet(CREDS_KEY);
+    if (cr) { const saved = JSON.parse(cr); if (Object.keys(saved).length > 0) CREDS = saved; }
+    const pr = await lsGet(PROFILES_KEY);
+    if (pr) savedProfiles = JSON.parse(pr);
+    // Auto-login from saved session
+    const sess = await lsGet(SESSION_KEY);
+    if (sess) {
+      const s = JSON.parse(sess);
+      if (s.expires > Date.now() && s.userId && s.role) {
+        await dbLoad();
+        S.user = s.userId; S.role = s.role;
+        enterApp(); return;
       }
     }
   } catch(e) {}
@@ -927,7 +970,9 @@ function doLogin() {
 }
 
 async function saveCreds() {
-  try { if (window.storage) await window.storage.set(CREDS_KEY, JSON.stringify(CREDS)); } catch(e) {}
+  const data = JSON.stringify(CREDS);
+  try { localStorage.setItem(CREDS_KEY, data); } catch(e){}
+  try { if (window.storage) await window.storage.set(CREDS_KEY, data); } catch(e){}
 }
 
 function requestPINSetup(userId, role, pass) {
@@ -980,7 +1025,10 @@ async function saveProfileWithPIN(userId, role, passHash, pinHash) {
   const idx = savedProfiles.findIndex(p=>p.userId===userId);
   const profile = { userId, displayName, role, initials, pin_hash: pinHash, faceid_registered: faceAvail };
   if (idx >= 0) savedProfiles[idx] = profile; else savedProfiles.push(profile);
-  try { if (window.storage) await window.storage.set(PROFILES_KEY, JSON.stringify(savedProfiles)); } catch(e){}
+  // Save to localStorage first, then window.storage
+  const pdata = JSON.stringify(savedProfiles);
+  try { localStorage.setItem(PROFILES_KEY, pdata); } catch(e){}
+  try { if (window.storage) await window.storage.set(PROFILES_KEY, pdata); } catch(e){}
   closeModal();
   completeAuthFlow(userId, role, true);
 }
@@ -989,9 +1037,9 @@ async function completeAuthFlow(userId, role, remember=true) {
   await dbLoad();
   S.user = userId; S.role = role;
   if (remember) {
-    try {
-      if (window.storage) await window.storage.set(SESSION_KEY, JSON.stringify({ userId, role, expires: Date.now()+30*24*3600*1000 }));
-    } catch(e){}
+    const sdata = JSON.stringify({ userId, role, expires: Date.now()+30*24*3600*1000 });
+    try { localStorage.setItem(SESSION_KEY, sdata); } catch(e){}
+    try { if (window.storage) await window.storage.set(SESSION_KEY, sdata); } catch(e){}
   }
   log(userId.toUpperCase(), `Login · Level ${role}`, 'low');
   role === 'A' ? showScreen('onboarding-screen') : showScreen('nda-screen');
@@ -1077,7 +1125,9 @@ function deleteCred(uid) {
   delete CREDS[uid];
   saveCreds();
   savedProfiles = savedProfiles.filter(p=>p.userId!==uid);
-  try { if(window.storage) window.storage.set(PROFILES_KEY,JSON.stringify(savedProfiles)); } catch(e){}
+  const pd = JSON.stringify(savedProfiles);
+  try { localStorage.setItem(PROFILES_KEY, pd); } catch(e){}
+  try { if(window.storage) window.storage.set(PROFILES_KEY, pd); } catch(e){}
   gMsg(isE?`Usuario "${uid}" eliminado`:`User "${uid}" deleted`);
   closeModal();
   openCredManager();
@@ -1093,34 +1143,53 @@ function signNDA(){
 }
 function skipOB(){enterApp()}
 function completeOB(){
-  const nm  = document.getElementById('ob-name').value.trim();
-  const ein = document.getElementById('ob-ein').value.trim();
-  const type= document.getElementById('ob-type').value;
-  const sec = document.getElementById('ob-sector').value;
-  const std = document.getElementById('ob-std').value;
-  const prev= document.getElementById('ob-prev').value;
-  const addr= document.getElementById('ob-addr').value.trim();
-  const fy  = document.getElementById('ob-fy')?.value   || 'December 31';
-  const coa = document.getElementById('ob-coa')?.value  || 'Construction Industry (AIA)';
+  const nm  = document.getElementById('ob-name')?.value.trim();
+  const ein = document.getElementById('ob-ein')?.value.trim();
+  const type= document.getElementById('ob-type')?.value;
+  const sec = document.getElementById('ob-sector')?.value;
+  const std = document.getElementById('ob-std')?.value;
+  const prev= document.getElementById('ob-prev')?.value;
+  const addr= document.getElementById('ob-addr')?.value.trim();
+  const fy  = document.getElementById('ob-fy')?.value || 'December 31';
+  const coa = document.getElementById('ob-coa')?.value || 'Construction Industry (AIA)';
 
-  if (!nm) { gMsg(S.lang==='es'?'El nombre es obligatorio':'Name is required'); return; }
+  if (!nm) {
+    alert(S.lang==='es'?'El nombre del cliente es obligatorio':'Client name is required');
+    return;
+  }
 
-  // Check for duplicate
+  // Check for duplicate name
   if (DB.clients.find(c => c.name.toLowerCase() === nm.toLowerCase())) {
-    gMsg(S.lang==='es'?`Cliente "${nm}" ya existe en el sistema`:`Client "${nm}" already exists`);
+    // Already exists — just enter app with existing client
+    S.client = nm;
     enterApp(); return;
   }
 
+  // Create and persist the new client
   const newClient = {
-    id: nextId('CLT', DB.clients),
-    name: nm, ein, type, sector: sec, std, prev, addr, fy, coa,
-    status: 'active',
+    id:      nextId('CLT', DB.clients),
+    name:    nm,
+    ein:     ein || '',
+    type:    type || 'LLC',
+    sector:  sec || 'Construction & Contracting',
+    std:     std || 'Dual — GAAP + IFRS',
+    prev:    prev || 'None',
+    addr:    addr || '',
+    fy:      fy,
+    coa:     coa,
+    status:  'active',
     created: new Date().toISOString().slice(0,10)
   };
+
   DB.clients.push(newClient);
   S.client = nm;
-  dbSave();
-  log(S.user.toUpperCase(), `New client created: "${nm}" (${newClient.id})`, 'medium');
+
+  // Save synchronously BEFORE entering app
+  dbSaveSync();
+  // Also fire async save for Claude artifact storage
+  dbSave().catch(()=>{});
+
+  log((S.user||'SYSTEM').toUpperCase(), `Client created: "${nm}" (${newClient.id})`, 'medium');
   enterApp();
 }
 
@@ -1145,10 +1214,11 @@ function enterApp(){
 }
 function doLogout(){
   log(S.user?.toUpperCase()||'USER','Logout','low');
-  S.role=null;S.user=null;
-  ['l-role','l-user','l-pass'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
-  // Clear active session but keep profiles (for quick re-login)
-  try{ if(window.storage) window.storage.delete(SESSION_KEY); }catch(e){}
+  S.role=null; S.user=null;
+  ['l-role','l-user','l-pass'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  // Clear session from both stores (keep profiles for quick re-login)
+  try { localStorage.removeItem(SESSION_KEY); } catch(e){}
+  try { if(window.storage) window.storage.delete(SESSION_KEY); } catch(e){}
   showScreen('login-screen');
   renderLoginView();
 }
@@ -1864,7 +1934,7 @@ function postJE() {
       tag:   std==='gaap'?'GAAP':std==='ifrs'?'IFRS':'BOTH',
       wip:   hasWIP,
     });
-    dbSave();
+    dbSaveSync(); dbSave().catch(()=>{});
   }
 
   log(S.user?.toUpperCase()||'U', `Posted ${txId}: ${desc} — ${fmt(dr)} (${std.toUpperCase()})`, 'medium');
@@ -4372,7 +4442,7 @@ function saveCostEntry(){
     dr: '1-01-03-001', cr: creditAcct, amt: amount, std:'both', wip:true
   });
 
-  dbSave();
+  dbSaveSync(); dbSave().catch(()=>{});
   log(S.user?.toUpperCase()||'U', `Sub-ledger entry: ${ref} — ${fmt(amount)} on ${pid}`, 'low');
   closeModal();
   gMsg(isE?`✓ ${ref} registrado. WIP actualizado para ${pid}.`:`✓ ${ref} posted. WIP updated for ${pid}.`);
@@ -4916,7 +4986,7 @@ function approveChangeOrder(pid, coNo){
   // Sync to DB.cos
   const dbco=DB.cos.find(c=>c.pid===pid&&c.no===coNo);
   if(dbco)dbco.approved=true;
-  dbSave();
+  dbSaveSync(); dbSave().catch(()=>{});
   log(S.user?.toUpperCase()||'U',`CO approved: ${coNo} (+${fmt(co.amount)}) for ${pid}`,'medium');
   gMsg(isE?`✓ OC ${coNo} aprobada. Presupuesto de ${proj.name} actualizado a ${fmt(proj.contract)}.`:`✓ CO ${coNo} approved. ${proj.name} budget updated to ${fmt(proj.contract)}.`);
   renderMod('budget');
@@ -5891,7 +5961,7 @@ function saveNewProject() {
       gaap_only:false, ifrs_only:false }
   ];
 
-  dbSave();
+  dbSaveSync(); dbSave().catch(()=>{});
   log(S.user?.toUpperCase()||'U', `Project created: ${id} — ${name} (${fmt(contract)})`, 'medium');
   closeModal();
   gMsg(isE ? `✓ Proyecto "${name}" creado. ID: ${id}` : `✓ Project "${name}" created. ID: ${id}`);
@@ -5945,7 +6015,7 @@ function saveAsset(){
   const macrsYr1=Math.round(cost*(macrsMultipliers[macrs]||0.2));
   const assetId=nextId('AST',DB.assets);
   DB.assets.push({id:assetId,desc,cat,cost,book,macrs,life,date,slDepr,macrsYr1,accumulated:0,status:'active',addedBy:S.user});
-  dbSave();
+  dbSaveSync(); dbSave().catch(()=>{});
   log(S.user?.toUpperCase()||'U',`Asset added: ${assetId} — ${desc} (${fmt(cost)})`, 'medium');
   closeModal();
   gMsg(isE?`✓ Activo "${desc}" agregado (${assetId}). Depr SL: ${fmt(slDepr)}/año`:`✓ Asset "${desc}" added (${assetId}). SL Depr: ${fmt(slDepr)}/yr`);
@@ -6002,7 +6072,7 @@ function saveCO(){
   const co={no:coNum,date:new Date().toISOString().slice(0,7),desc_en:desc,desc_es:desc,amount:amt,approved:false,scheduleImpact:sched,reason};
   proj.cos.push(co);
   DB.cos.push({pid,...co});
-  dbSave();
+  dbSaveSync(); dbSave().catch(()=>{});
   log(S.user?.toUpperCase()||'U',`CO submitted: ${coNum} — ${desc} (${fmt(amt)}) for ${pid}`,'medium');
   closeModal();
   gMsg(isE?`✓ OC ${coNum} enviada para aprobación. El presupuesto se actualizará cuando sea aprobada.`:`✓ CO ${coNum} submitted for approval. Budget updates when approved.`);
@@ -6066,7 +6136,7 @@ function saveNewSub() {
   };
 
   DB.subs.push(newSub);
-  dbSave();
+  dbSaveSync(); dbSave().catch(()=>{});
   log(S.user?.toUpperCase()||'U', `Subcontractor added: ${name} — Project ${pid}${blocked?' [BLOCKED: '+reason+']':''}`, blocked?'high':'medium');
   closeModal();
   gMsg(blocked
@@ -6142,10 +6212,18 @@ function saveNewUser() {
   };
 
   DB.users.push(newUser);
-  dbSave();
-  log(S.user?.toUpperCase()||'U', `User created: ${newUser.id} — ${first} ${last} (Level ${role})`, 'medium');
+
+  // Also register login credentials so the new user can actually sign in
+  const userId = email.split('@')[0].replace(/[^a-z0-9.]/gi,'').toLowerCase() || `${first}.${last}`.toLowerCase();
+  CREDS[userId] = { hash: hashPass(pass), role, displayName: `${first} ${last}` };
+  saveCreds(); // persist creds
+
+  dbSaveSync(); dbSave().catch(()=>{});
+  log(S.user?.toUpperCase()||'U', `User created: ${newUser.id} — ${first} ${last} (Level ${role}) → login: ${userId}`, 'medium');
   closeModal();
-  gMsg(isE ? `✓ Usuario "${first} ${last}" creado (${newUser.id}). NDA pendiente de firma.` : `✓ User "${first} ${last}" created (${newUser.id}). NDA pending.`);
+  gMsg(isE
+    ? `✓ Usuario "${first} ${last}" creado. Login: ${userId} · Contraseña configurada.`
+    : `✓ User "${first} ${last}" created. Login: ${userId} · Password set.`);
   renderMod('security');
 }
 
@@ -6264,7 +6342,9 @@ async function registerFaceID() {
     const idx = savedProfiles.findIndex(p=>p.userId===S.user);
     if (idx>=0) { savedProfiles[idx].faceid_registered = true; }
     else { savedProfiles.push({ userId:S.user, displayName:S.user, role:S.role, initials:S.user.slice(0,2).toUpperCase(), pin_hash:null, faceid_registered:true }); }
-    if (window.storage) await window.storage.set(PROFILES_KEY, JSON.stringify(savedProfiles));
+    const pd = JSON.stringify(savedProfiles);
+    try { localStorage.setItem(PROFILES_KEY, pd); } catch(e){}
+    try { if (window.storage) await window.storage.set(PROFILES_KEY, pd); } catch(e){}
     closeModal();
   } catch(e) { gMsg('Biometric registration failed or cancelled'); }
 }
@@ -6307,15 +6387,15 @@ function saveNewPassword() {
     gMsg(isE?'Las contraseñas no coinciden':'Passwords do not match'); return;
   }
   CREDS[S.user] ? CREDS[S.user].hash = hashPass(newPass) : void(0);
-  // Update PIN profile too
-  const idx = savedProfiles.findIndex(p=>p.userId===S.user);
-  // Store new credential indicator
+  saveCreds(); // persist updated password hash
   log(S.user.toUpperCase(), 'Password changed successfully', 'medium');
   closeModal();
   gMsg(isE?'✓ Contraseña actualizada correctamente':'✓ Password updated successfully');
 }
 
 async function signOutAll() {
+  // Clear from both storage layers
+  try { localStorage.removeItem(SESSION_KEY); localStorage.removeItem(PROFILES_KEY); } catch(e){}
   try {
     if (window.storage) {
       await window.storage.delete(SESSION_KEY);
