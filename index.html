@@ -627,7 +627,155 @@ function dbHasData() {
   try { return !!localStorage.getItem(STORE_KEY); } catch(e) { return false; }
 }
 
-// ── CLIENT SELECTOR: rebuild from DB.clients ──
+// ── NEW CLIENT MODAL (usable from within the app) ──
+function openNewClientModal() {
+  const isE = es();
+  openModal(`
+<h3>${isE?'Agregar Nuevo Cliente':'Add New Client'}</h3>
+<div class="mf">
+  <div class="mf-field full">
+    <label>${isE?'Nombre Legal de la Entidad *':'Legal Entity Name *'}</label>
+    <input type="text" id="nc-name" placeholder="ABC Construction LLC"
+      onkeydown="if(event.key==='Enter')document.getElementById('nc-ein').focus()">
+  </div>
+  <div class="mf-row">
+    <div class="mf-field">
+      <label>EIN / Tax ID</label>
+      <input type="text" id="nc-ein" placeholder="XX-XXXXXXX">
+    </div>
+    <div class="mf-field">
+      <label>${isE?'Tipo de Entidad':'Entity Type'}</label>
+      <select id="nc-type">
+        <option value="LLC">LLC</option>
+        <option value="S-Corp">S-Corp</option>
+        <option value="C-Corp">C-Corp</option>
+        <option value="Partnership">Partnership</option>
+        <option value="Sole Prop">Sole Prop</option>
+      </select>
+    </div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field">
+      <label>${isE?'Sector Industrial':'Industry Sector'}</label>
+      <select id="nc-sector">
+        <option>Construction & Contracting</option>
+        <option>Real Estate Development</option>
+        <option>Manufacturing</option>
+        <option>Professional Services</option>
+        <option>Healthcare</option>
+        <option>Technology</option>
+        <option>Non-Profit</option>
+      </select>
+    </div>
+    <div class="mf-field">
+      <label>${isE?'Norma Contable':'Accounting Standard'}</label>
+      <select id="nc-std">
+        <option value="Dual — GAAP + IFRS">Dual — GAAP + IFRS</option>
+        <option value="US GAAP">US GAAP</option>
+        <option value="IFRS (NIIF)">IFRS (NIIF)</option>
+      </select>
+    </div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field">
+      <label>${isE?'Plantilla de Plan de Cuentas':'Chart of Accounts Template'}</label>
+      <select id="nc-coa">
+        <option>Construction Industry (AIA)</option>
+        <option>General Business</option>
+        <option>Real Estate Developer</option>
+        <option>Non-Profit (FASB 958)</option>
+        <option>Custom</option>
+      </select>
+    </div>
+    <div class="mf-field">
+      <label>${isE?'Cierre de Año Fiscal':'Fiscal Year End'}</label>
+      <select id="nc-fy">
+        <option>December 31</option>
+        <option>September 30</option>
+        <option>June 30</option>
+        <option>March 31</option>
+      </select>
+    </div>
+  </div>
+  <div class="mf-field full">
+    <label>${isE?'Dirección':'Business Address'}</label>
+    <input type="text" id="nc-addr" placeholder="123 Main St, Miami FL 33101">
+  </div>
+  <div class="mf-field">
+    <label>${isE?'Sistema Anterior':'Previous System'}</label>
+    <select id="nc-prev">
+      <option value="">— ${isE?'Ninguno':'None'} —</option>
+      <option>QuickBooks</option><option>Sage 300</option>
+      <option>Viewpoint</option><option>Procore</option>
+      <option>Excel</option><option>None</option>
+    </select>
+  </div>
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="saveNewClient()">✓ ${isE?'Crear Cliente':'Create Client'}</button>
+</div>`);
+}
+
+function saveNewClient() {
+  const isE = es();
+  const nm   = document.getElementById('nc-name')?.value.trim();
+  const ein  = document.getElementById('nc-ein')?.value.trim()   || '';
+  const type = document.getElementById('nc-type')?.value         || 'LLC';
+  const sec  = document.getElementById('nc-sector')?.value       || 'Construction & Contracting';
+  const std  = document.getElementById('nc-std')?.value          || 'Dual — GAAP + IFRS';
+  const coa  = document.getElementById('nc-coa')?.value          || 'Construction Industry (AIA)';
+  const fy   = document.getElementById('nc-fy')?.value           || 'December 31';
+  const addr = document.getElementById('nc-addr')?.value.trim()  || '';
+  const prev = document.getElementById('nc-prev')?.value         || '';
+
+  if (!nm) {
+    gMsg(isE ? '⚠ El nombre del cliente es obligatorio' : '⚠ Client name is required');
+    document.getElementById('nc-name')?.focus();
+    return;
+  }
+  if (DB.clients.find(c => c.name.toLowerCase() === nm.toLowerCase())) {
+    gMsg(isE ? `El cliente "${nm}" ya existe` : `Client "${nm}" already exists`);
+    return;
+  }
+
+  const newClient = {
+    id:      nextId('CLT', DB.clients),
+    name:    nm,
+    ein, type,
+    sector:  sec,
+    std,
+    prev,
+    addr,
+    fy,
+    coa,
+    status:  'active',
+    created: new Date().toISOString().slice(0,10)
+  };
+
+  // Add to in-memory store
+  DB.clients.push(newClient);
+
+  // Set as active client
+  S.client = nm;
+
+  // Save synchronously — guaranteed write before any navigation
+  dbSaveSync();
+  dbSave().catch(() => {});
+
+  log((S.user||'USER').toUpperCase(), `Client created: ${newClient.id} — ${nm}`, 'medium');
+  closeModal();
+
+  // Rebuild selector immediately so new client appears
+  rebuildClientSelector();
+
+  gMsg(isE
+    ? `✓ Cliente "${nm}" (${newClient.id}) creado y guardado`
+    : `✓ Client "${nm}" (${newClient.id}) created and saved`);
+
+  // Refresh dashboard to show new client
+  renderMod(S.mod);
+}
 function rebuildClientSelector() {
   const sel = document.getElementById('client-sel');
   if (!sel) return;
@@ -1042,7 +1190,19 @@ async function completeAuthFlow(userId, role, remember=true) {
     try { if (window.storage) await window.storage.set(SESSION_KEY, sdata); } catch(e){}
   }
   log(userId.toUpperCase(), `Login · Level ${role}`, 'low');
-  role === 'A' ? showScreen('onboarding-screen') : showScreen('nda-screen');
+
+  if (role === 'A') {
+    // Show onboarding only if there are no clients yet
+    // (first time setup). Otherwise go straight to app.
+    if (DB.clients.length === 0) {
+      showScreen('onboarding-screen');
+    } else {
+      // Level A goes directly to app — can add clients from dashboard
+      enterApp();
+    }
+  } else {
+    showScreen('nda-screen');
+  }
 }
 
 // ── CREDENTIAL MANAGER (Level A) ──
@@ -1181,13 +1341,13 @@ function completeOB(){
     created: new Date().toISOString().slice(0,10)
   };
 
+  // Add to in-memory store
   DB.clients.push(newClient);
   S.client = nm;
 
-  // Save synchronously BEFORE entering app
+  // Save synchronously — guaranteed write before any navigation
   dbSaveSync();
-  // Also fire async save for Claude artifact storage
-  dbSave().catch(()=>{});
+  dbSave().catch(() => {});
 
   log((S.user||'SYSTEM').toUpperCase(), `Client created: "${nm}" (${newClient.id})`, 'medium');
   enterApp();
@@ -1371,7 +1531,7 @@ ${alertCount>0?`<div class="alert a-warn" style="display:flex;align-items:center
       <div style="font-size:10px;color:var(--stone)">${c.type} · ${c.sector.split(' ')[0]}</div></div>
       <span class="badge ${c.std.includes('Dual')?'b-gold':c.std.includes('IFRS')?'b-ok':'b-info'}" style="font-size:9px">${c.std.includes('Dual')?'DUAL':c.std.includes('IFRS')?'IFRS':'GAAP'}</span>
     </div>`).join('')}
-    ${S.role==='A'?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="showScreen('onboarding-screen')">${isE?'+ Nuevo Cliente':'+ New Client'}</button>`:''}
+    ${S.role==='A'?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="openNewClientModal()">${isE?'+ Nuevo Cliente':'+ New Client'}</button>`:''}
   </div>
 </div>`}
 
