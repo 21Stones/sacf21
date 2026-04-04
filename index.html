@@ -474,11 +474,18 @@ By signing, I affirm: (1) Strict confidentiality of all client financial data ac
       <div class="sb-section">
         <div class="sb-sec-title" id="sbt-core">Core</div>
         <div class="nav-item active" onclick="nav('dashboard')"><span class="nav-icon">◈</span><span id="sn-dash">Dashboard</span></div>
+        <div class="nav-item" onclick="nav('clients')"><span class="nav-icon">🏢</span><span id="sn-clients">Clientes</span></div>
         <div class="nav-item" onclick="nav('coa')"><span class="nav-icon">📋</span><span id="sn-coa">Chart of Accounts</span></div>
         <div class="nav-item" onclick="nav('gl')"><span class="nav-icon">📒</span><span id="sn-gl">General Ledger</span></div>
         <div class="nav-item" onclick="nav('treasury')"><span class="nav-icon">🏦</span><span id="sn-tres">Treasury & Cash</span></div>
         <div class="nav-item" onclick="nav('bankfeed')"><span class="nav-icon">📡</span><span id="sn-bank">Bank Feeds</span><span class="nav-badge">12</span></div>
         <div class="nav-item" onclick="nav('assets')"><span class="nav-icon">🏗</span><span id="sn-assets">Fixed Assets</span></div>
+      </div>
+      <div class="sb-section">
+        <div class="sb-sec-title" id="sbt-billing">Ventas y Cobranza</div>
+        <div class="nav-item" onclick="nav('sales')"><span class="nav-icon">🧾</span><span id="sn-sales">Ventas / Facturación</span></div>
+        <div class="nav-item" onclick="nav('ar')"><span class="nav-icon">📥</span><span id="sn-ar">Cuentas por Cobrar</span></div>
+        <div class="nav-item" onclick="nav('ap')"><span class="nav-icon">📤</span><span id="sn-ap">Cuentas por Pagar</span></div>
       </div>
       <div class="sb-section">
         <div class="sb-sec-title" id="sbt-fs">Financial Statements</div>
@@ -573,6 +580,7 @@ function dbSaveSync() {
       journal:  DB.journal,
       lang:     S.lang,
       projects: PROJECTS,          // ← persist user-created projects
+      sectors:  SECTORS,           // ← persist custom sectors
     });
     localStorage.setItem(STORE_KEY, payload);
   } catch(e) { /* storage full or unavailable */ }
@@ -612,6 +620,10 @@ async function dbLoad() {
     if (saved.assets?.length)  DB.assets  = saved.assets;
     if (saved.journal?.length) DB.journal = saved.journal;
     if (saved.lang)            S.lang     = saved.lang;
+    if (saved.sectors?.length) {
+      // Merge saved sectors with defaults (no duplicates)
+      saved.sectors.forEach(s => { if (!SECTORS.includes(s)) SECTORS.push(s); });
+    }
     // Restore user-created projects (merge with seeds, avoid duplicates)
     if (saved.projects?.length) {
       saved.projects.forEach(sp => {
@@ -627,20 +639,143 @@ function dbHasData() {
   try { return !!localStorage.getItem(STORE_KEY); } catch(e) { return false; }
 }
 
-// ── NEW CLIENT MODAL (usable from within the app) ──
+// ═══════════════════════════════════════════════════════════════
+// CLIENT MANAGEMENT — Create / Edit / List
+// Custom sectors, sector-specific COA, persists to localStorage
+// ═══════════════════════════════════════════════════════════════
+
+// Sector catalogue — user can add custom sectors
+let SECTORS = [
+  'Construction & Contracting',
+  'Real Estate Development',
+  'Manufacturing',
+  'Professional Services',
+  'Healthcare',
+  'Technology',
+  'Non-Profit',
+  'Retail & Commerce',
+  'Hospitality & Tourism',
+  'Transportation & Logistics',
+];
+
+// COA templates by sector type
+const COA_TEMPLATES = {
+  'construction': {
+    label: 'Construction Industry (AIA / ASC 606)',
+    description: 'WIP accounts, retainage, job costing, % completion',
+    accounts: [
+      '1-01-01-001 Cash — Operating',
+      '1-01-02-001 Accounts Receivable — Current',
+      '1-01-02-002 Retainage Receivable (LT)',
+      '1-01-03-001 WIP — Work in Progress',
+      '1-01-03-002 Contract Asset — Unbilled Revenue',
+      '2-01-01-001 Accounts Payable — Vendors',
+      '2-01-01-002 AP — Subcontractors (Current)',
+      '2-01-02-001 Contract Liability — Deferred Revenue',
+      '2-01-02-002 Retainage Payable (LT)',
+      '4-01-01-001 Construction Revenue',
+      '5-01-01-001 COGS — Materials',
+      '5-01-02-001 COGS — Labor',
+      '5-01-03-001 COGS — Subcontractors',
+      '5-01-04-001 COGS — Equipment',
+      '5-02-01-001 Overhead — Indirect Costs',
+    ]
+  },
+  'general': {
+    label: 'General Business',
+    description: 'Standard chart for services, commerce, and professional firms',
+    accounts: [
+      '1-01-01-001 Cash — Operating',
+      '1-01-02-001 Accounts Receivable',
+      '1-01-03-001 Inventory / Prepaid Expenses',
+      '1-02-01-001 Property, Plant & Equipment',
+      '2-01-01-001 Accounts Payable',
+      '2-01-02-001 Accrued Liabilities',
+      '2-02-01-001 Long-Term Debt',
+      '3-01-01-001 Common Stock / Capital',
+      '3-01-02-001 Retained Earnings',
+      '4-01-01-001 Revenue — Products / Services',
+      '4-01-02-001 Other Income',
+      '5-01-01-001 Cost of Goods Sold / Cost of Services',
+      '6-01-01-001 Salaries & Payroll',
+      '6-02-01-001 Rent & Occupancy',
+      '6-03-01-001 Depreciation',
+    ]
+  },
+  'realestate': {
+    label: 'Real Estate Developer',
+    description: 'Properties, rental income, development costs, IFRS 16',
+    accounts: [
+      '1-01-01-001 Cash — Operating',
+      '1-01-02-001 Accounts Receivable',
+      '1-02-01-001 Investment Properties (IAS 40)',
+      '1-02-02-001 Properties Under Development',
+      '1-02-03-001 Right-of-Use Assets (IFRS 16)',
+      '2-01-01-001 Accounts Payable',
+      '2-01-02-001 Tenant Deposits',
+      '2-02-01-001 Mortgage / Construction Loans',
+      '2-02-02-001 Lease Liabilities (IFRS 16)',
+      '4-01-01-001 Rental Income',
+      '4-01-02-001 Property Sale Revenue',
+      '5-01-01-001 Cost of Properties Sold',
+      '6-01-01-001 Property Operating Expenses',
+      '6-02-01-001 Depreciation & Amortization',
+    ]
+  },
+  'nonprofit': {
+    label: 'Non-Profit (FASB 958 / ASC 958)',
+    description: 'Net assets, restricted funds, program expenses',
+    accounts: [
+      '1-01-01-001 Cash — Operating',
+      '1-01-02-001 Contributions Receivable',
+      '1-01-03-001 Grants Receivable',
+      '1-02-01-001 Property & Equipment',
+      '2-01-01-001 Accounts Payable',
+      '2-01-02-001 Deferred Revenue — Grants',
+      '3-01-01-001 Net Assets Without Donor Restrictions',
+      '3-01-02-001 Net Assets With Donor Restrictions',
+      '4-01-01-001 Contributions & Donations',
+      '4-01-02-001 Grant Revenue',
+      '4-01-03-001 Program Service Revenue',
+      '5-01-01-001 Program Expenses',
+      '5-02-01-001 Management & General Expenses',
+      '5-03-01-001 Fundraising Expenses',
+    ]
+  },
+};
+
+function getSectorCOAType(sector) {
+  if (!sector) return 'general';
+  const s = sector.toLowerCase();
+  if (s.includes('construction') || s.includes('contracting')) return 'construction';
+  if (s.includes('real estate') || s.includes('development')) return 'realestate';
+  if (s.includes('non-profit') || s.includes('nonprofit')) return 'nonprofit';
+  return 'general';
+}
+
 function openNewClientModal() {
   const isE = es();
+  // Build sector options from SECTORS array
+  const sectorOpts = SECTORS.map(s =>
+    `<option value="${s}">${s}</option>`
+  ).join('');
+
   openModal(`
-<h3>${isE?'Agregar Nuevo Cliente':'Add New Client'}</h3>
+<h3>${isE?'Nuevo Cliente / Entidad':'New Client / Entity'}</h3>
+
+<div style="background:var(--info-light);border-left:3px solid var(--info);border-radius:var(--radius);padding:10px 12px;font-size:11px;color:var(--info);margin-bottom:14px">
+  ⓘ ${isE?'El Plan de Cuentas se asigna automáticamente según el sector. Puede personalizar después en el módulo COA.':'Chart of Accounts is auto-assigned by sector. You can customize later in the COA module.'}
+</div>
+
 <div class="mf">
   <div class="mf-field full">
-    <label>${isE?'Nombre Legal de la Entidad *':'Legal Entity Name *'}</label>
-    <input type="text" id="nc-name" placeholder="ABC Construction LLC"
-      onkeydown="if(event.key==='Enter')document.getElementById('nc-ein').focus()">
+    <label>${isE?'Nombre Legal de la Entidad':'Legal Entity Name'} <span style="color:var(--danger)">*</span></label>
+    <input type="text" id="nc-name" placeholder="${isE?'Ej: Constructora ABC LLC':'e.g. ABC Construction LLC'}" autocomplete="off">
   </div>
+
   <div class="mf-row">
     <div class="mf-field">
-      <label>EIN / Tax ID</label>
+      <label>EIN / RFC / NIT</label>
       <input type="text" id="nc-ein" placeholder="XX-XXXXXXX">
     </div>
     <div class="mf-field">
@@ -650,21 +785,19 @@ function openNewClientModal() {
         <option value="S-Corp">S-Corp</option>
         <option value="C-Corp">C-Corp</option>
         <option value="Partnership">Partnership</option>
-        <option value="Sole Prop">Sole Prop</option>
+        <option value="Sole Prop">Sole Prop / Autónomo</option>
+        <option value="Non-Profit">Non-Profit / Asociación</option>
+        <option value="Government">Government / Gobierno</option>
       </select>
     </div>
   </div>
+
   <div class="mf-row">
     <div class="mf-field">
-      <label>${isE?'Sector Industrial':'Industry Sector'}</label>
-      <select id="nc-sector">
-        <option>Construction & Contracting</option>
-        <option>Real Estate Development</option>
-        <option>Manufacturing</option>
-        <option>Professional Services</option>
-        <option>Healthcare</option>
-        <option>Technology</option>
-        <option>Non-Profit</option>
+      <label>${isE?'Sector / Industria':'Sector / Industry'} <span style="color:var(--danger)">*</span></label>
+      <select id="nc-sector" onchange="updateCOAPreview()">
+        ${sectorOpts}
+        <option value="__custom__">${isE?'+ Agregar sector nuevo...':'+ Add custom sector...'}</option>
       </select>
     </div>
     <div class="mf-field">
@@ -672,108 +805,207 @@ function openNewClientModal() {
       <select id="nc-std">
         <option value="Dual — GAAP + IFRS">Dual — GAAP + IFRS</option>
         <option value="US GAAP">US GAAP</option>
-        <option value="IFRS (NIIF)">IFRS (NIIF)</option>
+        <option value="IFRS (NIIF)">IFRS / NIIF</option>
       </select>
     </div>
   </div>
-  <div class="mf-row">
-    <div class="mf-field">
-      <label>${isE?'Plantilla de Plan de Cuentas':'Chart of Accounts Template'}</label>
-      <select id="nc-coa">
-        <option>Construction Industry (AIA)</option>
-        <option>General Business</option>
-        <option>Real Estate Developer</option>
-        <option>Non-Profit (FASB 958)</option>
-        <option>Custom</option>
-      </select>
+
+  <!-- Custom sector input (hidden by default) -->
+  <div class="mf-field full" id="nc-custom-sector-wrap" style="display:none">
+    <label>${isE?'Nombre del nuevo sector':'New sector name'}</label>
+    <input type="text" id="nc-custom-sector" placeholder="${isE?'Ej: Minería & Extracción':'e.g. Mining & Extraction'}">
+  </div>
+
+  <!-- COA Preview — auto-updates based on sector -->
+  <div class="mf-field full">
+    <label>${isE?'Plan de Cuentas Asignado':'Chart of Accounts Template'}</label>
+    <div id="nc-coa-preview" style="background:var(--stone-pale);border-radius:var(--radius);padding:12px;border:1px solid var(--stone-light)">
+      <div id="nc-coa-label" style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:6px">Construction Industry (AIA / ASC 606)</div>
+      <div id="nc-coa-desc" style="font-size:11px;color:var(--stone);margin-bottom:8px">WIP accounts, retainage, job costing, % completion</div>
+      <div id="nc-coa-accounts" style="display:grid;grid-template-columns:1fr 1fr;gap:2px">
+      </div>
     </div>
+  </div>
+
+  <div class="mf-row">
     <div class="mf-field">
       <label>${isE?'Cierre de Año Fiscal':'Fiscal Year End'}</label>
       <select id="nc-fy">
-        <option>December 31</option>
-        <option>September 30</option>
-        <option>June 30</option>
-        <option>March 31</option>
+        <option value="December 31">December 31</option>
+        <option value="September 30">September 30</option>
+        <option value="June 30">June 30</option>
+        <option value="March 31">March 31</option>
+      </select>
+    </div>
+    <div class="mf-field">
+      <label>${isE?'Sistema Anterior':'Previous System'}</label>
+      <select id="nc-prev">
+        <option value="">— ${isE?'Ninguno':'None'} —</option>
+        <option>QuickBooks</option><option>Sage 300</option>
+        <option>Viewpoint</option><option>Procore</option>
+        <option>SAP</option><option>Oracle</option>
+        <option>Excel</option><option>None</option>
       </select>
     </div>
   </div>
+
   <div class="mf-field full">
     <label>${isE?'Dirección':'Business Address'}</label>
     <input type="text" id="nc-addr" placeholder="123 Main St, Miami FL 33101">
   </div>
-  <div class="mf-field">
-    <label>${isE?'Sistema Anterior':'Previous System'}</label>
-    <select id="nc-prev">
-      <option value="">— ${isE?'Ninguno':'None'} —</option>
-      <option>QuickBooks</option><option>Sage 300</option>
-      <option>Viewpoint</option><option>Procore</option>
-      <option>Excel</option><option>None</option>
-    </select>
-  </div>
 </div>
+
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-navy" onclick="saveNewClient()">✓ ${isE?'Crear Cliente':'Create Client'}</button>
-</div>`);
+  <button class="btn btn-navy" onclick="saveNewClient()">
+    ✓ ${isE?'Crear Cliente':'Create Client'}
+  </button>
+</div>
+`);
+
+  // Wire up the sector dropdown after modal renders
+  setTimeout(() => {
+    updateCOAPreview();
+    const sectorSel = document.getElementById('nc-sector');
+    if (sectorSel) sectorSel.addEventListener('change', function() {
+      const customWrap = document.getElementById('nc-custom-sector-wrap');
+      if (this.value === '__custom__') {
+        if (customWrap) customWrap.style.display = 'block';
+        document.getElementById('nc-custom-sector')?.focus();
+      } else {
+        if (customWrap) customWrap.style.display = 'none';
+        updateCOAPreview();
+      }
+    });
+  }, 60);
+}
+
+function updateCOAPreview() {
+  const sectorSel = document.getElementById('nc-sector');
+  if (!sectorSel) return;
+  const sector = sectorSel.value === '__custom__'
+    ? (document.getElementById('nc-custom-sector')?.value || '')
+    : sectorSel.value;
+
+  const coaType = getSectorCOAType(sector);
+  const tpl = COA_TEMPLATES[coaType] || COA_TEMPLATES.general;
+
+  const lbl = document.getElementById('nc-coa-label');
+  const desc = document.getElementById('nc-coa-desc');
+  const accs = document.getElementById('nc-coa-accounts');
+  if (lbl) lbl.textContent = tpl.label;
+  if (desc) desc.textContent = tpl.description;
+  if (accs) {
+    accs.innerHTML = tpl.accounts.slice(0, 8).map(a =>
+      `<div style="font-size:10px;color:var(--stone);font-family:var(--font-mono);padding:1px 0">${a.split(' ')[0]}</div>`
+    ).join('') +
+    `<div style="font-size:10px;color:var(--stone);grid-column:1/-1;margin-top:2px">
+      + ${tpl.accounts.length - 8} ${es()?'cuentas más':'more accounts'}
+    </div>`;
+  }
 }
 
 function saveNewClient() {
   const isE = es();
-  const nm   = document.getElementById('nc-name')?.value.trim();
-  const ein  = document.getElementById('nc-ein')?.value.trim()   || '';
-  const type = document.getElementById('nc-type')?.value         || 'LLC';
-  const sec  = document.getElementById('nc-sector')?.value       || 'Construction & Contracting';
-  const std  = document.getElementById('nc-std')?.value          || 'Dual — GAAP + IFRS';
-  const coa  = document.getElementById('nc-coa')?.value          || 'Construction Industry (AIA)';
-  const fy   = document.getElementById('nc-fy')?.value           || 'December 31';
-  const addr = document.getElementById('nc-addr')?.value.trim()  || '';
-  const prev = document.getElementById('nc-prev')?.value         || '';
 
+  // Read all fields directly from DOM — no reliance on variable scope
+  const nameEl   = document.getElementById('nc-name');
+  const einEl    = document.getElementById('nc-ein');
+  const typeEl   = document.getElementById('nc-type');
+  const sectorEl = document.getElementById('nc-sector');
+  const customEl = document.getElementById('nc-custom-sector');
+  const stdEl    = document.getElementById('nc-std');
+  const fyEl     = document.getElementById('nc-fy');
+  const prevEl   = document.getElementById('nc-prev');
+  const addrEl   = document.getElementById('nc-addr');
+
+  const nm     = nameEl?.value?.trim() || '';
+  const ein    = einEl?.value?.trim()  || '';
+  const type   = typeEl?.value         || 'LLC';
+  const sector = sectorEl?.value === '__custom__'
+    ? (customEl?.value?.trim() || '')
+    : (sectorEl?.value || 'Construction & Contracting');
+  const std    = stdEl?.value  || 'Dual — GAAP + IFRS';
+  const fy     = fyEl?.value   || 'December 31';
+  const prev   = prevEl?.value || '';
+  const addr   = addrEl?.value?.trim() || '';
+
+  // Validate
   if (!nm) {
-    gMsg(isE ? '⚠ El nombre del cliente es obligatorio' : '⚠ Client name is required');
-    document.getElementById('nc-name')?.focus();
+    nameEl?.focus();
+    gMsg(isE ? '⚠ El nombre de la entidad es obligatorio' : '⚠ Entity name is required');
+    return;
+  }
+  if (sectorEl?.value === '__custom__' && !sector) {
+    customEl?.focus();
+    gMsg(isE ? '⚠ Ingrese el nombre del nuevo sector' : '⚠ Enter the new sector name');
     return;
   }
   if (DB.clients.find(c => c.name.toLowerCase() === nm.toLowerCase())) {
-    gMsg(isE ? `El cliente "${nm}" ya existe` : `Client "${nm}" already exists`);
+    gMsg(isE ? `"${nm}" ya existe en el sistema` : `"${nm}" already exists`);
     return;
   }
 
+  // If custom sector — add to SECTORS list and persist
+  if (sectorEl?.value === '__custom__' && sector && !SECTORS.includes(sector)) {
+    SECTORS.push(sector);
+    try { localStorage.setItem('21stones_sectors', JSON.stringify(SECTORS)); } catch(e) {}
+  }
+
+  // Determine COA template from sector
+  const coaType = getSectorCOAType(sector);
+  const coaTemplate = COA_TEMPLATES[coaType]?.label || 'General Business';
+
   const newClient = {
-    id:      nextId('CLT', DB.clients),
-    name:    nm,
-    ein, type,
-    sector:  sec,
+    id:          nextId('CLT', DB.clients),
+    name:        nm,
+    ein,
+    type,
+    sector,
     std,
     prev,
     addr,
     fy,
-    coa,
-    status:  'active',
-    created: new Date().toISOString().slice(0,10)
+    coa:         coaTemplate,
+    coaType,
+    status:      'active',
+    created:     new Date().toISOString().slice(0, 10),
   };
 
-  // Add to in-memory store
+  // Push to in-memory DB
   DB.clients.push(newClient);
-
-  // Set as active client
   S.client = nm;
 
-  // Save synchronously — guaranteed write before any navigation
-  dbSaveSync();
+  // ── CRITICAL: synchronous save before any DOM change ──
+  try {
+    const payload = JSON.stringify({
+      clients:  DB.clients,
+      users:    DB.users,
+      subs:     DB.subs,
+      cos:      DB.cos,
+      assets:   DB.assets,
+      journal:  DB.journal,
+      lang:     S.lang,
+      projects: PROJECTS,
+    });
+    localStorage.setItem('21stones_db', payload);
+  } catch(e) {
+    console.error('localStorage save failed:', e);
+  }
+
+  // Async backup to window.storage
   dbSave().catch(() => {});
 
-  log((S.user||'USER').toUpperCase(), `Client created: ${newClient.id} — ${nm}`, 'medium');
-  closeModal();
+  log((S.user || 'USER').toUpperCase(),
+    `Client created: ${newClient.id} — ${nm} [${sector}] [${coaTemplate}]`, 'medium');
 
-  // Rebuild selector immediately so new client appears
+  closeModal();
   rebuildClientSelector();
 
   gMsg(isE
-    ? `✓ Cliente "${nm}" (${newClient.id}) creado y guardado`
-    : `✓ Client "${nm}" (${newClient.id}) created and saved`);
+    ? `✓ "${nm}" (${newClient.id}) creado · Sector: ${sector} · Plan: ${coaTemplate}`
+    : `✓ "${nm}" (${newClient.id}) created · Sector: ${sector} · COA: ${coaTemplate}`);
 
-  // Refresh dashboard to show new client
   renderMod(S.mod);
 }
 function rebuildClientSelector() {
@@ -810,22 +1042,24 @@ const T={
     ndaH:'Ethics & Confidentiality Agreement',ndaSub:'Required for Levels B & C.',ndaBtn:'✍ Sign & Enter',
     obTitle:'New Client Onboarding',obSub:'Auto-suggestions enabled',obCreate:'Create Client Profile →',obSkip:'Manual Entry',
     activeClient:'Active Client',
-    dashboard:'Dashboard',coa:'Chart of Accounts',gl:'General Ledger',treasury:'Treasury & Cash',
+    dashboard:'Dashboard',clients:'Clients',coa:'Chart of Accounts',gl:'General Ledger',treasury:'Treasury & Cash',
     bankfeed:'Bank Feeds',assets:'Fixed Assets',bs:'Balance Sheet',pl:'P&L Statement',
     cf:'Cash Flow',soce:'Stmt of Equity',jobcost:'Job Cost / Projects',revengine:'Revenue Engine',wip:'WIP / ASC 606',
     budget:'Live Budget',subs:'Subcontractors',security:'Security & Users',audit:'Master Audit Log',
-    core:'Core',fsTitle:'Financial Statements',construction:'Construction',administration:'Administration',
+    sales:'Sales / Invoicing',ar:'Accounts Receivable',ap:'Accounts Payable',
+    core:'Core',billing:'Sales & Collections',fsTitle:'Financial Statements',construction:'Construction',administration:'Administration',
   },
   es:{
     signIn:'Ingresar →',roleLabel:'Nivel de Acceso',uidLabel:'ID de Usuario',pwdLabel:'Contraseña',
     ndaH:'Acuerdo de Ética y Confidencialidad',ndaSub:'Requerido niveles B y C.',ndaBtn:'✍ Firmar e Ingresar',
     obTitle:'Alta de Nuevo Cliente',obSub:'Sugerencias automáticas activas',obCreate:'Crear Perfil de Cliente →',obSkip:'Entrada Manual',
     activeClient:'Cliente Activo',
-    dashboard:'Tablero',coa:'Plan de Cuentas',gl:'Mayor General',treasury:'Tesorería',
+    dashboard:'Tablero',clients:'Clientes',coa:'Plan de Cuentas',gl:'Mayor General',treasury:'Tesorería',
     bankfeed:'Conexión Bancaria',assets:'Activos Fijos',bs:'Balance General',pl:'Estado de Resultados',
     cf:'Flujo de Efectivo',soce:'Estado de Capital',jobcost:'Costo por Proyecto',revengine:'Motor de Ingresos',wip:'WIP / NIIF 15',
     budget:'Presupuesto Vivo',subs:'Subcontratistas',security:'Seguridad y Usuarios',audit:'Bitácora Maestra',
-    core:'Núcleo',fsTitle:'Estados Financieros',construction:'Construcción',administration:'Administración',
+    sales:'Ventas / Facturación',ar:'Cuentas por Cobrar',ap:'Cuentas por Pagar',
+    core:'Núcleo',billing:'Ventas y Cobranza',fsTitle:'Estados Financieros',construction:'Construcción',administration:'Administración',
   }
 };
 const t=k=>T[S.lang][k]||k;
@@ -838,11 +1072,12 @@ function applyI18n(){
     'nda-h':'ndaH','nda-sub':'ndaSub','nda-btn':'ndaBtn',
     'ob-title':'obTitle','ob-sub':'obSub','ob-create':'obCreate','ob-skip':'obSkip',
     'sb-client-lbl':'activeClient','lang-ind':null,
-    'sn-dash':'dashboard','sn-coa':'coa','sn-gl':'gl','sn-tres':'treasury',
+    'sn-dash':'dashboard','sn-clients':'clients','sn-coa':'coa','sn-gl':'gl','sn-tres':'treasury',
     'sn-bank':'bankfeed','sn-assets':'assets','sn-bs':'bs','sn-pl':'pl',
     'sn-cf':'cf','sn-soce':'soce','sn-jc':'jobcost','sn-rev':'revengine','sn-wip':'wip',
     'sn-bud':'budget','sn-subs':'subs','sn-sec':'security','sn-audit':'audit',
-    'sbt-core':'core','sbt-fs':'fsTitle','sbt-constr':'construction','sbt-admin':'administration',
+    'sn-sales':'sales','sn-ar':'ar','sn-ap':'ap',
+    'sbt-core':'core','sbt-fs':'fsTitle','sbt-billing':'billing','sbt-constr':'construction','sbt-admin':'administration',
     'ob-sn':null,'ob-st':null,'ob-ss':null,'ob-sp':null,
   };
   const isE = S.lang === 'es';
@@ -1303,53 +1538,26 @@ function signNDA(){
 }
 function skipOB(){enterApp()}
 function completeOB(){
-  const nm  = document.getElementById('ob-name')?.value.trim();
-  const ein = document.getElementById('ob-ein')?.value.trim();
-  const type= document.getElementById('ob-type')?.value;
-  const sec = document.getElementById('ob-sector')?.value;
-  const std = document.getElementById('ob-std')?.value;
-  const prev= document.getElementById('ob-prev')?.value;
-  const addr= document.getElementById('ob-addr')?.value.trim();
-  const fy  = document.getElementById('ob-fy')?.value || 'December 31';
-  const coa = document.getElementById('ob-coa')?.value || 'Construction Industry (AIA)';
-
-  if (!nm) {
-    alert(S.lang==='es'?'El nombre del cliente es obligatorio':'Client name is required');
-    return;
+  const isE=S.lang==='es';
+  const nm  =document.getElementById('ob-name')?.value?.trim()||'';
+  const ein =document.getElementById('ob-ein')?.value?.trim()||'';
+  const type=document.getElementById('ob-type')?.value||'LLC';
+  const sec =document.getElementById('ob-sector')?.value||'Construction & Contracting';
+  const std =document.getElementById('ob-std')?.value||'Dual — GAAP + IFRS';
+  const prev=document.getElementById('ob-prev')?.value||'';
+  const addr=document.getElementById('ob-addr')?.value?.trim()||'';
+  const fy  =document.getElementById('ob-fy')?.value||'December 31';
+  const coa =document.getElementById('ob-coa')?.value||'Construction Industry (AIA)';
+  if(!nm){alert(isE?'El nombre es obligatorio':'Name is required');return;}
+  if(!DB.clients.find(c=>c.name.toLowerCase()===nm.toLowerCase())){
+    const coaType=getSectorCOAType(sec);
+    const nc={id:nextId('CLT',DB.clients),name:nm,ein,type,sector:sec,std,prev,addr,fy,coa,coaType,status:'active',created:new Date().toISOString().slice(0,10)};
+    DB.clients.push(nc);
+    try{localStorage.setItem('21stones_db',JSON.stringify({clients:DB.clients,users:DB.users,subs:DB.subs,cos:DB.cos,assets:DB.assets,journal:DB.journal,lang:S.lang,projects:PROJECTS}));}catch(e){}
+    dbSave().catch(()=>{});
+    log((S.user||'SYS').toUpperCase(),'Client created: '+nm+' ('+nc.id+')','medium');
   }
-
-  // Check for duplicate name
-  if (DB.clients.find(c => c.name.toLowerCase() === nm.toLowerCase())) {
-    // Already exists — just enter app with existing client
-    S.client = nm;
-    enterApp(); return;
-  }
-
-  // Create and persist the new client
-  const newClient = {
-    id:      nextId('CLT', DB.clients),
-    name:    nm,
-    ein:     ein || '',
-    type:    type || 'LLC',
-    sector:  sec || 'Construction & Contracting',
-    std:     std || 'Dual — GAAP + IFRS',
-    prev:    prev || 'None',
-    addr:    addr || '',
-    fy:      fy,
-    coa:     coa,
-    status:  'active',
-    created: new Date().toISOString().slice(0,10)
-  };
-
-  // Add to in-memory store
-  DB.clients.push(newClient);
-  S.client = nm;
-
-  // Save synchronously — guaranteed write before any navigation
-  dbSaveSync();
-  dbSave().catch(() => {});
-
-  log((S.user||'SYSTEM').toUpperCase(), `Client created: "${nm}" (${newClient.id})`, 'medium');
+  S.client=nm;
   enterApp();
 }
 
@@ -1406,9 +1614,14 @@ function nav(mod){
 function switchClient(){S.client=document.getElementById('client-sel').value;log(S.user?.toUpperCase()||'U',`Client switch: ${S.client}`,'low');renderMod(S.mod)}
 function renderMod(mod){
   const mc=document.getElementById('mc');
-  const fn={dashboard:rDash,coa:rCOA,gl:rGL,treasury:rTreasury,bankfeed:rBankFeed,assets:rAssets,
-    bs:rBS,pl:rPL,cf:rCF,soce:rSOCE,jobcost:rJobCost,revengine:rRevEngine,wip:rWIP,budget:rBudget,subs:rSubs,
-    security:rSecurity,audit:rAudit};
+  const fn={
+    dashboard:rDash, clients:rClients,
+    coa:rCOA, gl:rGL, treasury:rTreasury, bankfeed:rBankFeed, assets:rAssets,
+    bs:rBS, pl:rPL, cf:rCF, soce:rSOCE,
+    sales:rSales, ar:rAR, ap:rAP,
+    jobcost:rJobCost, revengine:rRevEngine, wip:rWIP, budget:rBudget, subs:rSubs,
+    security:rSecurity, audit:rAudit
+  };
   mc.innerHTML=(fn[mod]||rDash)();
 }
 
@@ -1423,7 +1636,7 @@ const fmt=(n,d=0)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD
 const fmtN=(n)=>n>=0?`<span class="green mono">${fmt(n)}</span>`:`<span class="red mono">(${fmt(Math.abs(n))})</span>`;
 
 // ══════════════════════════════════════════════════════
-// MODULE: DASHBOARD
+// MODULE: DASHBOARD — Welcome screen + System overview
 // ══════════════════════════════════════════════════════
 function rDash(){
   const isE = es();
@@ -1433,108 +1646,202 @@ function rDash(){
   const totalWIP    = allT.reduce((s,t)=>s+t.totalActual,0);
   const alertCount  = allT.reduce((s,t)=>s+t.alerts.length,0);
   const blockedSubs = DB.subs.filter(s=>s.blocked).length;
-  const today       = new Date().toLocaleDateString();
+  const activeClients = DB.clients.filter(c=>c.status==='active');
 
-  return`
+  // AR/AP totals (sample from seeded data)
+  const totalAR = 884600 + (DB.journal.filter(j=>j.dr==='1-01-02-001').reduce((s,j)=>s+j.amt,0));
+  const totalAP = 602600;
+  const overdueAR = 810000;
+
+  return `
 <div class="page-header">
-  <div><div class="page-title">${isE?'Tablero Ejecutivo':'Executive Dashboard'}</div>
-  <div class="page-subtitle">${S.client} · ${isE?'Dual GAAP+IFRS activo':'Dual GAAP+IFRS active'} · ${isE?'Hoy':'Today'} ${today}</div></div>
+  <div>
+    <div class="page-title">
+      ${isE?`Bienvenido, ${S.user}`:`Welcome, ${S.user}`} <span style="font-size:16px;font-weight:400;color:var(--stone)">· 21 Stones Accounting ERP</span>
+    </div>
+    <div class="page-subtitle">${S.client} · ${isE?'Dual GAAP+IFRS':'Dual GAAP+IFRS'} · ${new Date().toLocaleDateString(isE?'es-MX':'en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
+  </div>
   <div class="page-actions">
-    <button class="btn btn-ghost btn-sm" onclick="nav('pl')">${isE?'Ver P&L':'View P&L'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="openNewClientModal()">🏢 ${isE?'+ Cliente':'+ Client'}</button>
     <button class="btn btn-navy btn-sm" onclick="openJEModal()">+ ${isE?'Asiento':'Journal Entry'}</button>
   </div>
 </div>
+
+<!-- KPI STRIP -->
 <div class="kpi-grid">
-  ${kpi(isE?'Ingresos Reconocidos':'Revenue Recognized', fmt(totalRevRec), isE?`${PROJECTS.length} proyectos · C-a-C`:`${PROJECTS.length} projects · C-to-C`,'gold','up')}
-  ${kpi(isE?'Utilidad Bruta':'Gross Profit', fmt(totalGP), totalRevRec>0?((totalGP/totalRevRec)*100).toFixed(1)+'% margin':'—','success',totalGP>0?'up':'dn')}
-  ${kpi(isE?'Posición de Caja':'Cash Position','$542,800',isE?'30d proyectado: $480K':'30d projected: $480K','info','')}
-  ${kpi(isE?'WIP Acumulado':'WIP Outstanding', fmt(totalWIP), isE?`${PROJECTS.length} obra(s) activa(s)`:`${PROJECTS.length} active project(s)`,'warning','')}
+  ${kpi(isE?'Ingresos Reconocidos':'Revenue Recognized', fmt(totalRevRec), isE?`${PROJECTS.length} proyectos activos`:`${PROJECTS.length} active projects`,'gold','up')}
+  ${kpi(isE?'Utilidad Bruta':'Gross Profit', fmt(totalGP), totalRevRec>0?((totalGP/totalRevRec)*100).toFixed(1)+'% '+isE?'margen':'margin':'—','success',totalGP>0?'up':'dn')}
+  ${kpi(isE?'Cuentas por Cobrar':'Accounts Receivable', fmt(totalAR), overdueAR>0?(isE?`$${(overdueAR/1000).toFixed(0)}K vencido`:`$${(overdueAR/1000).toFixed(0)}K overdue`):'All current','warning','')}
+  ${kpi(isE?'Cuentas por Pagar':'Accounts Payable', fmt(totalAP), blockedSubs>0?(isE?`${blockedSubs} pagos bloqueados`:`${blockedSubs} blocked`):'All enabled','info','')}
 </div>
-${alertCount>0?`<div class="alert a-warn" style="display:flex;align-items:center;gap:12px">⚡ ${isE?`Motor de Ingresos: ${alertCount} alerta(s) activa(s)`:`Revenue Engine: ${alertCount} active alert(s)`}<button class="btn btn-sm btn-gold" style="margin-left:auto" onclick="nav('revengine')">${isE?'Ver':'View'}</button></div>`:''}
-<div class="g2">
-  <div class="card">
-    <div class="card-header"><div><div class="card-title">${isE?'Balance Dual':'Dual Balance'}</div><div class="card-sub">GAAP vs IFRS</div></div><span class="badge b-gold">DUAL</span></div>
-    <div class="dual">
-      <div class="dual-pane"><div class="dual-lbl">US GAAP</div>
-        <table class="dt"><tbody>
-          <tr><td>${es()?'Activos Totales':'Total Assets'}</td><td class="num bold">$8,430,200</td></tr>
-          <tr><td>${es()?'Pasivos':'Liabilities'}</td><td class="num">$4,210,100</td></tr>
-          <tr><td>${es()?'Patrimonio':'Equity'}</td><td class="num bold green">$4,220,100</td></tr>
-          <tr><td>Goodwill</td><td class="num">$320,000</td></tr>
-        </tbody></table></div>
-      <div class="dual-pane"><div class="dual-lbl">IFRS (NIIF)</div>
-        <table class="dt"><tbody>
-          <tr><td>${es()?'Activos Totales':'Total Assets'}</td><td class="num bold">$8,180,200</td></tr>
-          <tr><td>${es()?'Pasivos':'Liabilities'}</td><td class="num">$4,110,100</td></tr>
-          <tr><td>${es()?'Patrimonio':'Equity'}</td><td class="num bold green">$4,070,100</td></tr>
-          <tr><td>Goodwill</td><td class="num gold">N/A (IAS 38)</td></tr>
-        </tbody></table></div>
-    </div>
-    <div class="alert a-info mt1" style="font-size:11px">ⓘ ${isE?'Diferencia GAAP-IFRS: $150K por eliminación de Goodwill':'GAAP-IFRS diff: $150K goodwill elimination (IAS 38)'}</div>
+
+${alertCount>0?`<div class="alert a-warn" style="display:flex;align-items:center;gap:12px;margin-bottom:0">
+  ⚡ ${isE?`Motor de Ingresos: ${alertCount} alerta(s) requieren atención`:`Revenue Engine: ${alertCount} alert(s) require attention`}
+  <button class="btn btn-sm btn-gold" style="margin-left:auto" onclick="nav('revengine')">${isE?'Ver alertas':'View'}</button>
+</div>`:''}
+
+<!-- SYSTEM MAP -->
+<div class="card">
+  <div class="card-header">
+    <div><div class="card-title">${isE?'Mapa del Sistema — 21 Stones ERP':'System Map — 21 Stones ERP'}</div>
+    <div class="card-sub">${isE?'Haga clic en cualquier módulo para navegar directamente':'Click any module to navigate'}</div></div>
+    <span class="badge b-gold">v2.0 · 2026</span>
   </div>
-  <div class="card">
-    <div class="card-header"><div class="card-title">${isE?'Acceso Rápido':'Quick Access'}</div></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      ${[['⚖','bs',isE?'Balance General':'Balance Sheet'],
-         ['📈','pl',isE?'Estado P&L':'P&L Statement'],
-         ['💧','cf',isE?'Flujo de Caja':'Cash Flow'],
-         ['⚡','revengine',isE?'Motor de Ingresos':'Revenue Engine'],
-         ['🧱','jobcost',isE?'Costo por Proyecto':'Job Cost'],
-         ['📡','bankfeed',isE?'Conexión Bancaria':'Bank Feeds']].map(([ico,mod,name])=>`
-      <div onclick="nav('${mod}')" style="background:var(--stone-pale);border-radius:var(--radius);padding:12px;cursor:pointer;transition:var(--tr)" onmouseover="this.style.background='var(--gold-pale)'" onmouseout="this.style.background='var(--stone-pale)'">
-        <div style="font-size:22px;margin-bottom:6px">${ico}</div>
-        <div style="font-size:12px;font-weight:600;color:var(--navy)">${name}</div>
-      </div>`).join('')}
-    </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+    ${[
+      // Core
+      {icon:'◈',  mod:'dashboard',  label_en:'Dashboard',         label_es:'Tablero',            color:'navy',    section_en:'Core',          section_es:'Núcleo'},
+      {icon:'🏢', mod:'clients',    label_en:'Clients',           label_es:'Clientes',            color:'info',    section_en:'Core',          section_es:'Núcleo'},
+      {icon:'📋', mod:'coa',        label_en:'Chart of Accounts', label_es:'Plan de Cuentas',     color:'stone',   section_en:'Core',          section_es:'Núcleo'},
+      {icon:'📒', mod:'gl',         label_en:'General Ledger',    label_es:'Mayor General',       color:'navy',    section_en:'Core',          section_es:'Núcleo'},
+      // Billing
+      {icon:'🧾', mod:'sales',      label_en:'Sales / Invoicing', label_es:'Ventas / Facturación',color:'success', section_en:'Billing',       section_es:'Facturación'},
+      {icon:'📥', mod:'ar',         label_en:'Accounts Receivable',label_es:'Cuentas por Cobrar', color:'success', section_en:'Billing',       section_es:'Cobranza'},
+      {icon:'📤', mod:'ap',         label_en:'Accounts Payable',  label_es:'Cuentas por Pagar',   color:'warning', section_en:'Billing',       section_es:'Pagos'},
+      {icon:'🏦', mod:'treasury',   label_en:'Treasury & Cash',   label_es:'Tesorería',           color:'info',    section_en:'Billing',       section_es:'Tesorería'},
+      // Construction
+      {icon:'🧱', mod:'jobcost',    label_en:'Job Cost',          label_es:'Costo por Proyecto',  color:'gold',    section_en:'Construction',  section_es:'Construcción'},
+      {icon:'⚡', mod:'revengine',  label_en:'Revenue Engine',    label_es:'Motor de Ingresos',   color:'gold',    section_en:'Construction',  section_es:'Construcción'},
+      {icon:'📐', mod:'wip',        label_en:'WIP / ASC 606',     label_es:'WIP / NIIF 15',       color:'gold',    section_en:'Construction',  section_es:'Construcción'},
+      {icon:'📊', mod:'budget',     label_en:'Live Budget',       label_es:'Presupuesto Vivo',    color:'gold',    section_en:'Construction',  section_es:'Construcción'},
+      // Financial Statements
+      {icon:'⚖',  mod:'bs',         label_en:'Balance Sheet',     label_es:'Balance General',     color:'navy',    section_en:'Financials',    section_es:'Estados Financieros'},
+      {icon:'📈', mod:'pl',         label_en:'P&L Statement',     label_es:'Estado de Resultados',color:'success', section_en:'Financials',    section_es:'Estados Financieros'},
+      {icon:'💧', mod:'cf',         label_en:'Cash Flow',         label_es:'Flujo de Efectivo',   color:'info',    section_en:'Financials',    section_es:'Estados Financieros'},
+      {icon:'📡', mod:'bankfeed',   label_en:'Bank Feeds',        label_es:'Conexión Bancaria',   color:'stone',   section_en:'Financials',    section_es:'Estados Financieros'},
+    ].map(m=>`
+    <div onclick="nav('${m.mod}')"
+      style="background:var(--stone-pale);border-radius:var(--radius-lg);padding:14px 12px;cursor:pointer;transition:var(--tr);border-top:3px solid var(--${m.color});display:flex;align-items:center;gap:10px"
+      onmouseover="this.style.background='#fff';this.style.boxShadow='var(--shadow-md)'"
+      onmouseout="this.style.background='var(--stone-pale)';this.style.boxShadow='none'">
+      <span style="font-size:22px;flex-shrink:0">${m.icon}</span>
+      <div>
+        <div style="font-size:12.5px;font-weight:600;color:var(--navy)">${isE?m.label_es:m.label_en}</div>
+        <div style="font-size:10px;color:var(--stone);margin-top:2px">${isE?m.section_es:m.section_en}</div>
+      </div>
+    </div>`).join('')}
   </div>
 </div>
+
+<!-- CLIENTS DETAIL TABLE -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">${isE?'Clientes Activos — Detalle Completo':'Active Clients — Full Detail'}</div>
+      <div class="card-sub">${activeClients.length} ${isE?'clientes registrados':'registered clients'}</div>
+    </div>
+    ${S.role==='A'?`<button class="btn btn-navy btn-sm" onclick="openNewClientModal()">+ ${isE?'Agregar Cliente':'Add Client'}</button>`:''}
+  </div>
+  ${activeClients.length===0?`
+  <div style="text-align:center;padding:32px;color:var(--stone)">
+    <div style="font-size:36px;margin-bottom:12px">🏢</div>
+    <div style="font-size:14px;font-weight:600;color:var(--navy);margin-bottom:6px">${isE?'No hay clientes registrados':'No clients registered yet'}</div>
+    <div style="font-size:12px;margin-bottom:16px">${isE?'Agregue su primer cliente para comenzar':'Add your first client to get started'}</div>
+    ${S.role==='A'?`<button class="btn btn-navy" onclick="openNewClientModal()">+ ${isE?'Crear Primer Cliente':'Create First Client'}</button>`:''}
+  </div>`:`
+  <div style="overflow-x:auto"><table class="dt">
+    <thead><tr>
+      <th>ID</th>
+      <th>${isE?'Nombre Legal':'Legal Name'}</th>
+      <th>${isE?'Tipo':'Type'}</th>
+      <th>${isE?'Sector':'Sector'}</th>
+      <th>${isE?'Norma Contable':'Standard'}</th>
+      <th>${isE?'Año Fiscal':'Fiscal Year'}</th>
+      <th>EIN</th>
+      <th>${isE?'Desde':'Since'}</th>
+      <th>${isE?'Proyectos':'Projects'}</th>
+      <th>${isE?'Acciones':'Actions'}</th>
+    </tr></thead>
+    <tbody>
+    ${activeClients.map(c=>{
+      const cProjects = PROJECTS.filter(p=>p.owner===c.name||p.name.toLowerCase().includes(c.name.split(' ')[0].toLowerCase()));
+      const totRevClient = cProjects.reduce((s,p)=>s+projectTotals(p).revRecognized,0);
+      return `<tr>
+        <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 7px;border-radius:4px">${c.id}</code></td>
+        <td>
+          <div style="font-weight:600;font-size:13px">${c.name}</div>
+          ${c.addr?`<div style="font-size:10px;color:var(--stone)">${c.addr}</div>`:''}
+        </td>
+        <td><span class="badge b-neu" style="font-size:10px">${c.type}</span></td>
+        <td style="font-size:12px">${c.sector}</td>
+        <td><span class="badge ${c.std.includes('Dual')?'b-gold':c.std.includes('IFRS')?'b-ok':'b-info'}" style="font-size:10px">${c.std.includes('Dual')?'DUAL':c.std.includes('IFRS')?'IFRS':'GAAP'}</span></td>
+        <td style="font-size:11px;color:var(--stone)">${c.fy}</td>
+        <td class="mono" style="font-size:11px">${c.ein||'—'}</td>
+        <td style="font-size:11px;color:var(--stone)">${c.created}</td>
+        <td>
+          ${cProjects.length>0
+            ? `<span class="badge b-ok" style="font-size:10px">${cProjects.length}</span>
+               <div style="font-size:10px;color:var(--success);margin-top:2px">${fmt(totRevClient)}</div>`
+            : `<span class="badge b-neu" style="font-size:10px">0</span>`}
+        </td>
+        <td>
+          <button class="btn btn-sm btn-ghost" onclick="S.client='${c.name}';rebuildClientSelector();nav('pl')" title="${isE?'Ver P&L':'View P&L'}">P&L</button>
+          <button class="btn btn-sm btn-ghost" onclick="S.client='${c.name}';rebuildClientSelector();nav('ar')" title="${isE?'Ver AR':'View AR'}">AR</button>
+        </td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+  </table></div>`}
+</div>
+
+<!-- BOTTOM ROW: WIP + Compliance + Quick Actions -->
 <div class="g3">
   <div class="card">
-    <div class="card-header"><div class="card-title">WIP Summary</div><span class="badge b-gold">ASC 606</span></div>
+    <div class="card-header"><div class="card-title">WIP ${isE?'por Proyecto':'by Project'}</div><span class="badge b-gold">ASC 606</span></div>
     ${PROJECTS.map(p=>{
-      const t2=projectTotals(p); const pct2=(t2.pctComplete*100).toFixed(0);
-      const col=parseFloat(pct2)>80?'success':parseFloat(pct2)>50?'gold':'info';
-      return `<div style="margin-bottom:12px">
-        <div class="flex-between" style="margin-bottom:5px"><span style="font-size:12px">${p.name.split(' ').slice(0,2).join(' ')}</span><span style="font-size:12px;font-weight:600;color:var(--${col})">${pct2}%</span></div>
-        <div class="prog"><div class="prog-fill" style="width:${pct2}%;background:var(--${col})"></div></div>
+      const t=projectTotals(p); const pct=(t.pctComplete*100).toFixed(0);
+      const col=parseFloat(pct)>80?'success':parseFloat(pct)>50?'gold':'info';
+      return `<div style="margin-bottom:12px;cursor:pointer" onclick="nav('jobcost')">
+        <div class="flex-between" style="margin-bottom:4px">
+          <span style="font-size:12px;font-weight:500">${p.name.split(' ').slice(0,2).join(' ')}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--${col})">${pct}%</span>
+        </div>
+        <div class="prog"><div class="prog-fill" style="width:${pct}%;background:var(--${col})"></div></div>
+        <div style="font-size:10px;color:var(--stone);margin-top:2px">${fmt(t.revRecognized)} ${isE?'reconocido':'recognized'}</div>
       </div>`;
     }).join('')}
-    <button class="btn btn-ghost btn-sm" onclick="nav('wip')" style="width:100%">${isE?'Ver WIP completo':'View Full WIP'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="nav('wip')" style="width:100%">${isE?'Ver WIP completo':'Full WIP'}</button>
   </div>
   <div class="card">
     <div class="card-header">
-      <div class="card-title">${isE?'Alertas de Cumplimiento':'Compliance Alerts'}</div>
-      ${blockedSubs>0?`<span class="badge b-no">${blockedSubs} ${isE?'Bloqueados':'Blocked'}</span>`:'<span class="badge b-ok">All OK</span>'}
+      <div class="card-title">${isE?'Cumplimiento':'Compliance'}</div>
+      ${blockedSubs>0?`<span class="badge b-no">${blockedSubs} ${isE?'Bloqueados':'Blocked'}</span>`:'<span class="badge b-ok">OK</span>'}
     </div>
-    ${DB.subs.length===0?`<div style="font-size:12px;color:var(--stone);padding:8px 0">${isE?'Sin subcontratistas':'No subcontractors'}</div>`:
-    DB.subs.slice(0,4).map(s=>{
-      const now=new Date(); const cd=s.coiExp?new Date(s.coiExp):null;
-      const exp=cd&&cd>now&&(cd-now)<14*24*3600*1000;
+    ${DB.subs.length===0?`<div style="font-size:12px;color:var(--stone);padding:8px">${isE?'Sin subcontratistas':'No subs'}</div>`:''}
+    ${DB.subs.slice(0,4).map(s=>{
+      const cd=s.coiExp?new Date(s.coiExp):null;
+      const now=new Date(); const exp=cd&&cd>now&&(cd-now)<14*24*3600*1000;
       const ic=s.blocked?'🚫':exp?'⚠':'✓'; const cls=s.blocked?'b-no':exp?'b-warn':'b-ok';
-      const det=s.w9==='missing'?(isE?'W-9 faltante':'W-9 missing'):exp?(isE?'COI vence pronto':'COI expiring soon'):(isE?'Cumplimiento total':'Compliant');
-      return `<div class="flex" style="padding:8px 0;border-bottom:1px solid rgba(0,0,0,.04)">
-        <div style="width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.04);font-size:13px;flex-shrink:0">${ic}</div>
-        <div style="flex:1;margin-left:8px"><div style="font-size:12px;font-weight:500">${s.name}</div><div style="font-size:10px;color:var(--stone)">${det}</div></div>
+      return `<div class="flex" style="padding:7px 0;border-bottom:1px solid rgba(0,0,0,.04)">
+        <div style="font-size:15px;flex-shrink:0;margin-right:8px">${ic}</div>
+        <div style="flex:1"><div style="font-size:12px;font-weight:500">${s.name}</div>
+        <div style="font-size:10px;color:var(--stone)">${s.blocked?s.reason||'Blocked':exp?'COI expirando':'Cumplimiento OK'}</div></div>
         <span class="badge ${cls}" style="font-size:9px">${s.blocked?'BLOCKED':exp?'WARN':'OK'}</span>
       </div>`;
     }).join('')}
     <button class="btn btn-ghost btn-sm" onclick="nav('subs')" style="width:100%;margin-top:8px">${isE?'Ver Subcontratistas':'View Subs'}</button>
   </div>
   <div class="card">
-    <div class="card-header">
-      <div class="card-title">${isE?'Clientes Activos':'Active Clients'}</div>
-      <span class="badge b-ok">${DB.clients.filter(c=>c.status==='active').length}</span>
+    <div class="card-header"><div class="card-title">${isE?'Accesos Rápidos':'Quick Actions'}</div></div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${[
+        ['🧾',isE?'Nueva Factura de Venta':'New Sales Invoice','sales'],
+        ['📥',isE?'Registrar Cobro':'Record Payment','ar'],
+        ['📤',isE?'Pagar Proveedor':'Pay Vendor','ap'],
+        ['🧱',isE?'Nuevo Proyecto':'New Project','jobcost'],
+        ['⚡',isE?'Motor de Ingresos ASC 606':'Revenue Engine ASC 606','revengine'],
+        ['📒',isE?'Mayor General':'General Ledger','gl'],
+      ].map(([ico,lbl,mod])=>`
+      <div onclick="nav('${mod}')" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--stone-pale);border-radius:var(--radius);cursor:pointer;transition:var(--tr)"
+        onmouseover="this.style.background='var(--gold-pale)'" onmouseout="this.style.background='var(--stone-pale)'">
+        <span style="font-size:18px">${ico}</span>
+        <span style="font-size:12.5px;font-weight:500;color:var(--navy)">${lbl}</span>
+        <span style="margin-left:auto;color:var(--stone-light)">›</span>
+      </div>`).join('')}
     </div>
-    ${DB.clients.filter(c=>c.status==='active').map(c=>`
-    <div class="flex-between" style="padding:6px 0;border-bottom:1px solid rgba(0,0,0,.04)">
-      <div><div style="font-size:12px;font-weight:500">${c.name}</div>
-      <div style="font-size:10px;color:var(--stone)">${c.type} · ${c.sector.split(' ')[0]}</div></div>
-      <span class="badge ${c.std.includes('Dual')?'b-gold':c.std.includes('IFRS')?'b-ok':'b-info'}" style="font-size:9px">${c.std.includes('Dual')?'DUAL':c.std.includes('IFRS')?'IFRS':'GAAP'}</span>
-    </div>`).join('')}
-    ${S.role==='A'?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="openNewClientModal()">${isE?'+ Nuevo Cliente':'+ New Client'}</button>`:''}
   </div>
-</div>`}
-
+</div>`;
+}
 function kpi(label,value,sub,color,trend){return`
 <div class="kpi-card"><div class="kpi-accent" style="background:var(--${color})"></div>
 <div class="kpi-label">${label}</div><div class="kpi-value">${value}</div>
@@ -5902,6 +6209,439 @@ ${highCount>0?`
 </div>`;
 }
 
+// ══════════════════════════════════════════════════════
+// MODULE: CLIENTS — Client management hub
+// ══════════════════════════════════════════════════════
+function rClients(){
+  const isE=es();
+  const active=DB.clients.filter(c=>c.status==='active');
+  return`
+<div class="page-header">
+  <div><div class="page-title">${isE?'Gestión de Clientes':'Client Management'}</div>
+  <div class="page-subtitle">${isE?'Perfiles de clientes · Normas contables · Asignación de staff':'Client profiles · Accounting standards · Staff assignment'}</div></div>
+  <div class="page-actions">
+    ${S.role==='A'?`<button class="btn btn-navy btn-sm" onclick="openNewClientModal()">+ ${isE?'Nuevo Cliente':'New Client'}</button>`:''}
+  </div>
+</div>
+${active.length===0?`<div style="text-align:center;padding:48px;color:var(--stone)">
+  <div style="font-size:48px;margin-bottom:16px">🏢</div>
+  <div style="font-size:16px;font-weight:600;color:var(--navy);margin-bottom:8px">${isE?'No hay clientes registrados':'No clients registered'}</div>
+  <div style="font-size:13px;margin-bottom:20px">${isE?'Cree su primer cliente para comenzar a usar el sistema':'Create your first client to start using the system'}</div>
+  ${S.role==='A'?`<button class="btn btn-navy" onclick="openNewClientModal()">+ ${isE?'Crear Primer Cliente':'Create First Client'}</button>`:''}
+</div>`:`
+<div class="g3">
+${active.map(c=>{
+  const cProj=PROJECTS.filter(p=>p.owner===c.name||p.name.toLowerCase().includes(c.name.split(' ')[0].toLowerCase()));
+  const assignedUsers=DB.users.filter(u=>u.clients?.includes(c.id)||u.clients?.includes('ALL'));
+  return`<div class="card" style="cursor:pointer" onclick="S.client='${c.name}';rebuildClientSelector();nav('dashboard')"
+    onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor=''">
+    <div class="card-header">
+      <div>
+        <div class="card-title">${c.name}</div>
+        <div class="card-sub">${c.id} · ${c.type} · ${c.sector.split(' ')[0]}</div>
+      </div>
+      <span class="badge ${c.std.includes('Dual')?'b-gold':c.std.includes('IFRS')?'b-ok':'b-info'}" style="font-size:10px">${c.std.includes('Dual')?'DUAL':c.std.includes('IFRS')?'IFRS':'GAAP'}</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px;font-size:12px">
+      ${c.ein?`<div class="flex-between"><span style="color:var(--stone)">EIN</span><span class="mono">${c.ein}</span></div>`:''}
+      <div class="flex-between"><span style="color:var(--stone)">${isE?'Año Fiscal':'Fiscal Year'}</span><span>${c.fy}</span></div>
+      <div class="flex-between"><span style="color:var(--stone)">${isE?'Plan de Cuentas':'COA Template'}</span><span style="font-size:11px">${c.coa}</span></div>
+      <div class="flex-between"><span style="color:var(--stone)">${isE?'Sistema Anterior':'Prev. System'}</span><span>${c.prev||'—'}</span></div>
+      ${c.addr?`<div class="flex-between"><span style="color:var(--stone)">Addr</span><span style="font-size:10px;text-align:right;max-width:160px">${c.addr}</span></div>`:''}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+      <div style="background:var(--stone-pale);border-radius:var(--radius);padding:8px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:var(--navy)">${cProj.length}</div>
+        <div style="font-size:10px;color:var(--stone)">${isE?'Proyectos':'Projects'}</div>
+      </div>
+      <div style="background:var(--stone-pale);border-radius:var(--radius);padding:8px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:var(--navy)">${assignedUsers.length}</div>
+        <div style="font-size:10px;color:var(--stone)">${isE?'Staff':'Staff'}</div>
+      </div>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:6px">
+      <button class="btn btn-sm btn-ghost" style="flex:1" onclick="event.stopPropagation();S.client='${c.name}';rebuildClientSelector();nav('pl')">${isE?'P&L':'P&L'}</button>
+      <button class="btn btn-sm btn-ghost" style="flex:1" onclick="event.stopPropagation();S.client='${c.name}';rebuildClientSelector();nav('ar')">${isE?'Cobros':'AR'}</button>
+      <button class="btn btn-sm btn-ghost" style="flex:1" onclick="event.stopPropagation();S.client='${c.name}';rebuildClientSelector();nav('ap')">${isE?'Pagos':'AP'}</button>
+    </div>
+  </div>`;}).join('')}
+</div>`}`;
+}
+
+// ══════════════════════════════════════════════════════
+// MODULE: SALES / INVOICING — Ventas y Facturación
+// ══════════════════════════════════════════════════════
+function rSales(){
+  const isE=es();
+  // Invoice data — seeded + from DB
+  const invoices=[
+    {id:'INV-001',date:'2026-03-29',client:'Summit Properties LLC',proj:'PRJ-001',desc:isE?'AIA G702 Factura #5 — Riverside Plaza':'AIA G702 Invoice #5 — Riverside Plaza',gross:547320,tax:0,net:547320,ret:54732,status:'sent',     due:'2026-04-28'},
+    {id:'INV-002',date:'2026-03-20',client:'Oceanic Dev. Group',   proj:'PRJ-002',desc:isE?'AIA G702 Factura #3 — Harbor View Tower':'AIA G702 Invoice #3 — Harbor View Tower',gross:810000,tax:0,net:810000,ret:81000,status:'overdue',  due:'2026-03-31'},
+    {id:'INV-003',date:'2026-03-15',client:'City Transit Authority',proj:'PRJ-003',desc:isE?'AIA G702 Factura #4 — Metro Line Ext.':'AIA G702 Invoice #4 — Metro Line Ext.',gross:243000,tax:0,net:243000,ret:24300,status:'paid',      due:'2026-04-14'},
+    {id:'INV-004',date:'2026-02-28',client:'Summit Properties LLC',proj:'PRJ-001',desc:isE?'AIA G702 Factura #4 — Riverside Plaza':'AIA G702 Invoice #4 — Riverside Plaza',gross:420000,tax:0,net:420000,ret:42000,status:'paid',      due:'2026-03-29'},
+    {id:'INV-005',date:'2026-03-28',client:'Oceanic Dev. Group',   proj:'PRJ-002',desc:isE?'Orden de Cambio #2 — Harbor View':'CO #2 — Harbor View Tower',                  gross:47500, tax:0,net:47500, ret:4750, status:'draft',     due:'2026-04-27'},
+  ];
+  const totPending=invoices.filter(i=>i.status==='sent'||i.status==='overdue').reduce((s,i)=>s+i.net-i.ret,0);
+  const totOverdue=invoices.filter(i=>i.status==='overdue').reduce((s,i)=>s+i.net-i.ret,0);
+  const totPaid   =invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+i.net-i.ret,0);
+  const statusBadge=s=>s==='paid'?'b-ok':s==='overdue'?'b-no':s==='sent'?'b-info':'b-neu';
+  const statusLabel=s=>s==='paid'?(isE?'Pagada':'Paid'):s==='overdue'?(isE?'Vencida':'Overdue'):s==='sent'?(isE?'Enviada':'Sent'):(isE?'Borrador':'Draft');
+
+  return`
+<div class="page-header">
+  <div><div class="page-title">${isE?'Ventas y Facturación':'Sales & Invoicing'}</div>
+  <div class="page-subtitle">${isE?'Facturación AIA G702/G703 · Órdenes de Cambio · Retenciones separadas del corriente':'AIA G702/G703 Billing · Change Orders · Retainage segregated from current AR'}</div></div>
+  <div class="page-actions">
+    <button class="btn btn-ghost btn-sm" onclick="nav('ar')">${isE?'Ver Cobros':'View AR'}</button>
+    <button class="btn btn-navy btn-sm" onclick="openModal(modalNewInvoice())">${isE?'+ Nueva Factura':'+ New Invoice'}</button>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  ${kpi(isE?'Facturado Pendiente':'Outstanding Billed',fmt(totPending),isE?'Por cobrar corriente':'Current receivables','warning','')}
+  ${kpi(isE?'Vencido':'Overdue',fmt(totOverdue),isE?'Requiere gestión inmediata':'Requires immediate action','danger',totOverdue>0?'dn':'')}
+  ${kpi(isE?'Cobrado YTD':'Collected YTD',fmt(totPaid),isE?'Recibido en el período':'Received this period','success','up')}
+  ${kpi(isE?'Total Facturas':'Total Invoices',invoices.length+'',isE?`${invoices.filter(i=>i.status==='draft').length} en borrador`:`${invoices.filter(i=>i.status==='draft').length} drafts`,'info','')}
+</div>
+
+${totOverdue>0?`<div class="alert a-danger">⚠ ${isE?`${fmt(totOverdue)} en facturas VENCIDAS. Se recomienda gestión de cobro inmediata.`:`${fmt(totOverdue)} in OVERDUE invoices. Immediate collection action recommended.`}</div>`:''}
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">${isE?'Registro de Facturas':'Invoice Register'}</div>
+    <span class="badge b-neu">${invoices.length} ${isE?'facturas':'invoices'}</span>
+  </div>
+  <div style="overflow-x:auto"><table class="dt">
+    <thead><tr>
+      <th>${isE?'Factura':'Invoice'}</th>
+      <th>${isE?'Fecha':'Date'}</th>
+      <th>${isE?'Cliente':'Client'}</th>
+      <th>${isE?'Proyecto':'Project'}</th>
+      <th style="min-width:180px">${isE?'Descripción':'Description'}</th>
+      <th class="num">${isE?'Monto Bruto':'Gross Amount'}</th>
+      <th class="num">${isE?'Retención':'Retainage'}</th>
+      <th class="num">${isE?'Neto Cobrable':'Net Receivable'}</th>
+      <th>${isE?'Vencimiento':'Due Date'}</th>
+      <th>${isE?'Estado':'Status'}</th>
+    </tr></thead>
+    <tbody>
+    ${invoices.map(inv=>`<tr ${inv.status==='overdue'?'style="background:var(--danger-light)"':inv.status==='draft'?'style="background:rgba(0,0,0,.02)"':''}>
+      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 7px;border-radius:4px">${inv.id}</code></td>
+      <td class="mono" style="font-size:11px">${inv.date}</td>
+      <td style="font-size:12px;font-weight:500">${inv.client}</td>
+      <td><span class="badge b-neu" style="font-size:9px">${inv.proj}</span></td>
+      <td style="font-size:11.5px">${inv.desc}</td>
+      <td class="num mono">${fmt(inv.gross)}</td>
+      <td class="num mono gold">${fmt(inv.ret)}</td>
+      <td class="num mono bold ${inv.status==='overdue'?'red':'green'}">${fmt(inv.net-inv.ret)}</td>
+      <td class="mono" style="font-size:11px;color:${inv.status==='overdue'?'var(--danger)':'var(--stone)'}">${inv.due}</td>
+      <td><span class="badge ${statusBadge(inv.status)}" style="font-size:10px">${statusLabel(inv.status)}</span></td>
+    </tr>`).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:var(--navy);color:#fff;font-weight:700">
+        <td colspan="5">TOTAL</td>
+        <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(invoices.reduce((s,i)=>s+i.gross,0))}</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold-light)">${fmt(invoices.reduce((s,i)=>s+i.ret,0))}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(invoices.reduce((s,i)=>s+i.net-i.ret,0))}</td>
+        <td colspan="2"></td>
+      </tr>
+    </tfoot>
+  </table></div>
+  <div class="alert a-info mt2" style="font-size:11px">
+    ⓘ ${isE?'La columna "Retención" representa el % retenido por el cliente (5%-10%). Esta cantidad NO se incluye en el flujo de caja corriente — se registra como Retención por Cobrar (cuenta 1-01-02-002) hasta el cierre de la obra.':'The "Retainage" column represents the % withheld by the client (5%-10%). This amount is NOT included in current cash flow — it is recorded as Retainage Receivable (account 1-01-02-002) until project closeout.'}
+  </div>
+</div>`;
+}
+
+function modalNewInvoice(){const isE=es();return`
+<h3>${isE?'Nueva Factura de Venta':'New Sales Invoice'}</h3>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Cliente':'Client'}</label>
+      <select id="ni-client">${DB.clients.filter(c=>c.status==='active').map(c=>`<option>${c.name}</option>`).join('')}</select></div>
+    <div class="mf-field"><label>${isE?'Proyecto':'Project'}</label>
+      <select id="ni-proj">${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}</select></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Fecha':'Invoice Date'}</label><input type="date" id="ni-date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="mf-field"><label>${isE?'Vencimiento':'Due Date'}</label><input type="date" id="ni-due"></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Descripción':'Description'}</label><input type="text" id="ni-desc" placeholder="${isE?'AIA G702 Factura #6 — Descripción':'AIA G702 Invoice #6 — Description'}"></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Monto Bruto ($)':'Gross Amount ($)'}</label><input type="number" id="ni-gross" placeholder="0" min="0"></div>
+    <div class="mf-field"><label>${isE?'Retención %':'Retainage %'}</label>
+      <select id="ni-ret"><option value="10">10%</option><option value="5">5%</option><option value="0">0%</option></select></div>
+  </div>
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Factura guardada como borrador':'✓ Invoice saved as draft')">${isE?'✓ Guardar Borrador':'✓ Save Draft'}</button>
+</div>`}
+
+// ══════════════════════════════════════════════════════
+// MODULE: AR — Accounts Receivable / Cuentas por Cobrar
+// ══════════════════════════════════════════════════════
+function rAR(){
+  const isE=es();
+  const arRows=[
+    {client:'Summit Properties LLC',   inv:'INV-001',proj:'PRJ-001',date:'2026-03-29',due:'2026-04-28',gross:547320,ret:54732,cur:492588,d30:0,d60:0,d90:0,  status:'current'},
+    {client:'Oceanic Dev. Group',       inv:'INV-002',proj:'PRJ-002',date:'2026-03-20',due:'2026-03-31',gross:810000,ret:81000,cur:0,    d30:729000,d60:0,d90:0,status:'overdue'},
+    {client:'City Transit Authority',   inv:'INV-003',proj:'PRJ-003',date:'2026-02-15',due:'2026-03-15',gross:243000,ret:24300,cur:0,    d30:0,d60:218700,d90:0,status:'overdue'},
+    {client:'Summit Properties LLC',   inv:'INV-004',proj:'PRJ-001',date:'2026-01-31',due:'2026-02-28',gross:420000,ret:42000,cur:0,    d30:0,d60:0,d90:378000,status:'overdue'},
+  ];
+  const totCur =arRows.reduce((s,r)=>s+r.cur,0);
+  const tot30  =arRows.reduce((s,r)=>s+r.d30,0);
+  const tot60  =arRows.reduce((s,r)=>s+r.d60,0);
+  const tot90  =arRows.reduce((s,r)=>s+r.d90,0);
+  const totRet =arRows.reduce((s,r)=>s+r.ret,0);
+  const totAll =totCur+tot30+tot60+tot90+totRet;
+
+  // Collection actions seeded
+  const actions=[
+    {date:'2026-04-01',client:'Oceanic Dev. Group',action:isE?'Email recordatorio enviado — INV-002 vencida':'Reminder email sent — INV-002 overdue',type:'reminder'},
+    {date:'2026-03-28',client:'City Transit Authority',action:isE?'Llamada de cobro realizada — prometieron pago 15 Apr':'Collection call made — promised payment Apr 15',type:'call'},
+    {date:'2026-03-25',client:'Summit Properties LLC',action:isE?'Pago recibido INV-004 — $378,000':'Payment received INV-004 — $378,000',type:'payment'},
+  ];
+
+  return`
+<div class="page-header">
+  <div><div class="page-title">${isE?'Cuentas por Cobrar':'Accounts Receivable'}</div>
+  <div class="page-subtitle">${isE?'Antigüedad de cartera · Retenciones segregadas · Gestión de cobros':'Aging report · Retainage segregated · Collections management'}</div></div>
+  <div class="page-actions">
+    <button class="btn btn-ghost btn-sm" onclick="nav('sales')">${isE?'Ver Facturas':'View Invoices'}</button>
+    <button class="btn btn-navy btn-sm" onclick="openModal(modalRegisterPayment())">${isE?'+ Registrar Cobro':'+ Record Payment'}</button>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  ${kpi(isE?'Total AR':'Total AR', fmt(totAll), isE?'Corriente + Vencido + Retención':'Current + Overdue + Retainage','info','')}
+  ${kpi(isE?'Corriente (0-30d)':'Current (0-30d)', fmt(totCur), isE?'Cobrable inmediato':'Immediately collectible','success','')}
+  ${kpi(isE?'Vencido (>30d)':'Overdue (>30d)', fmt(tot30+tot60+tot90), isE?'Requiere gestión':'Requires action','danger', tot30+tot60+tot90>0?'dn':'')}
+  ${kpi(isE?'Retención por Cobrar LP':'Retainage Receivable LT', fmt(totRet), isE?'No corriente — al cierre de obra':'Non-current — at project closeout','warning','')}
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div><div class="card-title">${isE?'Reporte de Antigüedad de Cartera':'Accounts Receivable Aging Report'}</div>
+    <div class="card-sub">${isE?'Al '+new Date().toLocaleDateString('es-MX'):'As of '+new Date().toLocaleDateString('en-US')}</div></div>
+    <span class="badge b-no">${fmt(tot30+tot60+tot90)} ${isE?'vencido':'overdue'}</span>
+  </div>
+  <div style="overflow-x:auto"><table class="dt">
+    <thead>
+      <tr style="background:rgba(0,0,0,.02)">
+        <th colspan="4"></th>
+        <th colspan="4" style="text-align:center;font-size:10px;color:var(--danger);letter-spacing:1px;border-left:2px solid rgba(0,0,0,.08)">${isE?'DÍAS DE ATRASO':'DAYS PAST DUE'}</th>
+        <th style="text-align:center;font-size:10px;color:var(--warning);border-left:2px solid rgba(0,0,0,.08)">LP</th>
+      </tr>
+      <tr>
+        <th>${isE?'Cliente':'Client'}</th>
+        <th>${isE?'Factura':'Invoice'}</th>
+        <th>${isE?'Proyecto':'Project'}</th>
+        <th class="num">${isE?'Monto Bruto':'Gross Amt'}</th>
+        <th class="num" style="border-left:2px solid rgba(0,0,0,.08)">${isE?'Corriente':'Current'}</th>
+        <th class="num">1-30 ${isE?'días':'days'}</th>
+        <th class="num">31-60 ${isE?'días':'days'}</th>
+        <th class="num">61-90 ${isE?'días':'days'}</th>
+        <th class="num" style="border-left:2px solid rgba(0,0,0,.08)">${isE?'Retención LP':'Retainage LT'}</th>
+        <th>${isE?'Estado':'Status'}</th>
+      </tr>
+    </thead>
+    <tbody>
+    ${arRows.map(r=>`<tr ${r.status==='overdue'?'style="background:rgba(192,57,43,.03)"':''}>
+      <td style="font-weight:500">${r.client}</td>
+      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 6px;border-radius:4px">${r.inv}</code></td>
+      <td><span class="badge b-neu" style="font-size:9px">${r.proj}</span></td>
+      <td class="num mono">${fmt(r.gross)}</td>
+      <td class="num mono ${r.cur?'green':'stone'} bold" style="border-left:2px solid rgba(0,0,0,.06)">${r.cur?fmt(r.cur):'—'}</td>
+      <td class="num mono ${r.d30?'warning':''}">${r.d30?fmt(r.d30):'—'}</td>
+      <td class="num mono ${r.d60?'danger':''} bold">${r.d60?fmt(r.d60):'—'}</td>
+      <td class="num mono ${r.d90?'danger':''} bold">${r.d90?fmt(r.d90):'—'}</td>
+      <td class="num mono gold bold" style="border-left:2px solid rgba(0,0,0,.06)">${fmt(r.ret)}</td>
+      <td><span class="badge ${r.status==='current'?'b-ok':'b-no'}" style="font-size:10px">${r.status==='current'?(isE?'Al día':'Current'):(isE?'Vencida':'Overdue')}</span></td>
+    </tr>`).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:var(--navy);color:#fff;font-weight:700">
+        <td colspan="4">TOTAL</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6;border-left:2px solid rgba(255,255,255,.1)">${fmt(totCur)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--warning-light)">${fmt(tot30)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(tot60)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(tot90)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold-light);border-left:2px solid rgba(255,255,255,.1)">${fmt(totRet)}</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table></div>
+  <div class="g2 mt2">
+    <div class="alert a-ok" style="font-size:11px">✓ <strong>${isE?'Activo Corriente (1-01-02-001):':'Current Asset (1-01-02-001):'}</strong> ${fmt(totCur+tot30+tot60+tot90)} — ${isE?'Incluido en flujo de caja operativo':'Included in operating cash flow'}</div>
+    <div class="alert a-warn" style="font-size:11px">⚑ <strong>${isE?'Retención por Cobrar LP (1-01-02-002):':'Retainage Receivable LT (1-01-02-002):'}</strong> ${fmt(totRet)} — ${isE?'NO corriente. Cobrable solo al cierre de obra.':'NOT current. Collectible only at project closeout.'}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><div class="card-title">${isE?'Gestión de Cobros — Historial':'Collections Management — History'}</div></div>
+  ${actions.map(a=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(0,0,0,.04)">
+    <div style="width:32px;height:32px;border-radius:8px;background:${a.type==='payment'?'var(--success-light)':a.type==='call'?'var(--info-light)':'var(--warning-light)'};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">${a.type==='payment'?'💰':a.type==='call'?'📞':'📧'}</div>
+    <div style="flex:1">
+      <div style="font-size:12.5px;font-weight:500;color:var(--navy)">${a.client}</div>
+      <div style="font-size:11px;color:var(--stone)">${a.action}</div>
+    </div>
+    <span class="mono" style="font-size:10px;color:var(--stone)">${a.date}</span>
+  </div>`).join('')}
+  <div style="margin-top:10px;text-align:right">
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalRegisterPayment())">${isE?'+ Registrar Cobro':'+ Record Payment'}</button>
+  </div>
+</div>`;
+}
+
+function modalRegisterPayment(){const isE=es();return`
+<h3>${isE?'Registrar Cobro de Cliente':'Record Customer Payment'}</h3>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Cliente':'Client'}</label>
+      <select id="rp-client">${DB.clients.filter(c=>c.status==='active').map(c=>`<option>${c.name}</option>`).join('')}</select></div>
+    <div class="mf-field"><label>${isE?'Factura':'Invoice'}</label>
+      <select id="rp-inv"><option>INV-001</option><option>INV-002</option><option>INV-003</option></select></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Fecha de Cobro':'Payment Date'}</label><input type="date" id="rp-date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="mf-field"><label>${isE?'Monto Recibido ($)':'Amount Received ($)'}</label><input type="number" id="rp-amt" placeholder="0" min="0"></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Tipo de Cobro':'Payment Type'}</label>
+    <select id="rp-type"><option>${isE?'Pago corriente (sin retención)':'Current payment (no retainage)'}</option><option>${isE?'Liberación de retención (cierre de obra)':'Retainage release (project closeout)'}</option></select></div>
+  <div class="mf-field full"><label>${isE?'Cuenta Bancaria Destino':'Destination Bank Account'}</label>
+    <select><option>BofA ****4821 — ${isE?'Cuenta Operativa':'Operating'}</option><option>Wells Fargo ****9201</option></select></div>
+</div>
+<div class="alert a-info" style="margin-top:10px;font-size:11px">
+  ${isE?'El asiento generado: Dr 1-01-01-001 (Efectivo) / Cr 1-01-02-001 (AR Corriente)':'Generated entry: Dr 1-01-01-001 (Cash) / Cr 1-01-02-001 (Current AR)'}
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Cobro registrado y asiento generado':'✓ Payment recorded and entry generated')">${isE?'✓ Registrar Cobro':'✓ Record Payment'}</button>
+</div>`}
+
+// ══════════════════════════════════════════════════════
+// MODULE: AP — Accounts Payable / Cuentas por Pagar
+// ══════════════════════════════════════════════════════
+function rAP(){
+  const isE=es();
+  // Build AP from DB.subs + seeded vendor invoices
+  const apRows=[
+    {vendor:'Elite MEP Group',    type:'sub',  inv:'AP-001',proj:'PRJ-001',date:'2026-03-27',due:'2026-04-26',gross:84500,ret:8450,cur:76050,status:'pending',  w9:'filed',blocked:false},
+    {vendor:'Rodriguez Concrete', type:'sub',  inv:'AP-002',proj:'PRJ-002',date:'2026-03-15',due:'2026-04-14',gross:68400,ret:6840,cur:61560,status:'blocked',   w9:'missing',blocked:true, reason:'W-9 MISSING'},
+    {vendor:'SteelPro Inc.',      type:'sub',  inv:'AP-003',proj:'PRJ-002',date:'2026-03-20',due:'2026-04-19',gross:285300,ret:28530,cur:256770,status:'blocked', w9:'filed',blocked:true,  reason:'COI EXPIRED'},
+    {vendor:'Apex Framing LLC',   type:'sub',  inv:'AP-004',proj:'PRJ-003',date:'2026-03-22',due:'2026-04-21',gross:80100,ret:8010,cur:72090,status:'approved', w9:'filed',blocked:false},
+    {vendor:'Home Depot',         type:'vendor',inv:'AP-005',proj:'PRJ-001',date:'2026-03-30',due:'2026-04-29',gross:3842, ret:0,   cur:3842, status:'pending',  w9:'n/a', blocked:false},
+    {vendor:'SkyHigh Glass',      type:'sub',  inv:'AP-006',proj:'PRJ-001',date:'2026-03-28',due:'2026-04-27',gross:42000,ret:2100,cur:39900,status:'pending',  w9:'filed',blocked:false},
+  ];
+  const totPending =apRows.filter(r=>!r.blocked&&r.status!=='paid').reduce((s,r)=>s+r.cur,0);
+  const totBlocked =apRows.filter(r=>r.blocked).reduce((s,r)=>s+r.gross,0);
+  const totRet     =apRows.reduce((s,r)=>s+r.ret,0);
+  const blockedCount=apRows.filter(r=>r.blocked).length;
+
+  return`
+<div class="page-header">
+  <div><div class="page-title">${isE?'Cuentas por Pagar':'Accounts Payable'}</div>
+  <div class="page-subtitle">${isE?'Pagos a proveedores y subcontratistas · Muro de Cumplimiento · Retenciones LP separadas':'Vendor & subcontractor payments · Compliance Wall · LT retainage segregated'}</div></div>
+  <div class="page-actions">
+    <button class="btn btn-ghost btn-sm" onclick="nav('subs')">${isE?'Ver Subs':'View Subs'}</button>
+    <button class="btn btn-navy btn-sm" onclick="openModal(modalRegisterPaymentAP())">${isE?'+ Pagar Factura':'+ Pay Invoice'}</button>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  ${kpi(isE?'AP Corriente':'Current AP', fmt(totPending), isE?'Listo para pagar':'Ready to pay','info','')}
+  ${kpi(isE?'Bloqueado':'Blocked', fmt(totBlocked), isE?`${blockedCount} pagos suspendidos`:`${blockedCount} payments suspended`,'danger','')}
+  ${kpi(isE?'Retención por Pagar LP':'Retainage Payable LT', fmt(totRet), isE?'NO corriente — pago al cierre de obra':'NOT current — pay at project closeout','warning','')}
+  ${kpi(isE?'Total AP Bruto':'Total AP Gross', fmt(apRows.reduce((s,r)=>s+r.gross,0)), isE?'Todos los proveedores':'All vendors','stone','')}
+</div>
+
+${blockedCount>0?`<div class="alert a-danger">🚫 ${blockedCount} ${isE?`proveedor(es) bloqueado(s). Pagos suspendidos hasta regularizar cumplimiento W-9 / COI.`:`vendor(s) blocked. Payments suspended until W-9/COI compliance is resolved.`}</div>`:''}
+
+<div class="card">
+  <div class="card-header">
+    <div><div class="card-title">${isE?'Registro de Cuentas por Pagar':'Accounts Payable Register'}</div>
+    <div class="card-sub">${isE?'Columna "Corriente" = pago inmediato. "Retención LP" = NO exigible hasta cierre de obra.':'Column "Current" = immediate payment. "Retainage LT" = NOT due until project closeout.'}</div></div>
+  </div>
+  <div style="overflow-x:auto"><table class="dt">
+    <thead><tr>
+      <th>${isE?'Proveedor / Sub':'Vendor / Sub'}</th>
+      <th>${isE?'Tipo':'Type'}</th>
+      <th>${isE?'Factura':'Invoice'}</th>
+      <th>${isE?'Proyecto':'Project'}</th>
+      <th>${isE?'Vencimiento':'Due'}</th>
+      <th class="num">${isE?'Monto Bruto':'Gross Amt'}</th>
+      <th class="num" style="border-left:2px solid var(--success-light)">${isE?'Pago Corriente':'Current Payable'}</th>
+      <th class="num" style="border-left:2px solid var(--warning-light)">${isE?'Retención LP':'Retainage LT'}</th>
+      <th>W-9 / COI</th>
+      <th>${isE?'Estado':'Status'}</th>
+    </tr></thead>
+    <tbody>
+    ${apRows.map(r=>`<tr ${r.blocked?'style="background:var(--danger-light)"':''}>
+      <td><div style="font-weight:600;font-size:12.5px">${r.vendor}</div></td>
+      <td><span class="badge ${r.type==='sub'?'b-warn':'b-neu'}" style="font-size:9px">${r.type==='sub'?'Sub':'Vendor'}</span></td>
+      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${r.inv}</code></td>
+      <td><span class="badge b-neu" style="font-size:9px">${r.proj}</span></td>
+      <td class="mono" style="font-size:11px">${r.due}</td>
+      <td class="num mono">${fmt(r.gross)}</td>
+      <td class="num mono ${r.blocked?'red':'green'} bold" style="border-left:2px solid rgba(26,122,74,.15)">${fmt(r.cur)}</td>
+      <td class="num mono gold bold" style="border-left:2px solid rgba(201,168,76,.15)">${r.ret?fmt(r.ret):'—'}</td>
+      <td>
+        ${r.w9==='filed'?'<span class="badge b-ok" style="font-size:9px">✓</span>':r.w9==='missing'?'<span class="badge b-no" style="font-size:9px">W-9 ✗</span>':'<span class="badge b-neu" style="font-size:9px">N/A</span>'}
+        ${r.blocked&&r.reason==='COI EXPIRED'?'<span class="badge b-no" style="font-size:9px">COI ✗</span>':''}
+      </td>
+      <td>
+        ${r.blocked
+          ? `<div><span class="badge b-no" style="font-size:9px">🚫 BLOCKED</span><div style="font-size:9px;color:var(--danger)">${r.reason}</div></div>`
+          : r.status==='approved'
+          ? '<span class="badge b-ok" style="font-size:9px">✓ Approved</span>'
+          : '<span class="badge b-info" style="font-size:9px">Pending</span>'}
+      </td>
+    </tr>`).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:var(--navy);color:#fff;font-weight:700">
+        <td colspan="5">TOTAL</td>
+        <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(apRows.reduce((s,r)=>s+r.gross,0))}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6;border-left:2px solid rgba(255,255,255,.1)">${fmt(totPending)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold-light);border-left:2px solid rgba(255,255,255,.1)">${fmt(totRet)}</td>
+        <td colspan="2"></td>
+      </tr>
+    </tfoot>
+  </table></div>
+  <div class="alert a-info mt2" style="font-size:11px">
+    ⚑ ${isE?`Arquitectura de retención (AP): Dr 5-01-03-001 COGS / Cr 2-01-01-002 AP Corriente + Cr 2-01-02-002 Retención LP. Los ${fmt(totRet)} de retención LP no aparecen como obligación corriente en el flujo de caja.`:`Retainage AP architecture: Dr 5-01-03-001 COGS / Cr 2-01-01-002 AP Current + Cr 2-01-02-002 Retainage Payable LT. The ${fmt(totRet)} in LT retainage does not appear as a current obligation in cash flow.`}
+  </div>
+</div>`;
+}
+
+function modalRegisterPaymentAP(){const isE=es();return`
+<h3>${isE?'Pagar Factura de Proveedor':'Pay Vendor Invoice'}</h3>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Proveedor / Sub':'Vendor / Sub'}</label>
+      <select id="pv-vendor"><option>Elite MEP Group</option><option>Apex Framing LLC</option><option>Home Depot</option><option>SkyHigh Glass</option></select></div>
+    <div class="mf-field"><label>${isE?'Factura':'Invoice'}</label>
+      <select><option>AP-001</option><option>AP-004</option><option>AP-005</option><option>AP-006</option></select></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Fecha de Pago':'Payment Date'}</label><input type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="mf-field"><label>${isE?'Monto a Pagar ($)':'Amount to Pay ($)'}</label><input type="number" placeholder="0"></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Cuenta Bancaria Origen':'Source Bank Account'}</label>
+    <select><option>BofA ****4821 — ${isE?'Cuenta Operativa':'Operating'}</option><option>Wells Fargo ****9201</option></select></div>
+  <div class="mf-field full"><label>${isE?'Tipo de Pago':'Payment Type'}</label>
+    <select><option>${isE?'Pago corriente (sin retención)':'Current payment (no retainage)'}</option><option>${isE?'Liberación de retención (cierre de obra)':'Retainage release (project closeout)'}</option></select></div>
+</div>
+<div class="alert a-info" style="margin-top:10px;font-size:11px">
+  ${isE?'El asiento generado: Dr 2-01-01-002 (AP Corriente) / Cr 1-01-01-001 (Efectivo)':'Generated entry: Dr 2-01-01-002 (Current AP) / Cr 1-01-01-001 (Cash)'}
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Pago registrado y asiento generado':'✓ Payment recorded and entry generated')">${isE?'✓ Registrar Pago':'✓ Record Payment'}</button>
+</div>`}
+
 function modalAuditExport(){const isE=es();return`
 <h3>${isE?'Exportación Forense':'Forensic Export'}</h3>
 <div class="mf">
@@ -6339,52 +7079,103 @@ function modalUser(){const isE=es();return`
 
 function saveNewUser() {
   const isE = es();
-  const first   = document.getElementById('nu-first')?.value.trim();
-  const last    = document.getElementById('nu-last')?.value.trim();
-  const email   = document.getElementById('nu-email')?.value.trim();
-  const empId   = document.getElementById('nu-empid')?.value.trim();
-  const role    = document.getElementById('nu-role')?.value;
-  const pass    = document.getElementById('nu-pass')?.value;
-  const clientsSel = document.getElementById('nu-clients');
-  const clients = clientsSel ? Array.from(clientsSel.selectedOptions).map(o=>o.value) : [];
 
-  if (!first || !last || !email) {
-    gMsg(isE ? 'Nombre, apellido y email son obligatorios' : 'First name, last name and email are required');
+  // Read directly from DOM — no variable scope issues
+  const firstEl   = document.getElementById('nu-first');
+  const lastEl    = document.getElementById('nu-last');
+  const emailEl   = document.getElementById('nu-email');
+  const empIdEl   = document.getElementById('nu-empid');
+  const roleEl    = document.getElementById('nu-role');
+  const passEl    = document.getElementById('nu-pass');
+  const clientsSel = document.getElementById('nu-clients');
+
+  const first   = firstEl?.value?.trim()  || '';
+  const last    = lastEl?.value?.trim()   || '';
+  const email   = emailEl?.value?.trim()  || '';
+  const empId   = empIdEl?.value?.trim()  || '';
+  const role    = roleEl?.value           || 'C';
+  const pass    = passEl?.value           || '';
+  const clients = clientsSel
+    ? Array.from(clientsSel.selectedOptions).map(o => o.value)
+    : [];
+
+  // Validate
+  if (!first || !last) {
+    gMsg(isE ? '⚠ Nombre y apellido son obligatorios' : '⚠ First and last name are required');
+    firstEl?.focus();
     return;
   }
-  if (!pass || pass.length < 6) {
-    gMsg(isE ? 'La contraseña debe tener al menos 6 caracteres' : 'Password must be at least 6 characters');
+  if (!email) {
+    gMsg(isE ? '⚠ El email es obligatorio' : '⚠ Email is required');
+    emailEl?.focus();
     return;
   }
-  if (DB.users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
-    gMsg(isE ? `Email "${email}" ya está registrado` : `Email "${email}" already registered`);
+  if (!pass || pass.length < 4) {
+    gMsg(isE ? '⚠ La contraseña debe tener al menos 4 caracteres' : '⚠ Password must be at least 4 characters');
+    passEl?.focus();
     return;
   }
+  if (DB.users.find(u => u.email?.toLowerCase() === email.toLowerCase())) {
+    gMsg(isE ? `El email "${email}" ya está registrado` : `Email "${email}" already registered`);
+    return;
+  }
+
+  // Generate login userId from email prefix
+  const userId = email.split('@')[0]
+    .replace(/[^a-z0-9._-]/gi, '')
+    .toLowerCase()
+    || `${first}.${last}`.toLowerCase().replace(/\s+/g, '.');
 
   const newUser = {
-    id: nextId('USR', DB.users),
-    first, last, email, role,
-    clients: clients.length ? clients : ['—'],
-    nda: isE ? 'Pendiente — primer acceso' : 'Pending — first access',
-    status: 'active',
-    empId: empId || nextId('21S', DB.users.map(u=>({id:u.empId||'21S-000'}))),
-    created: new Date().toISOString().slice(0,10)
+    id:      nextId('USR', DB.users),
+    first,   last,   email,
+    role,
+    clients: clients.length ? clients : ['ALL'],
+    nda:     isE ? 'Pendiente — primer acceso' : 'Pending — first access',
+    status:  'active',
+    empId:   empId || nextId('21S', DB.users.map(u => ({ id: u.empId || '21S-000' }))),
+    userId,
+    created: new Date().toISOString().slice(0, 10),
   };
 
+  // Add to DB
   DB.users.push(newUser);
 
-  // Also register login credentials so the new user can actually sign in
-  const userId = email.split('@')[0].replace(/[^a-z0-9.]/gi,'').toLowerCase() || `${first}.${last}`.toLowerCase();
-  CREDS[userId] = { hash: hashPass(pass), role, displayName: `${first} ${last}` };
-  saveCreds(); // persist creds
+  // Register login credentials
+  CREDS[userId] = {
+    hash:        hashPass(pass),
+    role,
+    displayName: `${first} ${last}`,
+  };
 
-  dbSaveSync(); dbSave().catch(()=>{});
-  log(S.user?.toUpperCase()||'U', `User created: ${newUser.id} — ${first} ${last} (Level ${role}) → login: ${userId}`, 'medium');
+  // ── Direct localStorage save (no async) ──
+  try {
+    localStorage.setItem('21stones_db', JSON.stringify({
+      clients:  DB.clients,
+      users:    DB.users,
+      subs:     DB.subs,
+      cos:      DB.cos,
+      assets:   DB.assets,
+      journal:  DB.journal,
+      lang:     S.lang,
+      projects: PROJECTS,
+    }));
+    localStorage.setItem(CREDS_KEY, JSON.stringify(CREDS));
+  } catch(e) {
+    console.error('Save failed:', e);
+  }
+  dbSave().catch(() => {});
+  saveCreds().catch(() => {});
+
+  log((S.user || 'U').toUpperCase(),
+    `User created: ${newUser.id} — ${first} ${last} (Level ${role}) → login: ${userId}`, 'medium');
+
   closeModal();
   gMsg(isE
-    ? `✓ Usuario "${first} ${last}" creado. Login: ${userId} · Contraseña configurada.`
-    : `✓ User "${first} ${last}" created. Login: ${userId} · Password set.`);
-  renderMod('security');
+    ? `✓ "${first} ${last}" creado. Login: ${userId} · Nivel ${role}`
+    : `✓ "${first} ${last}" created. Login: ${userId} · Level ${role}`);
+
+  renderMod(S.mod);
 }
 
 function modalCurrency(){const isE=es();return`
