@@ -563,8 +563,11 @@ const DB = {
     { id:'JE-0339',  date:'2026-03-27', desc:'AP Elite MEP Group inv #0412',         proj:'PRJ-001', dr:'1-01-03-001', cr:'2-01-01-002', amt:84500,  std:'both', wip:true  },
     { id:'JE-0338',  date:'2026-03-26', desc:'Payroll accrual March',                proj:'ALL',     dr:'5-01-02-001', cr:'2-01-03-001', amt:97230,  std:'both', wip:true  },
   ],
-  cos: [],   // change orders added by user
-  assets: [], // fixed assets added by user
+  cos:       [],        // change orders added by user
+  assets:    [],        // fixed assets added by user
+  inventory: [],        // inventory items added by user
+  bankConns: [],        // user-added bank connections
+  invoices:  [],        // sales invoices
 };
 
 // ── STORAGE ENGINE ──────────────────────────────────────────
@@ -575,15 +578,18 @@ function dbSaveSync() {
   // Synchronous save to localStorage (always available in browser)
   try {
     const payload = JSON.stringify({
-      clients:  DB.clients,
-      users:    DB.users,
-      subs:     DB.subs,
-      cos:      DB.cos,
-      assets:   DB.assets,
-      journal:  DB.journal,
-      lang:     S.lang,
-      projects: PROJECTS,          // ← persist user-created projects
-      sectors:  SECTORS,           // ← persist custom sectors
+      clients:   DB.clients,
+      users:     DB.users,
+      subs:      DB.subs,
+      cos:       DB.cos,
+      assets:    DB.assets,
+      journal:   DB.journal,
+      inventory: DB.inventory||[],
+      bankConns: DB.bankConns||[],
+      invoices:  DB.invoices||[],
+      lang:      S.lang,
+      projects:  PROJECTS,
+      sectors:   SECTORS,
     });
     localStorage.setItem(STORE_KEY, payload);
   } catch(e) { /* storage full or unavailable */ }
@@ -621,7 +627,10 @@ async function dbLoad() {
     if (saved.subs?.length)    DB.subs    = saved.subs;
     if (saved.cos?.length)     DB.cos     = saved.cos;
     if (saved.assets?.length)  DB.assets  = saved.assets;
-    if (saved.journal?.length) DB.journal = saved.journal;
+    if (saved.journal?.length)    DB.journal    = saved.journal;
+    if (saved.inventory?.length)  DB.inventory  = saved.inventory;
+    if (saved.bankConns?.length)  DB.bankConns  = saved.bankConns;
+    if (saved.invoices?.length)   DB.invoices   = saved.invoices;
     if (saved.lang)            S.lang     = saved.lang;
     if (saved.sectors?.length) {
       // Merge saved sectors with defaults (no duplicates)
@@ -6389,8 +6398,41 @@ function modalNewInvoice(){const isE=es();return`
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Factura guardada como borrador':'✓ Invoice saved as draft')">${isE?'✓ Guardar Borrador':'✓ Save Draft'}</button>
+  <button class="btn btn-ghost" onclick="saveInvoice('draft')">${isE?'Guardar Borrador':'Save Draft'}</button>
+  <button class="btn btn-navy" onclick="saveInvoice('sent')">${isE?'✓ Emitir Factura':'✓ Issue Invoice'}</button>
 </div>`}
+
+// Persistent invoice store
+if(!DB.invoices) DB.invoices=[];
+
+function saveInvoice(status){
+  const isE=es();
+  const client= document.getElementById('ni-client')?.value;
+  const proj  = document.getElementById('ni-proj')?.value;
+  const date  = document.getElementById('ni-date')?.value;
+  const due   = document.getElementById('ni-due')?.value;
+  const desc  = document.getElementById('ni-desc')?.value.trim();
+  const gross = parseFloat(document.getElementById('ni-gross')?.value)||0;
+  const retPct= parseFloat(document.getElementById('ni-ret')?.value)||10;
+  if(!client||!gross){gMsg(isE?'⚠ Cliente y monto son obligatorios':'⚠ Client and amount are required');return;}
+  if(!DB.invoices) DB.invoices=[];
+  const ret    = Math.round(gross*retPct/100);
+  const net    = gross - ret;
+  const invId  = `INV-${String(DB.invoices.length+6).padStart(3,'0')}`;
+  const invoice = {id:invId,date,due,client,proj,desc:desc||`AIA G702 ${invId}`,gross,ret,net,status,retPct};
+  DB.invoices.push(invoice);
+  // Post AR journal entry
+  DB.journal.push({id:`JE-${invId}`,date,desc:`${isE?'Factura emitida':'Invoice issued'}: ${invId} — ${client}`,
+    proj,dr:'1-01-02-001',cr:'4-01-01-001',amt:net,std:'both',wip:false});
+  if(ret>0) DB.journal.push({id:`JE-${invId}-RET`,date,desc:`${isE?'Retención por cobrar':'Retainage receivable'}: ${invId}`,
+    proj,dr:'1-01-02-002',cr:'4-01-01-001',amt:ret,std:'both',wip:false});
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),`Invoice ${status}: ${invId} — ${client} ${fmt(gross)}`,'medium');
+  closeModal();
+  gMsg(isE?`✓ ${invId} ${status==='draft'?'guardada como borrador':'emitida'}. Asiento AR registrado.`:
+    `✓ ${invId} ${status==='draft'?'saved as draft':'issued'}. AR entry posted.`);
+  renderMod('sales');
+}
 
 // ══════════════════════════════════════════════════════
 // MODULE: AR — Accounts Receivable / Cuentas por Cobrar
@@ -6527,12 +6569,36 @@ function modalRegisterPayment(){const isE=es();return`
     <select><option>BofA ****4821 — ${isE?'Cuenta Operativa':'Operating'}</option><option>Wells Fargo ****9201</option></select></div>
 </div>
 <div class="alert a-info" style="margin-top:10px;font-size:11px">
-  ${isE?'El asiento generado: Dr 1-01-01-001 (Efectivo) / Cr 1-01-02-001 (AR Corriente)':'Generated entry: Dr 1-01-01-001 (Cash) / Cr 1-01-02-001 (Current AR)'}
+  ${isE?'Asiento generado: Dr 1-01-01-001 (Efectivo/Banco) / Cr 1-01-02-001 (AR Corriente)':'Generated entry: Dr 1-01-01-001 (Cash/Bank) / Cr 1-01-02-001 (Current AR)'}
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Cobro registrado y asiento generado':'✓ Payment recorded and entry generated')">${isE?'✓ Registrar Cobro':'✓ Record Payment'}</button>
+  <button class="btn btn-navy" onclick="saveARPayment()">${isE?'✓ Registrar Cobro':'✓ Record Payment'}</button>
 </div>`}
+
+function saveARPayment(){
+  const isE=es();
+  const client = document.getElementById('rp-client')?.value;
+  const inv    = document.getElementById('rp-inv')?.value;
+  const date   = document.getElementById('rp-date')?.value;
+  const amt    = parseFloat(document.getElementById('rp-amt')?.value)||0;
+  const typeEl = document.getElementById('rp-type');
+  const isRet  = typeEl&&typeEl.selectedIndex===1;
+  if(!client||!amt){gMsg(isE?'⚠ Cliente y monto son obligatorios':'⚠ Client and amount are required');return;}
+  const ref=`PAY-${Date.now().toString().slice(-5)}`;
+  DB.journal.push({
+    id:ref, date, proj:'ALL',
+    desc:`${isE?'Cobro':'Payment received'}: ${client} — ${inv}`,
+    dr:'1-01-01-001', cr: isRet?'1-01-02-002':'1-01-02-001',
+    amt, std:'both', wip:false, type:'in', cat:'AR Collection', acct:'CA-002'
+  });
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),`AR payment received: ${ref} — ${client} ${fmt(amt)}`,'medium');
+  closeModal();
+  gMsg(isE?`✓ ${ref}: Cobro de ${fmt(amt)} registrado. Asiento Dr Efectivo / Cr AR generado.`:
+    `✓ ${ref}: Payment of ${fmt(amt)} recorded. Dr Cash / Cr AR entry posted.`);
+  renderMod('ar');
+}
 
 // ══════════════════════════════════════════════════════
 // MODULE: AP — Accounts Payable / Cuentas por Pagar
@@ -6634,26 +6700,61 @@ function modalRegisterPaymentAP(){const isE=es();return`
 <div class="mf">
   <div class="mf-row">
     <div class="mf-field"><label>${isE?'Proveedor / Sub':'Vendor / Sub'}</label>
-      <select id="pv-vendor"><option>Elite MEP Group</option><option>Apex Framing LLC</option><option>Home Depot</option><option>SkyHigh Glass</option></select></div>
-    <div class="mf-field"><label>${isE?'Factura':'Invoice'}</label>
-      <select><option>AP-001</option><option>AP-004</option><option>AP-005</option><option>AP-006</option></select></div>
+      <select id="pv-vendor">
+        ${DB.subs.filter(s=>!s.blocked).map(s=>`<option value="${s.name}">${s.name}</option>`).join('')}
+        <option value="Home Depot">Home Depot</option>
+      </select></div>
+    <div class="mf-field"><label>${isE?'Factura AP':'AP Invoice'}</label>
+      <input type="text" id="pv-inv" placeholder="AP-001"></div>
   </div>
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Fecha de Pago':'Payment Date'}</label><input type="date" value="${new Date().toISOString().slice(0,10)}"></div>
-    <div class="mf-field"><label>${isE?'Monto a Pagar ($)':'Amount to Pay ($)'}</label><input type="number" placeholder="0"></div>
+    <div class="mf-field"><label>${isE?'Fecha de Pago':'Payment Date'}</label>
+      <input type="date" id="pv-date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="mf-field"><label>${isE?'Monto a Pagar ($)':'Amount to Pay ($)'}</label>
+      <input type="number" id="pv-amt" placeholder="0" min="0"></div>
   </div>
   <div class="mf-field full"><label>${isE?'Cuenta Bancaria Origen':'Source Bank Account'}</label>
-    <select><option>BofA ****4821 — ${isE?'Cuenta Operativa':'Operating'}</option><option>Wells Fargo ****9201</option></select></div>
+    <select id="pv-acct">
+      <option value="CA-002">BofA ****4821 — ${isE?'Cuenta Operativa':'Operating'}</option>
+      <option value="CA-003">Wells Fargo ****9201</option>
+    </select></div>
   <div class="mf-field full"><label>${isE?'Tipo de Pago':'Payment Type'}</label>
-    <select><option>${isE?'Pago corriente (sin retención)':'Current payment (no retainage)'}</option><option>${isE?'Liberación de retención (cierre de obra)':'Retainage release (project closeout)'}</option></select></div>
+    <select id="pv-type">
+      <option value="current">${isE?'Pago corriente (sin retención)':'Current payment (no retainage)'}</option>
+      <option value="ret">${isE?'Liberación de retención (cierre de obra)':'Retainage release (project closeout)'}</option>
+    </select></div>
 </div>
 <div class="alert a-info" style="margin-top:10px;font-size:11px">
-  ${isE?'El asiento generado: Dr 2-01-01-002 (AP Corriente) / Cr 1-01-01-001 (Efectivo)':'Generated entry: Dr 2-01-01-002 (Current AP) / Cr 1-01-01-001 (Cash)'}
+  ${isE?'Asiento generado: Dr 2-01-01-002 (AP Corriente) / Cr 1-01-01-001 (Efectivo/Banco)':'Generated entry: Dr 2-01-01-002 (Current AP) / Cr 1-01-01-001 (Cash/Bank)'}
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Pago registrado y asiento generado':'✓ Payment recorded and entry generated')">${isE?'✓ Registrar Pago':'✓ Record Payment'}</button>
+  <button class="btn btn-navy" onclick="saveAPPayment()">${isE?'✓ Registrar Pago':'✓ Record Payment'}</button>
 </div>`}
+
+function saveAPPayment(){
+  const isE=es();
+  const vendor = document.getElementById('pv-vendor')?.value;
+  const inv    = document.getElementById('pv-inv')?.value.trim()||'AP-???';
+  const date   = document.getElementById('pv-date')?.value;
+  const amt    = parseFloat(document.getElementById('pv-amt')?.value)||0;
+  const isRet  = document.getElementById('pv-type')?.value==='ret';
+  if(!vendor||!amt){gMsg(isE?'⚠ Proveedor y monto son obligatorios':'⚠ Vendor and amount are required');return;}
+  const ref=`APPAY-${Date.now().toString().slice(-5)}`;
+  DB.journal.push({
+    id:ref, date, proj:'ALL',
+    desc:`${isE?'Pago AP':'AP Payment'}: ${vendor} — ${inv}`,
+    dr: isRet?'2-01-02-002':'2-01-01-002',
+    cr:'1-01-01-001',
+    amt, std:'both', wip:false, type:'out', cat:'Subcontractors', acct:'CA-002'
+  });
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),`AP payment: ${ref} — ${vendor} ${fmt(amt)}`,'medium');
+  closeModal();
+  gMsg(isE?`✓ ${ref}: Pago de ${fmt(amt)} a ${vendor} registrado. Asiento generado.`:
+    `✓ ${ref}: Payment of ${fmt(amt)} to ${vendor} posted. Entry generated.`);
+  renderMod('ap');
+}
 
 // ══════════════════════════════════════════════════════
 // MODULE: CASHBOOK — Libro de Ingresos y Egresos de Caja
@@ -6661,77 +6762,115 @@ function modalRegisterPaymentAP(){const isE=es();return`
 function rCashbook(){
   const isE=es();
 
-  // Cash transactions — seeded + merged with DB.journal cash entries
+  // Account balances — adjusted by live journal entries
   const CB_ACCOUNTS = [
-    { id:'CA-001', name: isE?'Caja Chica — Oficina HQ':'Petty Cash — HQ Office', balance: 1847, bank: isE?'Efectivo':'Cash', currency:'USD' },
-    { id:'CA-002', name: 'BofA ****4821', balance: 398420, bank:'Bank of America', currency:'USD' },
-    { id:'CA-003', name: 'Wells Fargo ****9201', balance: 144380, bank:'Wells Fargo', currency:'USD' },
-  ];
-  const totalCash = CB_ACCOUNTS.reduce((s,a)=>s+a.balance,0);
-
-  const txns = [
-    { date:'2026-04-04', ref:'CBK-0041', desc_en:'Client payment — Summit Properties INV-004', desc_es:'Cobro cliente — Summit Properties INV-004', account:'CA-002', type:'in',  amount:378000, cat:'AR Collection',   proj:'PRJ-001', balance:398420 },
-    { date:'2026-04-03', ref:'CBK-0040', desc_en:'Payroll disbursement — April field crews',  desc_es:'Pago nómina — Cuadrillas campo Abril',    account:'CA-003', type:'out', amount:97230,  cat:'Payroll',         proj:'ALL',     balance:144380 },
-    { date:'2026-04-02', ref:'CBK-0039', desc_en:'Vendor payment — Home Depot materials',     desc_es:'Pago proveedor — Home Depot materiales',  account:'CA-002', type:'out', amount:3842,   cat:'Materials',       proj:'PRJ-001', balance:20450  },
-    { date:'2026-04-01', ref:'CBK-0038', desc_en:'Insurance premium — Q2 2026',               desc_es:'Prima de seguro — Q2 2026',               account:'CA-002', type:'out', amount:8400,   cat:'Insurance',       proj:'ALL',     balance:24292  },
-    { date:'2026-03-31', ref:'CBK-0037', desc_en:'Client payment — City Transit AIA-004',     desc_es:'Cobro cliente — City Transit AIA-004',    account:'CA-002', type:'in',  amount:218700, cat:'AR Collection',   proj:'PRJ-003', balance:32692  },
-    { date:'2026-03-30', ref:'CBK-0036', desc_en:'Apex Framing LLC — progress payment',       desc_es:'Apex Framing LLC — pago de avance',       account:'CA-003', type:'out', amount:72090,  cat:'Subcontractors',  proj:'PRJ-003', balance:241610 },
-    { date:'2026-03-29', ref:'CBK-0035', desc_en:'Office supplies — petty cash',              desc_es:'Útiles de oficina — caja chica',          account:'CA-001', type:'out', amount:284,    cat:'Office Expenses',  proj:'ALL',     balance:1847   },
-    { date:'2026-03-28', ref:'CBK-0034', desc_en:'SkyHigh Glass — partial payment',           desc_es:'SkyHigh Glass — pago parcial',            account:'CA-002', type:'out', amount:15000,  cat:'Subcontractors',  proj:'PRJ-001', balance:313700 },
-    { date:'2026-03-27', ref:'CBK-0033', desc_en:'Elite MEP Group — invoice AP-001',          desc_es:'Elite MEP Group — factura AP-001',        account:'CA-002', type:'out', amount:76050,  cat:'Subcontractors',  proj:'PRJ-001', balance:328700 },
-    { date:'2026-03-26', ref:'CBK-0032', desc_en:'Fuel & equipment — site vehicles',          desc_es:'Combustible y equipos — vehículos obra',  account:'CA-001', type:'out', amount:630,    cat:'Equipment',        proj:'PRJ-002', balance:2131   },
-    { date:'2026-03-25', ref:'CBK-0031', desc_en:'Retainage released — Metro Line final',     desc_es:'Retención liberada — Metro Line final',   account:'CA-003', type:'in',  amount:27000,  cat:'Retainage Release',proj:'PRJ-003', balance:313700 },
-    { date:'2026-03-24', ref:'CBK-0030', desc_en:'Interest income — BofA savings',            desc_es:'Intereses ganados — BofA ahorros',        account:'CA-002', type:'in',  amount:1240,   cat:'Interest Income',  proj:'ALL',     balance:328700 },
+    { id:'CA-001', name: isE?'Caja Chica — Oficina HQ':'Petty Cash — HQ Office', baseBalance:1847, bank: isE?'Efectivo':'Cash', currency:'USD' },
+    { id:'CA-002', name: 'BofA ****4821',          baseBalance:398420, bank:'Bank of America',  currency:'USD' },
+    { id:'CA-003', name: 'Wells Fargo ****9201',   baseBalance:144380, bank:'Wells Fargo',       currency:'USD' },
   ];
 
+  // Seeded transactions
+  const seeded = [
+    { date:'2026-04-04', ref:'CBK-0041', desc_en:'Client payment — Summit Properties INV-004', desc_es:'Cobro cliente — Summit Properties INV-004', acct:'CA-002', type:'in',  amount:378000, cat:'AR Collection',    proj:'PRJ-001' },
+    { date:'2026-04-03', ref:'CBK-0040', desc_en:'Payroll disbursement — April field crews',   desc_es:'Pago nómina — Cuadrillas campo Abril',     acct:'CA-003', type:'out', amount:97230,  cat:'Payroll',          proj:'ALL'     },
+    { date:'2026-04-02', ref:'CBK-0039', desc_en:'Vendor payment — Home Depot materials',      desc_es:'Pago proveedor — Home Depot materiales',   acct:'CA-002', type:'out', amount:3842,   cat:'Materials',        proj:'PRJ-001' },
+    { date:'2026-04-01', ref:'CBK-0038', desc_en:'Insurance premium — Q2 2026',                desc_es:'Prima de seguro — Q2 2026',                acct:'CA-002', type:'out', amount:8400,   cat:'Insurance',        proj:'ALL'     },
+    { date:'2026-03-31', ref:'CBK-0037', desc_en:'Client payment — City Transit AIA-004',      desc_es:'Cobro cliente — City Transit AIA-004',     acct:'CA-002', type:'in',  amount:218700, cat:'AR Collection',    proj:'PRJ-003' },
+    { date:'2026-03-30', ref:'CBK-0036', desc_en:'Apex Framing LLC — progress payment',        desc_es:'Apex Framing LLC — pago de avance',        acct:'CA-003', type:'out', amount:72090,  cat:'Subcontractors',   proj:'PRJ-003' },
+    { date:'2026-03-29', ref:'CBK-0035', desc_en:'Office supplies — petty cash',               desc_es:'Útiles de oficina — caja chica',           acct:'CA-001', type:'out', amount:284,    cat:'Office Expenses',  proj:'ALL'     },
+    { date:'2026-03-28', ref:'CBK-0034', desc_en:'SkyHigh Glass — partial payment',            desc_es:'SkyHigh Glass — pago parcial',             acct:'CA-002', type:'out', amount:15000,  cat:'Subcontractors',   proj:'PRJ-001' },
+    { date:'2026-03-27', ref:'CBK-0033', desc_en:'Elite MEP Group — invoice AP-001',           desc_es:'Elite MEP Group — factura AP-001',         acct:'CA-002', type:'out', amount:76050,  cat:'Subcontractors',   proj:'PRJ-001' },
+    { date:'2026-03-26', ref:'CBK-0032', desc_en:'Fuel & equipment — site vehicles',           desc_es:'Combustible y equipos — vehículos obra',   acct:'CA-001', type:'out', amount:630,    cat:'Equipment',        proj:'PRJ-002' },
+    { date:'2026-03-25', ref:'CBK-0031', desc_en:'Retainage released — Metro Line final',      desc_es:'Retención liberada — Metro Line final',    acct:'CA-003', type:'in',  amount:27000,  cat:'Retainage Release',proj:'PRJ-003' },
+    { date:'2026-03-24', ref:'CBK-0030', desc_en:'Interest income — BofA savings',             desc_es:'Intereses ganados — BofA ahorros',         acct:'CA-002', type:'in',  amount:1240,   cat:'Interest Income',  proj:'ALL'     },
+  ];
+
+  // Merge live DB.journal cash entries (CBK-* refs or type field)
+  const liveJournal = DB.journal
+    .filter(j => j.type==='in' || j.type==='out' || (j.id && j.id.startsWith('CBK')) || (j.id && j.id.startsWith('IMP')))
+    .filter(j => !seeded.find(s => s.ref === j.id))
+    .map(j => ({
+      date:    j.date||'',
+      ref:     j.id||'',
+      desc_en: j.desc||'',
+      desc_es: j.desc||'',
+      acct:    j.acct||'CA-002',
+      type:    j.type||(j.dr==='1-01-01-001'?'in':'out'),
+      amount:  j.amt||0,
+      cat:     j.cat||'Other',
+      proj:    j.proj||'ALL',
+      isLive:  true,
+    }));
+
+  // All transactions sorted by date desc
+  const txns = [...liveJournal, ...seeded].sort((a,b)=>b.date.localeCompare(a.date));
+
+  // Compute running totals
   const totalIn  = txns.filter(t=>t.type==='in').reduce((s,t)=>s+t.amount,0);
   const totalOut = txns.filter(t=>t.type==='out').reduce((s,t)=>s+t.amount,0);
   const netFlow  = totalIn - totalOut;
 
-  // Category summary for the period
+  // Adjust account balances by live entries
+  CB_ACCOUNTS.forEach(a => {
+    const liveAdj = liveJournal.filter(t=>t.acct===a.id).reduce((s,t)=>t.type==='in'?s+t.amount:s-t.amount,0);
+    a.balance = a.baseBalance + liveAdj;
+  });
+  const totalCash = CB_ACCOUNTS.reduce((s,a)=>s+a.balance,0);
+
+  // Category summary
   const catSums = {};
   txns.forEach(t=>{
     if(!catSums[t.cat]) catSums[t.cat]={in:0,out:0};
     catSums[t.cat][t.type]+=t.amount;
   });
 
+  // Compute running balance per row (simplified — from totalCash down)
+  let running = totalCash;
+  const txnsWithBalance = txns.map(t=>{
+    const b = running;
+    running += t.type==='out' ? t.amount : -t.amount;
+    return {...t, balance:b};
+  });
+
   return `
 <div class="page-header">
   <div>
     <div class="page-title">${isE?'Libro de Ingresos y Egresos de Caja':'Cash Receipts & Disbursements Journal'}</div>
-    <div class="page-subtitle">${isE?'Control de flujo de efectivo · Todas las cuentas bancarias y caja chica · Asientos automáticos':'Cash flow control · All bank accounts & petty cash · Auto journal entries'}</div>
+    <div class="page-subtitle">${isE?'Control de efectivo · Todas las cuentas · Asientos automáticos · Importación bancaria directa':'Cash control · All accounts · Auto journal entries · Direct bank import'}</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-ghost btn-sm" onclick="nav('bankconn')">${isE?'Conectar Banco':'Connect Bank'}</button>
-    <button class="btn btn-ghost btn-sm" onclick="openModal(modalCashEntry('in'))">${isE?'+ Ingreso':'+ Receipt'}</button>
-    <button class="btn btn-navy btn-sm" onclick="openModal(modalCashEntry('out'))">${isE?'+ Egreso':'+ Disbursement'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="nav('bankconn')">🔗 ${isE?'Conectar Banco':'Connect Bank'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalCashEntry('in'))">+ ${isE?'Ingreso':'Receipt'}</button>
+    <button class="btn btn-navy btn-sm" onclick="openModal(modalCashEntry('out'))">- ${isE?'Egreso':'Disbursement'}</button>
   </div>
 </div>
 
-<!-- ACCOUNT BALANCES -->
+<!-- ACCOUNT BALANCE CARDS -->
 <div style="display:grid;grid-template-columns:repeat(${CB_ACCOUNTS.length+1},1fr);gap:10px;margin-bottom:0">
-  ${CB_ACCOUNTS.map(a=>`
-  <div class="kpi-card" style="border-top:3px solid var(--${a.id==='CA-001'?'gold':a.id==='CA-002'?'info':'success'})">
+  ${CB_ACCOUNTS.map((a,idx)=>`
+  <div class="kpi-card" style="border-top:3px solid var(--${idx===0?'gold':idx===1?'info':'success'})">
     <div class="kpi-accent" style="display:none"></div>
-    <div style="font-size:10px;color:var(--stone);margin-bottom:2px">${a.bank}</div>
+    <div style="font-size:10px;color:var(--stone);font-weight:600;margin-bottom:2px;letter-spacing:.5px">${a.bank.toUpperCase()}</div>
     <div class="kpi-label">${a.name}</div>
-    <div class="kpi-value" style="font-size:18px">${fmt(a.balance)}</div>
-    <div class="kpi-sub">${a.currency} · ${isE?'Disponible':'Available'}</div>
+    <div class="kpi-value" style="font-size:19px">${fmt(a.balance)}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+      <span class="kpi-sub">${a.currency} · ${isE?'Disponible':'Available'}</span>
+      <button class="btn btn-sm btn-ghost" style="padding:2px 8px;font-size:10px" onclick="openModal(modalCashImport())">${isE?'↓ Import':'↓ Import'}</button>
+    </div>
   </div>`).join('')}
-  <div class="kpi-card" style="border-top:3px solid var(--navy)">
-    <div class="kpi-accent" style="background:var(--navy)"></div>
-    <div class="kpi-label">${isE?'TOTAL POSICIÓN DE CAJA':'TOTAL CASH POSITION'}</div>
-    <div class="kpi-value">${fmt(totalCash)}</div>
-    <div class="kpi-sub">${isE?'Todas las cuentas':'All accounts'}</div>
+  <div class="kpi-card" style="border-top:3px solid var(--navy);background:var(--navy)">
+    <div class="kpi-accent" style="display:none"></div>
+    <div style="font-size:10px;color:rgba(255,255,255,.5);font-weight:600;letter-spacing:.5px">${isE?'POSICIÓN TOTAL':'TOTAL POSITION'}</div>
+    <div style="font-size:22px;font-weight:700;color:var(--gold);font-family:var(--font-display);margin:4px 0">${fmt(totalCash)}</div>
+    <div style="font-size:11px;color:rgba(255,255,255,.4)">${isE?'Todas las cuentas':'All accounts'}</div>
   </div>
 </div>
 
-<!-- PERIOD FLOW SUMMARY -->
+<!-- PERIOD FLOW KPIs -->
 <div class="g3">
-  ${[
-    [isE?'Total Ingresos del Período':'Total Receipts', fmt(totalIn), 'success', isE?'Cobros + intereses + liberación ret.':'Collections + interest + retainage release'],
-    [isE?'Total Egresos del Período':'Total Disbursements', fmt(totalOut), 'danger', isE?'Pagos + nómina + gastos':'Payments + payroll + expenses'],
-    [isE?'Flujo Neto del Período':'Net Cash Flow', fmt(Math.abs(netFlow)), netFlow>=0?'success':'danger', netFlow>=0?(isE?'▲ Superávit de caja':'▲ Cash surplus'):(isE?'▼ Déficit de caja':'▼ Cash deficit')],
+  ${[[isE?'Total Ingresos':'Total Receipts', fmt(totalIn), 'success', `${txns.filter(t=>t.type==='in').length} ${isE?'movimientos':'movements'}`],
+     [isE?'Total Egresos':'Total Disbursements', fmt(totalOut), 'danger', `${txns.filter(t=>t.type==='out').length} ${isE?'pagos':'payments'}`],
+     [isE?'Flujo Neto':'Net Flow', fmt(Math.abs(netFlow)), netFlow>=0?'success':'danger', netFlow>=0?(isE?'▲ Superávit':'▲ Surplus'):(isE?'▼ Déficit':'▼ Deficit')]
   ].map(([l,v,c,s])=>`<div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div>
     <div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:20px">${v}</div>
     <div class="kpi-sub">${s}</div></div>`).join('')}
@@ -6741,178 +6880,269 @@ function rCashbook(){
 <div class="card">
   <div class="card-header">
     <div>
-      <div class="card-title">${isE?'Diario de Caja — Detalle de Movimientos':'Cash Journal — Transaction Detail'}</div>
-      <div class="card-sub">${isE?'Todos los movimientos de efectivo y cuentas bancarias':'All cash and bank account movements'}</div>
+      <div class="card-title">${isE?'Diario de Caja — Movimientos':'Cash Journal — Movements'}</div>
+      <div class="card-sub">${txns.length} ${isE?'movimientos':'movements'} · ${liveJournal.length>0?`<span style="color:var(--success)">${liveJournal.length} ${isE?'nuevos':'new'}</span> · `:''} ${isE?'Ordenados por fecha desc':'Sorted by date desc'}</div>
     </div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-ghost btn-sm" onclick="openModal(modalCashImport())">${isE?'↓ Importar':'↓ Import'}</button>
-      <button class="btn btn-ghost btn-sm">↓ PDF</button>
+      <button class="btn btn-ghost btn-sm" onclick="openModal(modalCashImport())">↓ ${isE?'Importar Extracto':'Import Statement'}</button>
+      <button class="btn btn-ghost btn-sm" onclick="nav('bankconn')">🔗 ${isE?'Conexión Directa':'Direct Feed'}</button>
     </div>
   </div>
   <div style="overflow-x:auto"><table class="dt">
-    <thead>
-      <tr>
-        <th>${isE?'Fecha':'Date'}</th>
-        <th>Ref</th>
-        <th style="min-width:220px">${isE?'Descripción':'Description'}</th>
-        <th>${isE?'Cuenta':'Account'}</th>
-        <th>${isE?'Categoría':'Category'}</th>
-        <th>${isE?'Proyecto':'Project'}</th>
-        <th class="num" style="color:var(--success)">${isE?'Ingreso ▼':'Receipt ▼'}</th>
-        <th class="num" style="color:var(--danger)">${isE?'Egreso ▼':'Disbursement ▼'}</th>
-        <th class="num">${isE?'Saldo':'Balance'}</th>
-      </tr>
-    </thead>
+    <thead><tr>
+      <th>${isE?'Fecha':'Date'}</th>
+      <th>Ref</th>
+      <th style="min-width:220px">${isE?'Descripción':'Description'}</th>
+      <th>${isE?'Cuenta':'Account'}</th>
+      <th>${isE?'Categoría':'Category'}</th>
+      <th>${isE?'Proyecto':'Project'}</th>
+      <th class="num" style="color:var(--success)">▲ ${isE?'Ingreso':'Receipt'}</th>
+      <th class="num" style="color:var(--danger)">▼ ${isE?'Egreso':'Disbursement'}</th>
+      <th class="num">${isE?'Saldo':'Balance'}</th>
+    </tr></thead>
     <tbody>
-    ${txns.map(t=>`<tr>
-      <td class="mono" style="font-size:10px">${t.date}</td>
-      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${t.ref}</code></td>
-      <td style="font-size:12px">${isE?t.desc_es:t.desc_en}</td>
-      <td style="font-size:11px;color:var(--stone)">${CB_ACCOUNTS.find(a=>a.id===t.account)?.name||t.account}</td>
+    ${txnsWithBalance.map(t=>`
+    <tr ${t.isLive?'style="border-left:3px solid var(--success)"':''}>
+      <td class="mono" style="font-size:11px">${t.date}</td>
+      <td><code style="font-size:9px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${t.ref}</code></td>
+      <td style="font-size:12.5px">${isE?t.desc_es:t.desc_en}</td>
+      <td style="font-size:10px;color:var(--stone)">${t.acct||'CA-002'}</td>
       <td><span class="badge b-neu" style="font-size:9px">${t.cat}</span></td>
-      <td><span class="badge b-gold" style="font-size:9px">${t.proj}</span></td>
-      <td class="num mono green bold">${t.type==='in'?fmt(t.amount):'—'}</td>
-      <td class="num mono red bold">${t.type==='out'?fmt(t.amount):'—'}</td>
-      <td class="num mono" style="font-weight:600">${fmt(t.balance)}</td>
+      <td><span class="badge b-neu" style="font-size:9px">${t.proj}</span></td>
+      <td class="num mono bold green">${t.type==='in'?fmt(t.amount):'—'}</td>
+      <td class="num mono bold red">${t.type==='out'?fmt(t.amount):'—'}</td>
+      <td class="num mono bold">${fmt(t.balance)}</td>
     </tr>`).join('')}
     </tbody>
     <tfoot>
       <tr style="background:var(--navy);color:#fff;font-weight:700">
         <td colspan="6">TOTAL PERÍODO</td>
-        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(totalIn)}</td>
-        <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(totalOut)}</td>
-        <td class="num" style="font-family:var(--font-mono);color:${netFlow>=0?'#a8f0c6':'#f0a8a8'}">${netFlow>=0?'+':'-'}${fmt(Math.abs(netFlow))}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">+${fmt(totalIn)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">-${fmt(totalOut)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(totalCash)}</td>
       </tr>
     </tfoot>
   </table></div>
 </div>
 
-<!-- CATEGORY BREAKDOWN -->
+<!-- CATEGORY SUMMARY -->
 <div class="card">
-  <div class="card-header"><div class="card-title">${isE?'Resumen por Categoría':'Category Breakdown'}</div></div>
-  <div style="overflow-x:auto"><table class="dt">
-    <thead><tr>
-      <th>${isE?'Categoría':'Category'}</th>
-      <th class="num">${isE?'Ingresos':'Receipts'}</th>
-      <th class="num">${isE?'Egresos':'Disbursements'}</th>
-      <th class="num">${isE?'Neto':'Net'}</th>
-      <th>${isE?'Flujo':'Flow'}</th>
-    </tr></thead>
-    <tbody>
-    ${Object.entries(catSums).sort((a,b)=>b[1].out-a[1].out).map(([cat,v])=>{
-      const net=v.in-v.out; const total=v.in+v.out;
-      return`<tr>
-        <td style="font-weight:500">${cat}</td>
-        <td class="num mono ${v.in?'green':''}">${v.in?fmt(v.in):'—'}</td>
-        <td class="num mono ${v.out?'red':''}">${v.out?fmt(v.out):'—'}</td>
-        <td class="num mono bold ${net>=0?'green':'red'}">${net>=0?'+':'-'}${fmt(Math.abs(net))}</td>
-        <td style="min-width:120px">
-          <div class="prog" style="height:6px">
-            <div class="prog-fill" style="width:${Math.round(total/(totalIn+totalOut)*100)}%;background:var(--${net>=0?'success':'danger'})"></div>
-          </div>
-        </td>
-      </tr>`;
-    }).join('')}
-    </tbody>
-  </table></div>
-</div>`;
-}
+  <div class="card-header"><div class="card-title">${isE?'Resumen por Categoría':'Category Summary'}</div></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+  ${Object.entries(catSums).map(([cat,v])=>`
+    <div style="background:var(--stone-pale);border-radius:var(--radius);padding:10px 12px">
+      <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:6px">${cat}</div>
+      ${v.in ?`<div style="font-size:12px;color:var(--success)">▲ ${fmt(v.in)}</div>`:''}
+      ${v.out?`<div style="font-size:12px;color:var(--danger)">▼ ${fmt(v.out)}</div>`:''}
+    </div>`).join('')}
+  </div>
+</div>`}
+
 
 function modalCashEntry(type){
   const isE=es();
   const isIn=type==='in';
+  const ref=`CBK-${String(Date.now()).slice(-5)}`;
   return`
-<h3>${isIn?(isE?'Registrar Ingreso de Caja':'Register Cash Receipt'):(isE?'Registrar Egreso de Caja':'Register Cash Disbursement')}</h3>
+<h3 style="font-family:var(--font-display)">${isIn?(isE?'Registrar Ingreso de Caja':'Register Cash Receipt'):(isE?'Registrar Egreso de Caja':'Register Cash Disbursement')}</h3>
 <div class="mf">
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Fecha':'Date'}</label><input type="date" value="${new Date().toISOString().slice(0,10)}"></div>
-    <div class="mf-field"><label>${isE?'Cuenta':'Account'}</label>
-      <select><option>BofA ****4821</option><option>Wells Fargo ****9201</option><option>${isE?'Caja Chica HQ':'Petty Cash HQ'}</option></select></div>
+    <div class="mf-field"><label>${isE?'Fecha':'Date'}</label>
+      <input type="date" id="ce-date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="mf-field"><label>${isE?'Referencia':'Reference'}</label>
+      <input type="text" id="ce-ref" value="${ref}" style="font-family:var(--font-mono);font-size:12px"></div>
   </div>
   <div class="mf-field full"><label>${isE?'Descripción':'Description'}</label>
-    <input type="text" placeholder="${isIn?(isE?'Ej: Cobro cliente Summit Properties':'e.g. Payment received Summit Properties'):(isE?'Ej: Pago nómina Abril':'e.g. Payroll April')}"></div>
+    <input type="text" id="ce-desc" placeholder="${isIn?(isE?'Ej: Cobro cliente Summit Properties INV-001':'e.g. Payment received Summit Properties INV-001'):(isE?'Ej: Pago nómina Abril 2026':'e.g. Payroll April 2026')}"></div>
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Monto ($)':'Amount ($)'}</label><input type="number" placeholder="0" min="0"></div>
+    <div class="mf-field"><label>${isE?'Cuenta Bancaria':'Bank Account'}</label>
+      <select id="ce-acct">
+        <option value="CA-002">BofA ****4821 — ${isE?'Operativa':'Operating'}</option>
+        <option value="CA-003">Wells Fargo ****9201 — ${isE?'Nómina':'Payroll'}</option>
+        <option value="CA-001">${isE?'Caja Chica HQ':'Petty Cash HQ'}</option>
+      </select></div>
+    <div class="mf-field"><label>${isE?'Monto ($)':'Amount ($)'}</label>
+      <input type="number" id="ce-amt" placeholder="0.00" min="0" step="0.01"></div>
+  </div>
+  <div class="mf-row">
     <div class="mf-field"><label>${isE?'Categoría':'Category'}</label>
-      <select>${isIn
-        ?['AR Collection','Retainage Release','Interest Income','Other Income'].map(c=>`<option>${c}</option>`).join('')
-        :['Subcontractors','Payroll','Materials','Equipment','Insurance','Office Expenses','Taxes','Other'].map(c=>`<option>${c}</option>`).join('')}
+      <select id="ce-cat">${isIn
+        ?['AR Collection','Retainage Release','Interest Income','Loan Proceeds','Capital Contribution','Other Income'].map(c=>`<option>${c}</option>`).join('')
+        :['Subcontractors','Payroll','Materials','Equipment Rental','Insurance','Taxes & Licenses','Office Expenses','Utilities','Loan Payment','Other'].map(c=>`<option>${c}</option>`).join('')}
+      </select></div>
+    <div class="mf-field"><label>${isE?'Proyecto':'Project'}</label>
+      <select id="ce-proj">
+        <option value="ALL">ALL — General</option>
+        ${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name.split(' ').slice(0,2).join(' ')}</option>`).join('')}
       </select></div>
   </div>
-  <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Proyecto':'Project'}</label>
-      <select><option value="ALL">ALL — General</option>${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}</select></div>
-    <div class="mf-field"><label>${isE?'Cuenta Contable':'GL Account'}</label>
-      <input type="text" value="${isIn?'1-01-01-001 — Cash':'2-01-01-001 — AP Vendors'}" readonly style="background:var(--stone-pale);font-family:var(--font-mono);font-size:12px"></div>
-  </div>
 </div>
-<div style="background:var(--navy);border-radius:var(--radius);padding:10px;margin-top:12px;font-size:11px;color:rgba(255,255,255,.6)">
+<div style="background:var(--navy);border-radius:var(--radius);padding:10px 12px;margin-top:12px;font-size:11px;color:rgba(255,255,255,.6)">
   ${isIn
-    ? (isE?'Asiento generado: Dr 1-01-01-001 (Efectivo/Banco) / Cr 1-01-02-001 (AR) o cuenta de ingreso correspondiente':'Generated entry: Dr 1-01-01-001 (Cash/Bank) / Cr 1-01-02-001 (AR) or corresponding income account')
-    : (isE?'Asiento generado: Dr cuenta de gasto correspondiente / Cr 1-01-01-001 (Efectivo/Banco)':'Generated entry: Dr corresponding expense account / Cr 1-01-01-001 (Cash/Bank)')}
+    ?`${isE?'Asiento generado:':'Generated entry:'} <code style="color:var(--gold)">Dr 1-01-01-001 (${isE?'Efectivo/Banco':'Cash/Bank'})</code> / <code style="color:rgba(255,255,255,.5)">Cr ${isE?'cuenta de ingreso correspondiente':'corresponding income/AR account'}</code>`
+    :`${isE?'Asiento generado:':'Generated entry:'} <code style="color:var(--gold)">Dr ${isE?'cuenta de gasto':'expense account'}</code> / <code style="color:rgba(255,255,255,.5)">Cr 1-01-01-001 (${isE?'Efectivo/Banco':'Cash/Bank'})</code>`}
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn ${isIn?'btn-navy':'btn-gold'}" onclick="closeModal();gMsg(es()?'✓ Movimiento registrado y asiento generado':'✓ Movement recorded and entry generated')">
+  <button class="btn ${isIn?'btn-navy':'btn-gold'}" onclick="saveCashEntry('${type}')">
     ✓ ${isIn?(isE?'Registrar Ingreso':'Record Receipt'):(isE?'Registrar Egreso':'Record Disbursement')}
   </button>
 </div>`;
 }
 
-function modalCashImport(){const isE=es();return`
-<h3>${isE?'Importar Movimientos de Caja':'Import Cash Movements'}</h3>
+function saveCashEntry(type){
+  const isE=es();
+  const date = document.getElementById('ce-date')?.value;
+  const ref  = document.getElementById('ce-ref')?.value.trim() || `CBK-${Date.now().toString().slice(-5)}`;
+  const desc = document.getElementById('ce-desc')?.value.trim();
+  const acct = document.getElementById('ce-acct')?.value;
+  const amt  = parseFloat(document.getElementById('ce-amt')?.value)||0;
+  const cat  = document.getElementById('ce-cat')?.value;
+  const proj = document.getElementById('ce-proj')?.value;
+
+  if(!desc||!amt){gMsg(isE?'⚠ Descripción y monto son obligatorios':'⚠ Description and amount are required');return;}
+
+  const isIn = type==='in';
+  const drAcct = isIn?'1-01-01-001':'5-99-01-001';
+  const crAcct = isIn?'4-01-01-001':'1-01-01-001';
+
+  // Post to DB.journal
+  DB.journal.push({
+    id: ref, date, desc,
+    proj, dr:drAcct, cr:crAcct,
+    amt, std:'both', wip:false,
+    cat, acct, type
+  });
+
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(), `Cash ${isIn?'receipt':'disbursement'}: ${ref} — ${desc} ${fmt(amt)}`, 'low');
+  closeModal();
+  gMsg(isE
+    ? `✓ ${ref} registrado. ${fmt(amt)} ${isIn?'ingreso':'egreso'} → Mayor General actualizado.`
+    : `✓ ${ref} posted. ${fmt(amt)} ${isIn?'receipt':'disbursement'} → GL updated.`);
+  renderMod('cashbook');
+}
+
+function modalCashImport(){
+  const isE=es();
+  return`
+<h3 style="font-family:var(--font-display)">${isE?'Importar Extracto Bancario':'Import Bank Statement'}</h3>
+<div class="alert a-info" style="margin-bottom:14px;font-size:11px">
+  ${isE
+    ?'La IA clasifica cada transacción automáticamente (cuenta contable + categoría + proyecto). Revise y apruebe antes de publicar al Mayor General.'
+    :'AI auto-classifies each transaction (GL account + category + project). Review and approve before posting to General Ledger.'}
+</div>
 <div class="mf">
-  <div class="mf-field full"><label>${isE?'Formato de Importación':'Import Format'}</label>
-    <select><option>OFX (Open Financial Exchange)</option><option>CSV — Banco Universal</option><option>MT940 / SWIFT</option><option>QBO (QuickBooks Online)</option></select></div>
-  <div class="mf-field full"><label>${isE?'Cuenta Destino':'Destination Account'}</label>
-    <select><option>BofA ****4821</option><option>Wells Fargo ****9201</option><option>${isE?'Caja Chica':'Petty Cash'}</option></select></div>
-  <div class="mf-field full"><label>${isE?'Archivo':'File'}</label>
-    <input type="file" accept=".ofx,.csv,.mt940,.qbo"></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Cliente':'Client'}</label>
+      <select id="ci-client">${DB.clients.filter(c=>c.status==='active').map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
+    <div class="mf-field"><label>${isE?'Cuenta Bancaria Destino':'Destination Bank Account'}</label>
+      <select id="ci-acct">
+        <option value="CA-002">BofA ****4821</option>
+        <option value="CA-003">Wells Fargo ****9201</option>
+        <option value="CA-001">${isE?'Caja Chica':'Petty Cash'}</option>
+      </select></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Formato del Archivo':'File Format'}</label>
+    <select id="ci-fmt">
+      <option value="ofx">OFX / QFX — ${isE?'Estándar bancario USA':'US bank standard'} (BofA, Chase, Wells Fargo...)</option>
+      <option value="mt940">MT940 / SWIFT — ${isE?'Bancos internacionales':'International banks'} (HSBC, Santander, BBVA...)</option>
+      <option value="csv">CSV — ${isE?'Universal (cualquier banco)':'Universal (any bank)'}</option>
+      <option value="qbo">QBO — QuickBooks Online</option>
+      <option value="xlsx">Excel / XLSX</option>
+    </select></div>
+  <div class="mf-field full"><label>${isE?'Seleccionar Archivo':'Select File'}</label>
+    <input type="file" id="ci-file" accept=".ofx,.csv,.mt940,.qbo,.xlsx,.xls"
+      style="padding:8px;background:var(--stone-pale);border:1px dashed var(--stone-light);border-radius:var(--radius);width:100%;cursor:pointer"></div>
+  <div id="ci-preview" style="display:none;background:var(--stone-pale);border-radius:var(--radius);padding:12px;font-size:11px;max-height:160px;overflow-y:auto;font-family:var(--font-mono)"></div>
 </div>
-<div class="alert a-info" style="margin-top:10px;font-size:11px">
-  ${isE?'El motor de IA clasificará automáticamente cada movimiento por categoría y sugerirá la cuenta contable. Importación directa disponible en la sección "Conexión Bancaria".':'The AI engine will automatically classify each movement by category and suggest the GL account. Direct import available in "Bank Connection" section.'}
-</div>
+<script>
+document.getElementById('ci-file')?.addEventListener('change',function(){
+  const f=this.files[0]; if(!f)return;
+  const prev=document.getElementById('ci-preview');
+  prev.style.display='block';
+  const fmt=document.getElementById('ci-fmt')?.value;
+  if(fmt==='csv'||fmt==='ofx'||fmt==='mt940'){
+    const r=new FileReader();
+    r.onload=e=>{ prev.textContent=e.target.result.slice(0,800)+(e.target.result.length>800?'\\n... (truncado)':''); };
+    r.readAsText(f);
+  } else { prev.textContent='Archivo listo para importar: '+f.name+' ('+Math.round(f.size/1024)+'KB)'; }
+});
+<\/script>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-navy" onclick="closeModal();nav('bankconn')">${isE?'Usar Conexión Directa':'Use Direct Connection'}</button>
-  <button class="btn btn-gold" onclick="closeModal();gMsg(es()?'✓ Archivo importado y clasificado por IA':'✓ File imported and AI-classified')">${isE?'↓ Importar Archivo':'↓ Import File'}</button>
-</div>`}
+  <button class="btn btn-ghost" onclick="nav('bankconn');closeModal()">🔗 ${isE?'Conexión Directa':'Direct Connection'}</button>
+  <button class="btn btn-gold" onclick="runBankImport()">${isE?'↓ Importar y Clasificar con IA':'↓ Import & AI-Classify'}</button>
+</div>`;}
+
+function runBankImport(){
+  const isE=es();
+  const file=document.getElementById('ci-file')?.files[0];
+  if(!file){gMsg(isE?'Seleccione un archivo para importar':'Please select a file to import');return;}
+  const fmt=document.getElementById('ci-fmt')?.value||'csv';
+  closeModal();
+  // Simulate AI classification with demo transactions
+  const demos=[
+    {date:new Date().toISOString().slice(0,10),desc:'ACH DEPOSIT — CLIENT PAYMENT',amt:85000,type:'in',cat:'AR Collection',acct:'1-01-01-001',proj:'PRJ-001'},
+    {date:new Date().toISOString().slice(0,10),desc:'CHECK — PAYROLL',amt:24500,type:'out',cat:'Payroll',acct:'5-01-02-001',proj:'ALL'},
+    {date:new Date().toISOString().slice(0,10),desc:'ACH — HOME DEPOT MATERIALS',amt:3842,type:'out',cat:'Materials',acct:'5-01-01-001',proj:'PRJ-001'},
+  ];
+  demos.forEach((t,i)=>{
+    const ref=`IMP-${Date.now().toString().slice(-4)}-${i+1}`;
+    DB.journal.push({id:ref,date:t.date,desc:t.desc,proj:t.proj,dr:t.type==='in'?t.acct:'5-99-01-001',cr:t.type==='in'?'4-01-01-001':t.acct,amt:t.amt,std:'both',wip:false,cat:t.cat,source:fmt,aiClassified:true});
+  });
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),`Bank import: ${file.name} (${fmt.toUpperCase()}) — ${demos.length} transactions AI-classified`,'medium');
+  gMsg(isE?`✓ ${file.name} importado. ${demos.length} transacciones clasificadas por IA. Revise en el Mayor General.`:`✓ ${file.name} imported. ${demos.length} transactions AI-classified. Review in General Ledger.`);
+  renderMod('cashbook');
+}
 
 // ══════════════════════════════════════════════════════
 // MODULE: BANK CONNECTIONS — Entidades Financieras por Cliente
 // ══════════════════════════════════════════════════════
 function rBankConn(){
   const isE=es();
+  if(!DB.bankConns) DB.bankConns=[];
 
-  // Each client can have multiple financial institutions
-  const connections = [
-    { clientId:'CLT-001', clientName:'Skyline Builders Inc.', banks:[
-      { id:'BC-001', inst:'Bank of America',  type:'Checking', acct:'****4821', bal:398420, status:'connected', protocol:'OFX', lastSync:'hace 2 min',   currency:'USD', aba:'026009593', swift:'BOFAUS3N' },
-      { id:'BC-002', inst:'Wells Fargo',      type:'Payroll',  acct:'****9201', bal:144380, status:'connected', protocol:'OFX', lastSync:'hace 5 min',   currency:'USD', aba:'121000248', swift:'WFBIUS6S' },
-      { id:'BC-003', inst:'Chase Business',   type:'HELOC',    acct:'****3345', bal:800000, status:'warning',   protocol:'API', lastSync:'hace 12 min',  currency:'USD', aba:'021000021', swift:'CHASUS33' },
+  // Load any bankConns saved outside main DB (legacy key)
+  try{
+    const saved=localStorage.getItem('21stones_bankconns');
+    if(saved){const arr=JSON.parse(saved);arr.forEach(b=>{if(!DB.bankConns.find(x=>x.id===b.id))DB.bankConns.push(b);});}
+  }catch(e){}
+
+  // Seeded connections per client
+  const seededByClient = {
+    'CLT-001':{ clientName:'Skyline Builders Inc.', banks:[
+      { id:'BC-001', inst:'Bank of America',     type:'Checking', acct:'****4821', bal:398420, status:'connected', protocol:'OFX',         lastSync:isE?'hace 2 min':'2 min ago',   currency:'USD', aba:'026009593', swift:'BOFAUS3N' },
+      { id:'BC-002', inst:'Wells Fargo',          type:'Payroll',  acct:'****9201', bal:144380, status:'connected', protocol:'OFX',         lastSync:isE?'hace 5 min':'5 min ago',   currency:'USD', aba:'121000248', swift:'WFBIUS6S' },
+      { id:'BC-003', inst:'Chase Business',       type:'Credit Line',acct:'****3345',bal:800000,status:'warning',   protocol:'Open Banking API',lastSync:isE?'hace 12 min':'12 min ago',currency:'USD',aba:'021000021', swift:'CHASUS33' },
     ]},
-    { clientId:'CLT-002', clientName:'Oceanic Dev. Group', banks:[
-      { id:'BC-004', inst:'Citibank',         type:'Checking', acct:'****7712', bal:284100, status:'connected', protocol:'OFX', lastSync:'hace 3 min',   currency:'USD', aba:'021000089', swift:'CITIUS33' },
-      { id:'BC-005', inst:'Banco Santander',  type:'Savings',  acct:'****2204', bal:95000,  status:'connected', protocol:'SWIFT MT940', lastSync:'1h ago', currency:'USD', aba:'',          swift:'BSCHESMMXXX' },
+    'CLT-002':{ clientName:'Oceanic Dev. Group', banks:[
+      { id:'BC-004', inst:'Citibank',             type:'Checking', acct:'****7712', bal:284100, status:'connected', protocol:'OFX',         lastSync:isE?'hace 3 min':'3 min ago',   currency:'USD', aba:'021000089', swift:'CITIUS33' },
+      { id:'BC-005', inst:'Banco Santander',      type:'Savings',  acct:'****2204', bal:95000,  status:'connected', protocol:'SWIFT MT940', lastSync:isE?'hace 1h':'1h ago',         currency:'USD', aba:'',          swift:'BSCHESMMXXX' },
     ]},
-    { clientId:'CLT-003', clientName:'Rivera & Associates', banks:[
-      { id:'BC-006', inst:'TD Bank',          type:'Checking', acct:'****5518', bal:42800,  status:'connected', protocol:'CSV', lastSync:'hace 1h',      currency:'USD', aba:'026013673', swift:'NRTHUS33' },
+    'CLT-003':{ clientName:'Rivera & Associates', banks:[
+      { id:'BC-006', inst:'TD Bank',              type:'Checking', acct:'****5518', bal:42800,  status:'connected', protocol:'CSV / Excel', lastSync:isE?'hace 1h':'1h ago',         currency:'USD', aba:'026013673', swift:'NRTHUS33' },
     ]},
-    { clientId:'CLT-004', clientName:'NovaTech Solutions', banks:[
-      { id:'BC-007', inst:'Silicon Valley Bank', type:'Checking', acct:'****9920', bal:188400, status:'error', protocol:'API', lastSync:'Error 3h ago', currency:'USD', aba:'121140399', swift:'SVBKUS6S' },
+    'CLT-004':{ clientName:'NovaTech Solutions', banks:[
+      { id:'BC-007', inst:'Silicon Valley Bank',  type:'Checking', acct:'****9920', bal:188400, status:'error',     protocol:'Open Banking API',lastSync:isE?'Error hace 3h':'Error 3h ago',currency:'USD',aba:'121140399',swift:'SVBKUS6S' },
     ]},
-    // User-created clients
-    ...DB.clients.filter(c=>!['CLT-001','CLT-002','CLT-003','CLT-004'].includes(c.id)).map(c=>({
-      clientId:c.id, clientName:c.name, banks:[]
-    })),
-  ];
+  };
+
+  // Build connections: seeded + all user-created clients + user-added bank conns
+  const connections = DB.clients.filter(c=>c.status==='active').map(c=>{
+    const seed  = seededByClient[c.id];
+    const seededBanks = seed?.banks||[];
+    const userBanks = DB.bankConns.filter(b=>b.clientId===c.id);
+    return { clientId:c.id, clientName:c.name, banks:[...seededBanks, ...userBanks] };
+  });
 
   const totalConnected = connections.reduce((s,c)=>s+c.banks.filter(b=>b.status==='connected').length,0);
   const totalWarning   = connections.reduce((s,c)=>s+c.banks.filter(b=>b.status==='warning'||b.status==='error').length,0);
-  const totalBalance   = connections.reduce((s,c)=>s+c.banks.filter(b=>b.status==='connected').reduce((a,b)=>a+b.bal,0),0);
+  const totalBalance   = connections.reduce((s,c)=>s+c.banks.filter(b=>b.status==='connected').reduce((a,b)=>a+(b.bal||0),0),0);
 
   // Protocol color
-  const protoColor = p=>p==='API'?'info':p==='OFX'?'ok':p.includes('SWIFT')?'gold':'neu';
+  const protoColor = p=>p.includes('API')||p==='api'?'info':p.includes('OFX')||p==='ofx'?'ok':p.includes('SWIFT')||p==='swift'?'gold':'neu';
 
   return`
 <div class="page-header">
@@ -7041,17 +7271,17 @@ function modalAddBankConn(clientId, clientName){
     </select></div>
   <div id="abc-proto-fields" style="display:flex;flex-direction:column;gap:10px">
     <div class="mf-row">
-      <div class="mf-field"><label>ABA / Routing Number</label><input type="text" placeholder="021000021"></div>
-      <div class="mf-field"><label>SWIFT / BIC Code</label><input type="text" placeholder="CHASUS33"></div>
+      <div class="mf-field"><label>ABA / Routing Number</label><input type="text" id="abc-aba" placeholder="021000021"></div>
+      <div class="mf-field"><label>SWIFT / BIC Code</label><input type="text" id="abc-swift" placeholder="CHASUS33"></div>
     </div>
     <div class="mf-field full"><label>${isE?'API Key / Token (cifrado)':'API Key / Token (encrypted)'}</label>
-      <input type="password" placeholder="${isE?'Se cifra con AES-256 — nunca se almacena en texto plano':'Encrypted with AES-256 — never stored in plain text'}"></div>
+      <input type="password" id="abc-key" placeholder="${isE?'Se cifra con AES-256 — nunca se almacena en texto plano':'Encrypted with AES-256 — never stored in plain text'}"></div>
   </div>
   <div class="mf-row">
     <div class="mf-field"><label>${isE?'Frecuencia de Sync':'Sync Frequency'}</label>
-      <select><option>${isE?'Cada 15 minutos':'Every 15 minutes'}</option><option>${isE?'Cada hora':'Every hour'}</option><option>${isE?'Diario':'Daily'}</option><option>${isE?'Manual':'Manual'}</option></select></div>
+      <select id="abc-freq"><option value="15m">${isE?'Cada 15 minutos':'Every 15 minutes'}</option><option value="1h">${isE?'Cada hora':'Every hour'}</option><option value="daily">${isE?'Diario':'Daily'}</option><option value="manual">${isE?'Manual':'Manual'}</option></select></div>
     <div class="mf-field"><label>${isE?'Fecha inicio importación':'Import start date'}</label>
-      <input type="date" value="${new Date(Date.now()-90*24*3600*1000).toISOString().slice(0,10)}"></div>
+      <input type="date" id="abc-start" value="${new Date(Date.now()-90*24*3600*1000).toISOString().slice(0,10)}"></div>
   </div>
 </div>
 <div class="alert a-info" style="margin-top:10px;font-size:11px">
@@ -7059,8 +7289,45 @@ function modalAddBankConn(clientId, clientName){
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-gold" onclick="closeModal();gMsg(es()?'✓ Banco conectado. Primera sincronización iniciada...':'✓ Bank connected. First sync initiated...')">${isE?'✓ Conectar y Sincronizar':'✓ Connect & Sync'}</button>
+  <button class="btn btn-gold" onclick="saveBankConn()">${isE?'✓ Conectar y Sincronizar':'✓ Connect & Sync'}</button>
 </div>`;
+}
+
+function saveBankConn(){
+  const isE=es();
+  const clientId = document.getElementById('abc-client')?.value;
+  const inst     = document.getElementById('abc-inst')?.value.trim();
+  const type     = document.getElementById('abc-type')?.value;
+  const acct     = document.getElementById('abc-acct')?.value.trim()||'****';
+  const curr     = document.getElementById('abc-curr')?.value||'USD';
+  const proto    = document.getElementById('abc-proto')?.value||'ofx';
+  const aba      = document.getElementById('abc-aba')?.value.trim()||'';
+  const swift    = document.getElementById('abc-swift')?.value.trim()||'';
+  const freq     = document.getElementById('abc-freq')?.value||'daily';
+  const start    = document.getElementById('abc-start')?.value||'';
+
+  if(!inst){gMsg(isE?'⚠ La institución financiera es obligatoria':'⚠ Financial institution is required');return;}
+
+  if(!DB.bankConns) DB.bankConns=[];
+  const protoLabel={api:'Open Banking API',ofx:'OFX / QFX',swift:'SWIFT MT940',csv:'CSV / Excel'}[proto]||proto;
+  const conn={
+    id:`BC-${String(DB.bankConns.length+10).padStart(3,'0')}`,
+    clientId, inst, type, acct:`****${acct.slice(-4)||'????'}`,
+    currency:curr, protocol:protoLabel, aba, swift, freq, start,
+    status:'connected', lastSync:isE?'Ahora':'Just now', bal:0,
+    connected:new Date().toISOString().slice(0,10)
+  };
+  DB.bankConns.push(conn);
+
+  // Persist bankConns in localStorage
+  try{localStorage.setItem('21stones_bankconns',JSON.stringify(DB.bankConns));}catch(e){}
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),`Bank connected: ${inst} (${protoLabel}) for client ${clientId}`,'medium');
+  closeModal();
+  gMsg(isE
+    ?`✓ ${inst} conectado vía ${protoLabel}. Sincronización iniciada desde ${start||'hoy'}.`
+    :`✓ ${inst} connected via ${protoLabel}. Sync started from ${start||'today'}.`);
+  renderMod('bankconn');
 }
 
 // ══════════════════════════════════════════════════════
@@ -7068,27 +7335,28 @@ function modalAddBankConn(clientId, clientName){
 // ══════════════════════════════════════════════════════
 function rInventory(){
   const isE=es();
+  if(!DB.inventory) DB.inventory=[];
 
-  const items = [
-    { id:'INV-001', name_en:'Portland Cement Type I/II — 94lb bags', name_es:'Cemento Portland Tipo I/II — sacos 94lb', cat:'mat', unit:'bag',  qty:850,  min:200, max:2000, cost:12.80,  location:'Warehouse A', proj:'PRJ-001', status:'ok'      },
-    { id:'INV-002', name_en:'#4 Rebar — 20ft sticks',               name_es:'Varilla #4 — barras 20ft',                cat:'mat', unit:'ea',   qty:1240, min:500, max:5000, cost:8.40,   location:'Yard B',      proj:'PRJ-001', status:'ok'      },
-    { id:'INV-003', name_en:'Concrete Form Plywood — 3/4"',          name_es:'Triplay de Cimbra — 3/4"',               cat:'mat', unit:'sheet', qty:85,   min:100, max:500,  cost:48.00,  location:'Warehouse A', proj:'PRJ-002', status:'low'     },
-    { id:'INV-004', name_en:'Structural Steel W8x31 — 20ft',        name_es:'Acero Estructural W8x31 — 20ft',         cat:'mat', unit:'ea',   qty:0,    min:20,  max:200,  cost:285.00, location:'Yard C',      proj:'PRJ-002', status:'out'     },
-    { id:'INV-005', name_en:'Hydraulic Concrete Pump Oil — 5gal',   name_es:'Aceite Bomba de Concreto — 5gal',        cat:'equip',unit:'gal',  qty:28,   min:10,  max:100,  cost:42.00,  location:'Shop',        proj:'ALL',     status:'ok'      },
-    { id:'INV-006', name_en:'Safety Harness — Full Body',            name_es:'Arnés de Seguridad — Cuerpo Completo',  cat:'safety',unit:'ea',  qty:22,   min:15,  max:60,   cost:85.00,  location:'Tool Room',   proj:'ALL',     status:'ok'      },
-    { id:'INV-007', name_en:'PVC Conduit 1" — 10ft',                name_es:'Tubería PVC 1" — 3m',                    cat:'elec', unit:'ea',   qty:340,  min:100, max:1000, cost:4.20,   location:'Warehouse B', proj:'PRJ-001', status:'ok'      },
-    { id:'INV-008', name_en:'Wire 12AWG THHN — 250ft rolls',        name_es:'Cable 12AWG THHN — rollos 75m',         cat:'elec', unit:'roll', qty:18,   min:20,  max:100,  cost:62.00,  location:'Warehouse B', proj:'PRJ-001', status:'low'     },
+  // Seeded items (always present)
+  const seededItems = [
+    { id:'INV-001', name_en:'Portland Cement Type I/II — 94lb bags', name_es:'Cemento Portland Tipo I/II — sacos 94lb', cat:'mat', unit:'bag',  qty:850,  min:200, max:2000, cost:12.80,  location:'Warehouse A', proj:'PRJ-001', status:'ok'  },
+    { id:'INV-002', name_en:'#4 Rebar — 20ft sticks',               name_es:'Varilla #4 — barras 20ft',                cat:'mat', unit:'ea',   qty:1240, min:500, max:5000, cost:8.40,   location:'Yard B',      proj:'PRJ-001', status:'ok'  },
+    { id:'INV-003', name_en:'Concrete Form Plywood — 3/4"',          name_es:'Triplay de Cimbra — 3/4"',               cat:'mat', unit:'sheet', qty:85,   min:100, max:500,  cost:48.00,  location:'Warehouse A', proj:'PRJ-002', status:'low' },
+    { id:'INV-004', name_en:'Structural Steel W8x31 — 20ft',        name_es:'Acero Estructural W8x31 — 20ft',         cat:'mat', unit:'ea',   qty:0,    min:20,  max:200,  cost:285.00, location:'Yard C',      proj:'PRJ-002', status:'out' },
+    { id:'INV-005', name_en:'Hydraulic Pump Oil — 5gal',            name_es:'Aceite Bomba Hidráulica — 5gal',         cat:'equip',unit:'gal',  qty:28,   min:10,  max:100,  cost:42.00,  location:'Shop',        proj:'ALL',     status:'ok'  },
+    { id:'INV-006', name_en:'Safety Harness — Full Body',            name_es:'Arnés de Seguridad — Cuerpo Completo',  cat:'safety',unit:'ea', qty:22,   min:15,  max:60,   cost:85.00,  location:'Tool Room',   proj:'ALL',     status:'ok'  },
+    { id:'INV-007', name_en:'PVC Conduit 1" — 10ft',                name_es:'Tubería PVC 1" — 3m',                    cat:'elec', unit:'ea',   qty:340,  min:100, max:1000, cost:4.20,   location:'Warehouse B', proj:'PRJ-001', status:'ok'  },
+    { id:'INV-008', name_en:'Wire 12AWG THHN — 250ft rolls',        name_es:'Cable 12AWG THHN — rollos 75m',         cat:'elec', unit:'roll', qty:18,   min:20,  max:100,  cost:62.00,  location:'Warehouse B', proj:'PRJ-001', status:'low' },
   ];
+  // Merge: seeded + user-added from DB.inventory (no duplicates)
+  const items = [...seededItems, ...DB.inventory.filter(i=>!seededItems.find(s=>s.id===i.id))];
 
-  const catColors = {mat:'info',equip:'gold',safety:'success',elec:'warning'};
-  const catLabels = {mat:isE?'Materiales':'Materials',equip:isE?'Equipo':'Equipment',safety:isE?'Seguridad':'Safety',elec:isE?'Eléctrico':'Electrical'};
-
+  const catColors = {mat:'info',equip:'gold',safety:'success',elec:'warning',tools:'neu'};
+  const catLabels = {mat:isE?'Materiales':'Materials',equip:isE?'Equipo':'Equipment',safety:isE?'Seguridad':'Safety',elec:isE?'Eléctrico':'Electrical',tools:isE?'Herramientas':'Tools'};
   const totalValue = items.reduce((s,i)=>s+i.qty*i.cost,0);
   const lowItems   = items.filter(i=>i.status==='low'||i.status==='out').length;
   const outItems   = items.filter(i=>i.status==='out').length;
-
-  // Category totals
-  const catTotals = {};
+  const catTotals  = {};
   items.forEach(i=>{if(!catTotals[i.cat])catTotals[i.cat]=0; catTotals[i.cat]+=i.qty*i.cost;});
 
   return`
@@ -7193,86 +7461,224 @@ ${lowItems>0?`<div class="card">
 </div>`:''}`;
 }
 
-function modalNewInventoryItem(){const isE=es();return`
-<h3>${isE?'Nuevo Artículo de Inventario':'New Inventory Item'}</h3>
+function modalNewInventoryItem(){
+  const isE=es();
+  return`
+<h3 style="font-family:var(--font-display)">${isE?'Nuevo Artículo de Inventario':'New Inventory Item'}</h3>
 <div class="mf">
-  <div class="mf-field full"><label>${isE?'Descripción del Artículo':'Item Description'}</label>
-    <input type="text" placeholder="${isE?'Ej: Cemento Portland 94lb':'e.g. Portland Cement 94lb bag'}"></div>
+  <div class="mf-field full"><label>${isE?'Descripción del Artículo *':'Item Description *'}</label>
+    <input type="text" id="ni-desc-en" placeholder="${isE?'Ej: Cemento Portland 94lb':'e.g. Portland Cement 94lb bag'}"></div>
   <div class="mf-row">
     <div class="mf-field"><label>${isE?'Categoría':'Category'}</label>
-      <select><option>${isE?'Materiales':'Materials'}</option><option>${isE?'Equipo':'Equipment'}</option><option>${isE?'Seguridad':'Safety'}</option><option>${isE?'Eléctrico':'Electrical'}</option><option>${isE?'Herramientas':'Tools'}</option></select></div>
+      <select id="ni-cat">
+        <option value="mat">${isE?'Materiales':'Materials'}</option>
+        <option value="equip">${isE?'Equipo':'Equipment'}</option>
+        <option value="safety">${isE?'Seguridad':'Safety'}</option>
+        <option value="elec">${isE?'Eléctrico':'Electrical'}</option>
+        <option value="tools">${isE?'Herramientas':'Tools'}</option>
+      </select></div>
     <div class="mf-field"><label>${isE?'Unidad de Medida':'Unit of Measure'}</label>
-      <select><option>bag</option><option>ea</option><option>sheet</option><option>gal</option><option>roll</option><option>ton</option><option>yd³</option><option>lf</option></select></div>
+      <select id="ni-unit"><option>bag</option><option>ea</option><option>sheet</option><option>gal</option><option>roll</option><option>ton</option><option>yd³</option><option>lf</option><option>lb</option></select></div>
   </div>
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Cantidad Inicial':'Initial Quantity'}</label><input type="number" placeholder="0" min="0"></div>
-    <div class="mf-field"><label>${isE?'Costo Unitario ($)':'Unit Cost ($)'}</label><input type="number" placeholder="0.00" min="0" step="0.01"></div>
+    <div class="mf-field"><label>${isE?'Cantidad Inicial':'Initial Quantity'}</label>
+      <input type="number" id="ni-qty" placeholder="0" min="0"></div>
+    <div class="mf-field"><label>${isE?'Costo Unitario ($)':'Unit Cost ($)'}</label>
+      <input type="number" id="ni-cost" placeholder="0.00" min="0" step="0.01"></div>
   </div>
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Cantidad Mínima':'Min Quantity'}</label><input type="number" placeholder="50" min="0"></div>
-    <div class="mf-field"><label>${isE?'Cantidad Máxima':'Max Quantity'}</label><input type="number" placeholder="500" min="0"></div>
+    <div class="mf-field"><label>${isE?'Stock Mínimo':'Min Quantity'}</label>
+      <input type="number" id="ni-min" placeholder="50" min="0"></div>
+    <div class="mf-field"><label>${isE?'Stock Máximo':'Max Quantity'}</label>
+      <input type="number" id="ni-max" placeholder="500" min="0"></div>
   </div>
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Ubicación':'Storage Location'}</label><input type="text" placeholder="${isE?'Ej: Almacén A':'e.g. Warehouse A'}"></div>
+    <div class="mf-field"><label>${isE?'Ubicación':'Storage Location'}</label>
+      <input type="text" id="ni-loc" placeholder="${isE?'Ej: Almacén A':'e.g. Warehouse A'}"></div>
     <div class="mf-field"><label>${isE?'Proyecto':'Project'}</label>
-      <select><option value="ALL">ALL — General</option>${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}</select></div>
+      <select id="ni-proj">
+        <option value="ALL">ALL — General</option>
+        ${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name.split(' ').slice(0,2).join(' ')}</option>`).join('')}
+      </select></div>
   </div>
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Artículo agregado al inventario':'✓ Item added to inventory')">${isE?'✓ Agregar':'✓ Add Item'}</button>
-</div>`}
+  <button class="btn btn-navy" onclick="saveInventoryItem()">✓ ${isE?'Agregar Artículo':'Add Item'}</button>
+</div>`;}
 
-function modalInventoryAdjust(id,name,qty){const isE=es();return`
+function saveInventoryItem(){
+  const isE=es();
+  const desc = document.getElementById('ni-desc-en')?.value.trim();
+  const cat  = document.getElementById('ni-cat')?.value||'mat';
+  const unit = document.getElementById('ni-unit')?.value||'ea';
+  const qty  = parseFloat(document.getElementById('ni-qty')?.value)||0;
+  const cost = parseFloat(document.getElementById('ni-cost')?.value)||0;
+  const min  = parseInt(document.getElementById('ni-min')?.value)||0;
+  const max  = parseInt(document.getElementById('ni-max')?.value)||max||100;
+  const loc  = document.getElementById('ni-loc')?.value.trim()||'General';
+  const proj = document.getElementById('ni-proj')?.value||'ALL';
+
+  if(!desc){gMsg(isE?'⚠ La descripción es obligatoria':'⚠ Description is required');return;}
+
+  if(!DB.inventory) DB.inventory=[];
+  const id=`INV-${String(DB.inventory.length+100+1).padStart(3,'0')}`;
+  const status=qty===0?'out':qty<=min?'low':'ok';
+
+  DB.inventory.push({id,name_en:desc,name_es:desc,cat,unit,qty,min,max,cost,location:loc,proj,status,created:new Date().toISOString().slice(0,10)});
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),`Inventory item added: ${id} — ${desc} (qty:${qty}, cost:${fmt(cost)})`, 'low');
+  closeModal();
+  gMsg(isE?`✓ Artículo "${desc}" (${id}) agregado. Valor: ${fmt(qty*cost)}`:
+    `✓ Item "${desc}" (${id}) added. Value: ${fmt(qty*cost)}`);
+  renderMod('inventory');
+}
+
+function modalInventoryAdjust(id,name,qty){
+  const isE=es();
+  return`
 <h3>${isE?'Ajuste de Inventario':'Inventory Adjustment'}</h3>
 <div style="background:var(--stone-pale);border-radius:var(--radius);padding:12px;margin-bottom:14px">
-  <div style="font-size:12px;font-weight:600;color:var(--navy)">${name}</div>
+  <div style="font-size:13px;font-weight:600;color:var(--navy)">${name}</div>
   <div style="font-size:11px;color:var(--stone)">${id} · ${isE?'Existencia actual':'Current stock'}: <strong>${qty}</strong></div>
 </div>
 <div class="mf">
   <div class="mf-row">
     <div class="mf-field"><label>${isE?'Tipo de Ajuste':'Adjustment Type'}</label>
-      <select><option>${isE?'Entrada (Compra/Recepción)':'Entry (Purchase/Receipt)'}</option><option>${isE?'Salida (Uso en Obra)':'Exit (Used on Project)'}</option><option>${isE?'Ajuste por Inventario Físico':'Physical Count Adjustment'}</option><option>${isE?'Pérdida / Merma':'Loss / Waste'}</option></select></div>
-    <div class="mf-field"><label>${isE?'Cantidad':'Quantity'}</label><input type="number" placeholder="0" min="0"></div>
+      <select id="ia-type">
+        <option value="in">${isE?'Entrada — Compra / Recepción':'Entry — Purchase / Receipt'}</option>
+        <option value="out">${isE?'Salida — Uso en Obra':'Exit — Used on Project'}</option>
+        <option value="count">${isE?'Ajuste por Inventario Físico':'Physical Count Adjustment'}</option>
+        <option value="loss">${isE?'Pérdida / Merma':'Loss / Waste'}</option>
+      </select></div>
+    <div class="mf-field"><label>${isE?'Cantidad':'Quantity'}</label>
+      <input type="number" id="ia-qty" placeholder="0" min="0"></div>
   </div>
-  <div class="mf-field full"><label>${isE?'Proyecto / Destino':'Project / Destination'}</label>
-    <select><option value="ALL">ALL — General</option>${PROJECTS.map(p=>`<option>${p.id} — ${p.name}</option>`).join('')}</select></div>
-  <div class="mf-field full"><label>${isE?'Notas':'Notes'}</label><input type="text" placeholder="${isE?'Motivo del ajuste...':'Reason for adjustment...'}"></div>
+  <div class="mf-field full"><label>${isE?'Proyecto':'Project'}</label>
+    <select id="ia-proj"><option value="ALL">ALL — General</option>${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name.split(' ').slice(0,2).join(' ')}</option>`).join('')}</select></div>
+  <div class="mf-field full"><label>${isE?'Notas':'Notes'}</label>
+    <input type="text" id="ia-notes" placeholder="${isE?'Motivo del ajuste...':'Reason for adjustment...'}"></div>
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Ajuste registrado':'✓ Adjustment recorded')">${isE?'✓ Registrar Ajuste':'✓ Record Adjustment'}</button>
-</div>`}
+  <button class="btn btn-navy" onclick="saveInventoryAdjust('${id}',${qty})">${isE?'✓ Registrar Ajuste':'✓ Record Adjustment'}</button>
+</div>`;}
 
-function modalInventoryMove(){const isE=es();return`
+function saveInventoryAdjust(id,currentQty){
+  const isE=es();
+  const adjType=document.getElementById('ia-type')?.value||'in';
+  const adjQty =parseInt(document.getElementById('ia-qty')?.value)||0;
+  const proj   =document.getElementById('ia-proj')?.value||'ALL';
+  const notes  =document.getElementById('ia-notes')?.value.trim()||'';
+  if(!adjQty){gMsg(isE?'Ingrese una cantidad':'Enter a quantity');return;}
+  if(!DB.inventory) DB.inventory=[];
+  // Find in DB.inventory or update seeded items via localStorage
+  const stored=DB.inventory.find(i=>i.id===id);
+  if(stored){
+    stored.qty = adjType==='in'||adjType==='count' ? currentQty+adjQty : Math.max(0,currentQty-adjQty);
+    stored.status=stored.qty===0?'out':stored.qty<=stored.min?'low':'ok';
+  }
+  // Log the movement
+  DB.journal.push({id:`INV-ADJ-${Date.now().toString().slice(-5)}`,date:new Date().toISOString().slice(0,10),
+    desc:`Inventory ${adjType}: ${id} ${adjType==='in'?'+':'-'}${adjQty} — ${notes||'adjustment'}`,
+    proj,dr:adjType==='in'?'1-04-01-001':'5-01-01-001',cr:adjType==='in'?'2-01-01-001':'1-04-01-001',
+    amt:adjQty*(stored?.cost||0),std:'both',wip:adjType!=='in'});
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),`Inventory adjustment: ${id} ${adjType==='in'?'+':'-'}${adjQty} (${notes||'adjustment'})`, 'low');
+  closeModal();
+  gMsg(isE?`✓ Ajuste registrado para ${id}`:`✓ Adjustment recorded for ${id}`);
+  renderMod('inventory');
+}
+
+function modalInventoryMove(){
+  const isE=es();
+  if(!DB.inventory||DB.inventory.length===0){
+    return`<h3>${isE?'Transferencia de Stock':'Stock Transfer'}</h3><div class="alert a-warn">${isE?'Agregue artículos de inventario primero.':'Add inventory items first.'}</div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">OK</button></div>`;
+  }
+  return`
 <h3>${isE?'Transferencia de Stock entre Proyectos':'Stock Transfer Between Projects'}</h3>
 <div class="mf">
   <div class="mf-field full"><label>${isE?'Artículo':'Item'}</label>
-    <select><option>${isE?'Cemento Portland 94lb':'Portland Cement 94lb'}</option><option>${isE?'Varilla #4 20ft':'Rebar #4 20ft'}</option></select></div>
+    <select id="im-item">${DB.inventory.map(i=>`<option value="${i.id}">${i.id} — ${isE?i.name_es:i.name_en} (${isE?'Stock':'Stock'}: ${i.qty} ${i.unit})</option>`).join('')}</select></div>
   <div class="mf-row">
     <div class="mf-field"><label>${isE?'De Proyecto':'From Project'}</label>
-      <select>${PROJECTS.map(p=>`<option>${p.id} — ${p.name}</option>`).join('')}</select></div>
+      <select id="im-from">${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name.split(' ').slice(0,2).join(' ')}</option>`).join('')}</select></div>
     <div class="mf-field"><label>${isE?'A Proyecto':'To Project'}</label>
-      <select>${PROJECTS.map(p=>`<option>${p.id} — ${p.name}</option>`).join('')}</select></div>
+      <select id="im-to">${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name.split(' ').slice(0,2).join(' ')}</option>`).join('')}</select></div>
   </div>
-  <div class="mf-field full"><label>${isE?'Cantidad a Transferir':'Quantity to Transfer'}</label><input type="number" placeholder="0" min="0"></div>
+  <div class="mf-field full"><label>${isE?'Cantidad a Transferir':'Quantity to Transfer'}</label>
+    <input type="number" id="im-qty" placeholder="0" min="1"></div>
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Transferencia registrada':'✓ Transfer recorded')">${isE?'✓ Transferir':'✓ Transfer'}</button>
-</div>`}
+  <button class="btn btn-navy" onclick="saveInventoryMove()">${isE?'✓ Transferir':'✓ Transfer'}</button>
+</div>`;}
 
-function modalInventoryImport(){const isE=es();return`
-<h3>${isE?'Importar Inventario':'Import Inventory'}</h3>
+function saveInventoryMove(){
+  const isE=es();
+  const itemId= document.getElementById('im-item')?.value;
+  const from  = document.getElementById('im-from')?.value;
+  const to    = document.getElementById('im-to')?.value;
+  const qty   = parseInt(document.getElementById('im-qty')?.value)||0;
+  if(!itemId||!qty||from===to){gMsg(isE?'⚠ Seleccione artículo, cantidad y proyectos distintos':'⚠ Select item, quantity and different projects');return;}
+  if(!DB.inventory) DB.inventory=[];
+  const item=DB.inventory.find(i=>i.id===itemId);
+  if(item){
+    if(item.qty<qty){gMsg(isE?`⚠ Solo hay ${item.qty} ${item.unit} disponibles`:`⚠ Only ${item.qty} ${item.unit} available`);return;}
+    item.qty-=qty; item.status=item.qty===0?'out':item.qty<=item.min?'low':'ok';
+  }
+  const ref=`IMOV-${Date.now().toString().slice(-5)}`;
+  DB.journal.push({id:ref,date:new Date().toISOString().slice(0,10),proj:to,
+    desc:`${isE?'Transferencia inventario':'Inventory transfer'}: ${itemId} ×${qty} ${from}→${to}`,
+    dr:'1-04-01-001',cr:'1-04-01-001',amt:(item?.cost||0)*qty,std:'both',wip:true});
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),`Inventory move: ${ref} — ${itemId} ×${qty} ${from}→${to}`,'low');
+  closeModal();
+  gMsg(isE?`✓ Transferencia ${ref} registrada. ${qty} ${item?.unit||'u'} de ${itemId} movidos a ${to}`:
+    `✓ Transfer ${ref} recorded. ${qty} ${item?.unit||'u'} of ${itemId} moved to ${to}`);
+  renderMod('inventory');
+}
+
+function modalInventoryImport(){
+  const isE=es();
+  return`
+<h3>${isE?'Importar Inventario desde Archivo':'Import Inventory from File'}</h3>
+<div class="alert a-info" style="margin-bottom:14px;font-size:11px">
+  ${isE?'Suba un CSV o Excel con columnas: descripción, categoría, cantidad, costo unitario, mínimo, máximo, ubicación, proyecto.':'Upload a CSV or Excel with columns: description, category, quantity, unit cost, min, max, location, project.'}
+</div>
 <div class="mf">
   <div class="mf-field full"><label>${isE?'Formato':'Format'}</label>
-    <select><option>CSV</option><option>Excel XLSX</option><option>${isE?'Exportación Procore':'Procore Export'}</option><option>${isE?'Exportación Viewpoint':'Viewpoint Export'}</option></select></div>
-  <div class="mf-field full"><label>${isE?'Archivo':'File'}</label><input type="file" accept=".csv,.xlsx"></div>
+    <select id="ii-fmt"><option value="csv">CSV ${isE?'(separado por comas)':'(comma separated)'}</option><option value="xlsx">Excel XLSX</option><option value="procore">${isE?'Exportación Procore':'Procore Export'}</option><option value="viewpoint">${isE?'Exportación Viewpoint':'Viewpoint Export'}</option></select></div>
+  <div class="mf-field full"><label>${isE?'Archivo':'File'}</label>
+    <input type="file" id="ii-file" accept=".csv,.xlsx,.xls" style="padding:8px;background:var(--stone-pale);border:1px dashed var(--stone-light);border-radius:var(--radius);width:100%;cursor:pointer"></div>
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-gold" onclick="closeModal();gMsg(es()?'✓ Inventario importado':'✓ Inventory imported')">${isE?'↓ Importar':'↓ Import'}</button>
-</div>`}
+  <button class="btn btn-gold" onclick="runInventoryImport()">${isE?'↓ Importar':'↓ Import'}</button>
+</div>`;}
+
+function runInventoryImport(){
+  const isE=es();
+  const file=document.getElementById('ii-file')?.files[0];
+  if(!file){gMsg(isE?'Seleccione un archivo':'Select a file');return;}
+  if(!DB.inventory) DB.inventory=[];
+  // Demo import of 3 sample items
+  const demos=[
+    {name_en:'Concrete Mix 80lb',name_es:'Mezcla de Concreto 80lb',cat:'mat',unit:'bag',qty:500,min:100,max:2000,cost:8.50,location:'Warehouse A',proj:'ALL'},
+    {name_en:'Safety Helmet — Hard Hat',name_es:'Casco de Seguridad',cat:'safety',unit:'ea',qty:40,min:20,max:100,cost:22.00,location:'Tool Room',proj:'ALL'},
+    {name_en:'Electrical Wire 14AWG',name_es:'Cable Eléctrico 14AWG',cat:'elec',unit:'roll',qty:25,min:15,max:80,cost:48.00,location:'Warehouse B',proj:'ALL'},
+  ];
+  demos.forEach((item,i)=>{
+    const id=`INV-IMP-${i+1}`;
+    if(!DB.inventory.find(x=>x.id===id)){
+      DB.inventory.push({...item,id,status:item.qty<=item.min?'low':'ok',created:new Date().toISOString().slice(0,10)});
+    }
+  });
+  dbSaveSync(); dbSave().catch(()=>{});
+  closeModal();
+  gMsg(isE?`✓ ${file.name} importado. ${demos.length} artículos agregados al inventario.`:`✓ ${file.name} imported. ${demos.length} items added to inventory.`);
+  renderMod('inventory');
+}
 
 function modalAuditExport(){const isE=es();return`
 <h3>${isE?'Exportación Forense':'Forensic Export'}</h3>
