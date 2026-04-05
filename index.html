@@ -477,8 +477,11 @@ By signing, I affirm: (1) Strict confidentiality of all client financial data ac
         <div class="nav-item" onclick="nav('clients')"><span class="nav-icon">🏢</span><span id="sn-clients">Clientes</span></div>
         <div class="nav-item" onclick="nav('coa')"><span class="nav-icon">📋</span><span id="sn-coa">Chart of Accounts</span></div>
         <div class="nav-item" onclick="nav('gl')"><span class="nav-icon">📒</span><span id="sn-gl">General Ledger</span></div>
+        <div class="nav-item" onclick="nav('cashbook')"><span class="nav-icon">💵</span><span id="sn-cash">Libro de Caja</span></div>
         <div class="nav-item" onclick="nav('treasury')"><span class="nav-icon">🏦</span><span id="sn-tres">Treasury & Cash</span></div>
+        <div class="nav-item" onclick="nav('bankconn')"><span class="nav-icon">🔗</span><span id="sn-bankconn">Conexión Bancaria</span><span class="nav-badge" id="sn-bankconn-badge">Live</span></div>
         <div class="nav-item" onclick="nav('bankfeed')"><span class="nav-icon">📡</span><span id="sn-bank">Bank Feeds</span><span class="nav-badge">12</span></div>
+        <div class="nav-item" onclick="nav('inventory')"><span class="nav-icon">📦</span><span id="sn-inv">Inventarios</span></div>
         <div class="nav-item" onclick="nav('assets')"><span class="nav-icon">🏗</span><span id="sn-assets">Fixed Assets</span></div>
       </div>
       <div class="sb-section">
@@ -1043,7 +1046,8 @@ const T={
     obTitle:'New Client Onboarding',obSub:'Auto-suggestions enabled',obCreate:'Create Client Profile →',obSkip:'Manual Entry',
     activeClient:'Active Client',
     dashboard:'Dashboard',clients:'Clients',coa:'Chart of Accounts',gl:'General Ledger',treasury:'Treasury & Cash',
-    bankfeed:'Bank Feeds',assets:'Fixed Assets',bs:'Balance Sheet',pl:'P&L Statement',
+    cashbook:'Cash Book',bankconn:'Bank Connections',bankfeed:'Bank Feeds',inventory:'Inventory',
+    assets:'Fixed Assets',bs:'Balance Sheet',pl:'P&L Statement',
     cf:'Cash Flow',soce:'Stmt of Equity',jobcost:'Job Cost / Projects',revengine:'Revenue Engine',wip:'WIP / ASC 606',
     budget:'Live Budget',subs:'Subcontractors',security:'Security & Users',audit:'Master Audit Log',
     sales:'Sales / Invoicing',ar:'Accounts Receivable',ap:'Accounts Payable',
@@ -1055,7 +1059,8 @@ const T={
     obTitle:'Alta de Nuevo Cliente',obSub:'Sugerencias automáticas activas',obCreate:'Crear Perfil de Cliente →',obSkip:'Entrada Manual',
     activeClient:'Cliente Activo',
     dashboard:'Tablero',clients:'Clientes',coa:'Plan de Cuentas',gl:'Mayor General',treasury:'Tesorería',
-    bankfeed:'Conexión Bancaria',assets:'Activos Fijos',bs:'Balance General',pl:'Estado de Resultados',
+    cashbook:'Libro de Caja',bankconn:'Conexión Bancaria',bankfeed:'Feeds Bancarios',inventory:'Inventarios',
+    assets:'Activos Fijos',bs:'Balance General',pl:'Estado de Resultados',
     cf:'Flujo de Efectivo',soce:'Estado de Capital',jobcost:'Costo por Proyecto',revengine:'Motor de Ingresos',wip:'WIP / NIIF 15',
     budget:'Presupuesto Vivo',subs:'Subcontratistas',security:'Seguridad y Usuarios',audit:'Bitácora Maestra',
     sales:'Ventas / Facturación',ar:'Cuentas por Cobrar',ap:'Cuentas por Pagar',
@@ -1073,7 +1078,8 @@ function applyI18n(){
     'ob-title':'obTitle','ob-sub':'obSub','ob-create':'obCreate','ob-skip':'obSkip',
     'sb-client-lbl':'activeClient','lang-ind':null,
     'sn-dash':'dashboard','sn-clients':'clients','sn-coa':'coa','sn-gl':'gl','sn-tres':'treasury',
-    'sn-bank':'bankfeed','sn-assets':'assets','sn-bs':'bs','sn-pl':'pl',
+    'sn-cash':'cashbook','sn-bankconn':'bankconn','sn-bank':'bankfeed','sn-inv':'inventory',
+    'sn-assets':'assets','sn-bs':'bs','sn-pl':'pl',
     'sn-cf':'cf','sn-soce':'soce','sn-jc':'jobcost','sn-rev':'revengine','sn-wip':'wip',
     'sn-bud':'budget','sn-subs':'subs','sn-sec':'security','sn-audit':'audit',
     'sn-sales':'sales','sn-ar':'ar','sn-ap':'ap',
@@ -1616,7 +1622,9 @@ function renderMod(mod){
   const mc=document.getElementById('mc');
   const fn={
     dashboard:rDash, clients:rClients,
-    coa:rCOA, gl:rGL, treasury:rTreasury, bankfeed:rBankFeed, assets:rAssets,
+    coa:rCOA, gl:rGL, treasury:rTreasury, bankfeed:rBankFeed,
+    cashbook:rCashbook, bankconn:rBankConn, inventory:rInventory,
+    assets:rAssets,
     bs:rBS, pl:rPL, cf:rCF, soce:rSOCE,
     sales:rSales, ar:rAR, ap:rAP,
     jobcost:rJobCost, revengine:rRevEngine, wip:rWIP, budget:rBudget, subs:rSubs,
@@ -1690,25 +1698,30 @@ ${alertCount>0?`<div class="alert a-warn" style="display:flex;align-items:center
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
     ${[
       // Core
-      {icon:'◈',  mod:'dashboard',  label_en:'Dashboard',         label_es:'Tablero',            color:'navy',    section_en:'Core',          section_es:'Núcleo'},
-      {icon:'🏢', mod:'clients',    label_en:'Clients',           label_es:'Clientes',            color:'info',    section_en:'Core',          section_es:'Núcleo'},
-      {icon:'📋', mod:'coa',        label_en:'Chart of Accounts', label_es:'Plan de Cuentas',     color:'stone',   section_en:'Core',          section_es:'Núcleo'},
-      {icon:'📒', mod:'gl',         label_en:'General Ledger',    label_es:'Mayor General',       color:'navy',    section_en:'Core',          section_es:'Núcleo'},
+      {icon:'◈',  mod:'dashboard',  label_en:'Dashboard',            label_es:'Tablero',               color:'navy',    section_en:'Core',          section_es:'Núcleo'},
+      {icon:'🏢', mod:'clients',    label_en:'Clients',              label_es:'Clientes',              color:'info',    section_en:'Core',          section_es:'Núcleo'},
+      {icon:'📋', mod:'coa',        label_en:'Chart of Accounts',    label_es:'Plan de Cuentas',       color:'stone',   section_en:'Core',          section_es:'Núcleo'},
+      {icon:'📒', mod:'gl',         label_en:'General Ledger',       label_es:'Mayor General',         color:'navy',    section_en:'Core',          section_es:'Núcleo'},
+      // Cash & Banking
+      {icon:'💵', mod:'cashbook',   label_en:'Cash Receipts & Disb.',label_es:'Ingresos y Egresos',    color:'success', section_en:'Cash',          section_es:'Caja'},
+      {icon:'🔗', mod:'bankconn',   label_en:'Bank Connections',     label_es:'Conexión Bancaria',     color:'info',    section_en:'Cash',          section_es:'Caja'},
+      {icon:'📡', mod:'bankfeed',   label_en:'Bank Feeds',           label_es:'Feeds Bancarios',       color:'stone',   section_en:'Cash',          section_es:'Caja'},
+      {icon:'🏦', mod:'treasury',   label_en:'Treasury',             label_es:'Tesorería',             color:'navy',    section_en:'Cash',          section_es:'Caja'},
       // Billing
-      {icon:'🧾', mod:'sales',      label_en:'Sales / Invoicing', label_es:'Ventas / Facturación',color:'success', section_en:'Billing',       section_es:'Facturación'},
-      {icon:'📥', mod:'ar',         label_en:'Accounts Receivable',label_es:'Cuentas por Cobrar', color:'success', section_en:'Billing',       section_es:'Cobranza'},
-      {icon:'📤', mod:'ap',         label_en:'Accounts Payable',  label_es:'Cuentas por Pagar',   color:'warning', section_en:'Billing',       section_es:'Pagos'},
-      {icon:'🏦', mod:'treasury',   label_en:'Treasury & Cash',   label_es:'Tesorería',           color:'info',    section_en:'Billing',       section_es:'Tesorería'},
+      {icon:'🧾', mod:'sales',      label_en:'Sales / Invoicing',    label_es:'Ventas / Facturación',  color:'success', section_en:'Billing',       section_es:'Facturación'},
+      {icon:'📥', mod:'ar',         label_en:'Accounts Receivable',  label_es:'Cuentas por Cobrar',    color:'success', section_en:'Billing',       section_es:'Facturación'},
+      {icon:'📤', mod:'ap',         label_en:'Accounts Payable',     label_es:'Cuentas por Pagar',     color:'warning', section_en:'Billing',       section_es:'Facturación'},
+      {icon:'📦', mod:'inventory',  label_en:'Inventory Control',    label_es:'Control de Inventarios',color:'gold',    section_en:'Operations',    section_es:'Operaciones'},
       // Construction
-      {icon:'🧱', mod:'jobcost',    label_en:'Job Cost',          label_es:'Costo por Proyecto',  color:'gold',    section_en:'Construction',  section_es:'Construcción'},
-      {icon:'⚡', mod:'revengine',  label_en:'Revenue Engine',    label_es:'Motor de Ingresos',   color:'gold',    section_en:'Construction',  section_es:'Construcción'},
-      {icon:'📐', mod:'wip',        label_en:'WIP / ASC 606',     label_es:'WIP / NIIF 15',       color:'gold',    section_en:'Construction',  section_es:'Construcción'},
-      {icon:'📊', mod:'budget',     label_en:'Live Budget',       label_es:'Presupuesto Vivo',    color:'gold',    section_en:'Construction',  section_es:'Construcción'},
+      {icon:'🧱', mod:'jobcost',    label_en:'Job Cost',             label_es:'Costo por Proyecto',    color:'gold',    section_en:'Construction',  section_es:'Construcción'},
+      {icon:'⚡', mod:'revengine',  label_en:'Revenue Engine',       label_es:'Motor de Ingresos',     color:'gold',    section_en:'Construction',  section_es:'Construcción'},
+      {icon:'📐', mod:'wip',        label_en:'WIP / ASC 606',        label_es:'WIP / NIIF 15',         color:'gold',    section_en:'Construction',  section_es:'Construcción'},
+      {icon:'📊', mod:'budget',     label_en:'Live Budget',          label_es:'Presupuesto Vivo',      color:'gold',    section_en:'Construction',  section_es:'Construcción'},
       // Financial Statements
-      {icon:'⚖',  mod:'bs',         label_en:'Balance Sheet',     label_es:'Balance General',     color:'navy',    section_en:'Financials',    section_es:'Estados Financieros'},
-      {icon:'📈', mod:'pl',         label_en:'P&L Statement',     label_es:'Estado de Resultados',color:'success', section_en:'Financials',    section_es:'Estados Financieros'},
-      {icon:'💧', mod:'cf',         label_en:'Cash Flow',         label_es:'Flujo de Efectivo',   color:'info',    section_en:'Financials',    section_es:'Estados Financieros'},
-      {icon:'📡', mod:'bankfeed',   label_en:'Bank Feeds',        label_es:'Conexión Bancaria',   color:'stone',   section_en:'Financials',    section_es:'Estados Financieros'},
+      {icon:'⚖',  mod:'bs',         label_en:'Balance Sheet',        label_es:'Balance General',       color:'navy',    section_en:'Financials',    section_es:'Estados Financieros'},
+      {icon:'📈', mod:'pl',         label_en:'P&L Statement',        label_es:'Estado de Resultados',  color:'success', section_en:'Financials',    section_es:'Estados Financieros'},
+      {icon:'💧', mod:'cf',         label_en:'Cash Flow',            label_es:'Flujo de Efectivo',     color:'info',    section_en:'Financials',    section_es:'Estados Financieros'},
+      {icon:'🔐', mod:'security',   label_en:'Security & Users',     label_es:'Seguridad y Usuarios',  color:'stone',   section_en:'Admin',         section_es:'Administración'},
     ].map(m=>`
     <div onclick="nav('${m.mod}')"
       style="background:var(--stone-pale);border-radius:var(--radius-lg);padding:14px 12px;cursor:pointer;transition:var(--tr);border-top:3px solid var(--${m.color});display:flex;align-items:center;gap:10px"
@@ -6640,6 +6653,625 @@ function modalRegisterPaymentAP(){const isE=es();return`
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
   <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Pago registrado y asiento generado':'✓ Payment recorded and entry generated')">${isE?'✓ Registrar Pago':'✓ Record Payment'}</button>
+</div>`}
+
+// ══════════════════════════════════════════════════════
+// MODULE: CASHBOOK — Libro de Ingresos y Egresos de Caja
+// ══════════════════════════════════════════════════════
+function rCashbook(){
+  const isE=es();
+
+  // Cash transactions — seeded + merged with DB.journal cash entries
+  const CB_ACCOUNTS = [
+    { id:'CA-001', name: isE?'Caja Chica — Oficina HQ':'Petty Cash — HQ Office', balance: 1847, bank: isE?'Efectivo':'Cash', currency:'USD' },
+    { id:'CA-002', name: 'BofA ****4821', balance: 398420, bank:'Bank of America', currency:'USD' },
+    { id:'CA-003', name: 'Wells Fargo ****9201', balance: 144380, bank:'Wells Fargo', currency:'USD' },
+  ];
+  const totalCash = CB_ACCOUNTS.reduce((s,a)=>s+a.balance,0);
+
+  const txns = [
+    { date:'2026-04-04', ref:'CBK-0041', desc_en:'Client payment — Summit Properties INV-004', desc_es:'Cobro cliente — Summit Properties INV-004', account:'CA-002', type:'in',  amount:378000, cat:'AR Collection',   proj:'PRJ-001', balance:398420 },
+    { date:'2026-04-03', ref:'CBK-0040', desc_en:'Payroll disbursement — April field crews',  desc_es:'Pago nómina — Cuadrillas campo Abril',    account:'CA-003', type:'out', amount:97230,  cat:'Payroll',         proj:'ALL',     balance:144380 },
+    { date:'2026-04-02', ref:'CBK-0039', desc_en:'Vendor payment — Home Depot materials',     desc_es:'Pago proveedor — Home Depot materiales',  account:'CA-002', type:'out', amount:3842,   cat:'Materials',       proj:'PRJ-001', balance:20450  },
+    { date:'2026-04-01', ref:'CBK-0038', desc_en:'Insurance premium — Q2 2026',               desc_es:'Prima de seguro — Q2 2026',               account:'CA-002', type:'out', amount:8400,   cat:'Insurance',       proj:'ALL',     balance:24292  },
+    { date:'2026-03-31', ref:'CBK-0037', desc_en:'Client payment — City Transit AIA-004',     desc_es:'Cobro cliente — City Transit AIA-004',    account:'CA-002', type:'in',  amount:218700, cat:'AR Collection',   proj:'PRJ-003', balance:32692  },
+    { date:'2026-03-30', ref:'CBK-0036', desc_en:'Apex Framing LLC — progress payment',       desc_es:'Apex Framing LLC — pago de avance',       account:'CA-003', type:'out', amount:72090,  cat:'Subcontractors',  proj:'PRJ-003', balance:241610 },
+    { date:'2026-03-29', ref:'CBK-0035', desc_en:'Office supplies — petty cash',              desc_es:'Útiles de oficina — caja chica',          account:'CA-001', type:'out', amount:284,    cat:'Office Expenses',  proj:'ALL',     balance:1847   },
+    { date:'2026-03-28', ref:'CBK-0034', desc_en:'SkyHigh Glass — partial payment',           desc_es:'SkyHigh Glass — pago parcial',            account:'CA-002', type:'out', amount:15000,  cat:'Subcontractors',  proj:'PRJ-001', balance:313700 },
+    { date:'2026-03-27', ref:'CBK-0033', desc_en:'Elite MEP Group — invoice AP-001',          desc_es:'Elite MEP Group — factura AP-001',        account:'CA-002', type:'out', amount:76050,  cat:'Subcontractors',  proj:'PRJ-001', balance:328700 },
+    { date:'2026-03-26', ref:'CBK-0032', desc_en:'Fuel & equipment — site vehicles',          desc_es:'Combustible y equipos — vehículos obra',  account:'CA-001', type:'out', amount:630,    cat:'Equipment',        proj:'PRJ-002', balance:2131   },
+    { date:'2026-03-25', ref:'CBK-0031', desc_en:'Retainage released — Metro Line final',     desc_es:'Retención liberada — Metro Line final',   account:'CA-003', type:'in',  amount:27000,  cat:'Retainage Release',proj:'PRJ-003', balance:313700 },
+    { date:'2026-03-24', ref:'CBK-0030', desc_en:'Interest income — BofA savings',            desc_es:'Intereses ganados — BofA ahorros',        account:'CA-002', type:'in',  amount:1240,   cat:'Interest Income',  proj:'ALL',     balance:328700 },
+  ];
+
+  const totalIn  = txns.filter(t=>t.type==='in').reduce((s,t)=>s+t.amount,0);
+  const totalOut = txns.filter(t=>t.type==='out').reduce((s,t)=>s+t.amount,0);
+  const netFlow  = totalIn - totalOut;
+
+  // Category summary for the period
+  const catSums = {};
+  txns.forEach(t=>{
+    if(!catSums[t.cat]) catSums[t.cat]={in:0,out:0};
+    catSums[t.cat][t.type]+=t.amount;
+  });
+
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">${isE?'Libro de Ingresos y Egresos de Caja':'Cash Receipts & Disbursements Journal'}</div>
+    <div class="page-subtitle">${isE?'Control de flujo de efectivo · Todas las cuentas bancarias y caja chica · Asientos automáticos':'Cash flow control · All bank accounts & petty cash · Auto journal entries'}</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-ghost btn-sm" onclick="nav('bankconn')">${isE?'Conectar Banco':'Connect Bank'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalCashEntry('in'))">${isE?'+ Ingreso':'+ Receipt'}</button>
+    <button class="btn btn-navy btn-sm" onclick="openModal(modalCashEntry('out'))">${isE?'+ Egreso':'+ Disbursement'}</button>
+  </div>
+</div>
+
+<!-- ACCOUNT BALANCES -->
+<div style="display:grid;grid-template-columns:repeat(${CB_ACCOUNTS.length+1},1fr);gap:10px;margin-bottom:0">
+  ${CB_ACCOUNTS.map(a=>`
+  <div class="kpi-card" style="border-top:3px solid var(--${a.id==='CA-001'?'gold':a.id==='CA-002'?'info':'success'})">
+    <div class="kpi-accent" style="display:none"></div>
+    <div style="font-size:10px;color:var(--stone);margin-bottom:2px">${a.bank}</div>
+    <div class="kpi-label">${a.name}</div>
+    <div class="kpi-value" style="font-size:18px">${fmt(a.balance)}</div>
+    <div class="kpi-sub">${a.currency} · ${isE?'Disponible':'Available'}</div>
+  </div>`).join('')}
+  <div class="kpi-card" style="border-top:3px solid var(--navy)">
+    <div class="kpi-accent" style="background:var(--navy)"></div>
+    <div class="kpi-label">${isE?'TOTAL POSICIÓN DE CAJA':'TOTAL CASH POSITION'}</div>
+    <div class="kpi-value">${fmt(totalCash)}</div>
+    <div class="kpi-sub">${isE?'Todas las cuentas':'All accounts'}</div>
+  </div>
+</div>
+
+<!-- PERIOD FLOW SUMMARY -->
+<div class="g3">
+  ${[
+    [isE?'Total Ingresos del Período':'Total Receipts', fmt(totalIn), 'success', isE?'Cobros + intereses + liberación ret.':'Collections + interest + retainage release'],
+    [isE?'Total Egresos del Período':'Total Disbursements', fmt(totalOut), 'danger', isE?'Pagos + nómina + gastos':'Payments + payroll + expenses'],
+    [isE?'Flujo Neto del Período':'Net Cash Flow', fmt(Math.abs(netFlow)), netFlow>=0?'success':'danger', netFlow>=0?(isE?'▲ Superávit de caja':'▲ Cash surplus'):(isE?'▼ Déficit de caja':'▼ Cash deficit')],
+  ].map(([l,v,c,s])=>`<div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div>
+    <div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:20px">${v}</div>
+    <div class="kpi-sub">${s}</div></div>`).join('')}
+</div>
+
+<!-- MAIN CASHBOOK TABLE -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">${isE?'Diario de Caja — Detalle de Movimientos':'Cash Journal — Transaction Detail'}</div>
+      <div class="card-sub">${isE?'Todos los movimientos de efectivo y cuentas bancarias':'All cash and bank account movements'}</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="openModal(modalCashImport())">${isE?'↓ Importar':'↓ Import'}</button>
+      <button class="btn btn-ghost btn-sm">↓ PDF</button>
+    </div>
+  </div>
+  <div style="overflow-x:auto"><table class="dt">
+    <thead>
+      <tr>
+        <th>${isE?'Fecha':'Date'}</th>
+        <th>Ref</th>
+        <th style="min-width:220px">${isE?'Descripción':'Description'}</th>
+        <th>${isE?'Cuenta':'Account'}</th>
+        <th>${isE?'Categoría':'Category'}</th>
+        <th>${isE?'Proyecto':'Project'}</th>
+        <th class="num" style="color:var(--success)">${isE?'Ingreso ▼':'Receipt ▼'}</th>
+        <th class="num" style="color:var(--danger)">${isE?'Egreso ▼':'Disbursement ▼'}</th>
+        <th class="num">${isE?'Saldo':'Balance'}</th>
+      </tr>
+    </thead>
+    <tbody>
+    ${txns.map(t=>`<tr>
+      <td class="mono" style="font-size:10px">${t.date}</td>
+      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${t.ref}</code></td>
+      <td style="font-size:12px">${isE?t.desc_es:t.desc_en}</td>
+      <td style="font-size:11px;color:var(--stone)">${CB_ACCOUNTS.find(a=>a.id===t.account)?.name||t.account}</td>
+      <td><span class="badge b-neu" style="font-size:9px">${t.cat}</span></td>
+      <td><span class="badge b-gold" style="font-size:9px">${t.proj}</span></td>
+      <td class="num mono green bold">${t.type==='in'?fmt(t.amount):'—'}</td>
+      <td class="num mono red bold">${t.type==='out'?fmt(t.amount):'—'}</td>
+      <td class="num mono" style="font-weight:600">${fmt(t.balance)}</td>
+    </tr>`).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:var(--navy);color:#fff;font-weight:700">
+        <td colspan="6">TOTAL PERÍODO</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(totalIn)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(totalOut)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:${netFlow>=0?'#a8f0c6':'#f0a8a8'}">${netFlow>=0?'+':'-'}${fmt(Math.abs(netFlow))}</td>
+      </tr>
+    </tfoot>
+  </table></div>
+</div>
+
+<!-- CATEGORY BREAKDOWN -->
+<div class="card">
+  <div class="card-header"><div class="card-title">${isE?'Resumen por Categoría':'Category Breakdown'}</div></div>
+  <div style="overflow-x:auto"><table class="dt">
+    <thead><tr>
+      <th>${isE?'Categoría':'Category'}</th>
+      <th class="num">${isE?'Ingresos':'Receipts'}</th>
+      <th class="num">${isE?'Egresos':'Disbursements'}</th>
+      <th class="num">${isE?'Neto':'Net'}</th>
+      <th>${isE?'Flujo':'Flow'}</th>
+    </tr></thead>
+    <tbody>
+    ${Object.entries(catSums).sort((a,b)=>b[1].out-a[1].out).map(([cat,v])=>{
+      const net=v.in-v.out; const total=v.in+v.out;
+      return`<tr>
+        <td style="font-weight:500">${cat}</td>
+        <td class="num mono ${v.in?'green':''}">${v.in?fmt(v.in):'—'}</td>
+        <td class="num mono ${v.out?'red':''}">${v.out?fmt(v.out):'—'}</td>
+        <td class="num mono bold ${net>=0?'green':'red'}">${net>=0?'+':'-'}${fmt(Math.abs(net))}</td>
+        <td style="min-width:120px">
+          <div class="prog" style="height:6px">
+            <div class="prog-fill" style="width:${Math.round(total/(totalIn+totalOut)*100)}%;background:var(--${net>=0?'success':'danger'})"></div>
+          </div>
+        </td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+  </table></div>
+</div>`;
+}
+
+function modalCashEntry(type){
+  const isE=es();
+  const isIn=type==='in';
+  return`
+<h3>${isIn?(isE?'Registrar Ingreso de Caja':'Register Cash Receipt'):(isE?'Registrar Egreso de Caja':'Register Cash Disbursement')}</h3>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Fecha':'Date'}</label><input type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="mf-field"><label>${isE?'Cuenta':'Account'}</label>
+      <select><option>BofA ****4821</option><option>Wells Fargo ****9201</option><option>${isE?'Caja Chica HQ':'Petty Cash HQ'}</option></select></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Descripción':'Description'}</label>
+    <input type="text" placeholder="${isIn?(isE?'Ej: Cobro cliente Summit Properties':'e.g. Payment received Summit Properties'):(isE?'Ej: Pago nómina Abril':'e.g. Payroll April')}"></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Monto ($)':'Amount ($)'}</label><input type="number" placeholder="0" min="0"></div>
+    <div class="mf-field"><label>${isE?'Categoría':'Category'}</label>
+      <select>${isIn
+        ?['AR Collection','Retainage Release','Interest Income','Other Income'].map(c=>`<option>${c}</option>`).join('')
+        :['Subcontractors','Payroll','Materials','Equipment','Insurance','Office Expenses','Taxes','Other'].map(c=>`<option>${c}</option>`).join('')}
+      </select></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Proyecto':'Project'}</label>
+      <select><option value="ALL">ALL — General</option>${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}</select></div>
+    <div class="mf-field"><label>${isE?'Cuenta Contable':'GL Account'}</label>
+      <input type="text" value="${isIn?'1-01-01-001 — Cash':'2-01-01-001 — AP Vendors'}" readonly style="background:var(--stone-pale);font-family:var(--font-mono);font-size:12px"></div>
+  </div>
+</div>
+<div style="background:var(--navy);border-radius:var(--radius);padding:10px;margin-top:12px;font-size:11px;color:rgba(255,255,255,.6)">
+  ${isIn
+    ? (isE?'Asiento generado: Dr 1-01-01-001 (Efectivo/Banco) / Cr 1-01-02-001 (AR) o cuenta de ingreso correspondiente':'Generated entry: Dr 1-01-01-001 (Cash/Bank) / Cr 1-01-02-001 (AR) or corresponding income account')
+    : (isE?'Asiento generado: Dr cuenta de gasto correspondiente / Cr 1-01-01-001 (Efectivo/Banco)':'Generated entry: Dr corresponding expense account / Cr 1-01-01-001 (Cash/Bank)')}
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn ${isIn?'btn-navy':'btn-gold'}" onclick="closeModal();gMsg(es()?'✓ Movimiento registrado y asiento generado':'✓ Movement recorded and entry generated')">
+    ✓ ${isIn?(isE?'Registrar Ingreso':'Record Receipt'):(isE?'Registrar Egreso':'Record Disbursement')}
+  </button>
+</div>`;
+}
+
+function modalCashImport(){const isE=es();return`
+<h3>${isE?'Importar Movimientos de Caja':'Import Cash Movements'}</h3>
+<div class="mf">
+  <div class="mf-field full"><label>${isE?'Formato de Importación':'Import Format'}</label>
+    <select><option>OFX (Open Financial Exchange)</option><option>CSV — Banco Universal</option><option>MT940 / SWIFT</option><option>QBO (QuickBooks Online)</option></select></div>
+  <div class="mf-field full"><label>${isE?'Cuenta Destino':'Destination Account'}</label>
+    <select><option>BofA ****4821</option><option>Wells Fargo ****9201</option><option>${isE?'Caja Chica':'Petty Cash'}</option></select></div>
+  <div class="mf-field full"><label>${isE?'Archivo':'File'}</label>
+    <input type="file" accept=".ofx,.csv,.mt940,.qbo"></div>
+</div>
+<div class="alert a-info" style="margin-top:10px;font-size:11px">
+  ${isE?'El motor de IA clasificará automáticamente cada movimiento por categoría y sugerirá la cuenta contable. Importación directa disponible en la sección "Conexión Bancaria".':'The AI engine will automatically classify each movement by category and suggest the GL account. Direct import available in "Bank Connection" section.'}
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="closeModal();nav('bankconn')">${isE?'Usar Conexión Directa':'Use Direct Connection'}</button>
+  <button class="btn btn-gold" onclick="closeModal();gMsg(es()?'✓ Archivo importado y clasificado por IA':'✓ File imported and AI-classified')">${isE?'↓ Importar Archivo':'↓ Import File'}</button>
+</div>`}
+
+// ══════════════════════════════════════════════════════
+// MODULE: BANK CONNECTIONS — Entidades Financieras por Cliente
+// ══════════════════════════════════════════════════════
+function rBankConn(){
+  const isE=es();
+
+  // Each client can have multiple financial institutions
+  const connections = [
+    { clientId:'CLT-001', clientName:'Skyline Builders Inc.', banks:[
+      { id:'BC-001', inst:'Bank of America',  type:'Checking', acct:'****4821', bal:398420, status:'connected', protocol:'OFX', lastSync:'hace 2 min',   currency:'USD', aba:'026009593', swift:'BOFAUS3N' },
+      { id:'BC-002', inst:'Wells Fargo',      type:'Payroll',  acct:'****9201', bal:144380, status:'connected', protocol:'OFX', lastSync:'hace 5 min',   currency:'USD', aba:'121000248', swift:'WFBIUS6S' },
+      { id:'BC-003', inst:'Chase Business',   type:'HELOC',    acct:'****3345', bal:800000, status:'warning',   protocol:'API', lastSync:'hace 12 min',  currency:'USD', aba:'021000021', swift:'CHASUS33' },
+    ]},
+    { clientId:'CLT-002', clientName:'Oceanic Dev. Group', banks:[
+      { id:'BC-004', inst:'Citibank',         type:'Checking', acct:'****7712', bal:284100, status:'connected', protocol:'OFX', lastSync:'hace 3 min',   currency:'USD', aba:'021000089', swift:'CITIUS33' },
+      { id:'BC-005', inst:'Banco Santander',  type:'Savings',  acct:'****2204', bal:95000,  status:'connected', protocol:'SWIFT MT940', lastSync:'1h ago', currency:'USD', aba:'',          swift:'BSCHESMMXXX' },
+    ]},
+    { clientId:'CLT-003', clientName:'Rivera & Associates', banks:[
+      { id:'BC-006', inst:'TD Bank',          type:'Checking', acct:'****5518', bal:42800,  status:'connected', protocol:'CSV', lastSync:'hace 1h',      currency:'USD', aba:'026013673', swift:'NRTHUS33' },
+    ]},
+    { clientId:'CLT-004', clientName:'NovaTech Solutions', banks:[
+      { id:'BC-007', inst:'Silicon Valley Bank', type:'Checking', acct:'****9920', bal:188400, status:'error', protocol:'API', lastSync:'Error 3h ago', currency:'USD', aba:'121140399', swift:'SVBKUS6S' },
+    ]},
+    // User-created clients
+    ...DB.clients.filter(c=>!['CLT-001','CLT-002','CLT-003','CLT-004'].includes(c.id)).map(c=>({
+      clientId:c.id, clientName:c.name, banks:[]
+    })),
+  ];
+
+  const totalConnected = connections.reduce((s,c)=>s+c.banks.filter(b=>b.status==='connected').length,0);
+  const totalWarning   = connections.reduce((s,c)=>s+c.banks.filter(b=>b.status==='warning'||b.status==='error').length,0);
+  const totalBalance   = connections.reduce((s,c)=>s+c.banks.filter(b=>b.status==='connected').reduce((a,b)=>a+b.bal,0),0);
+
+  // Protocol color
+  const protoColor = p=>p==='API'?'info':p==='OFX'?'ok':p.includes('SWIFT')?'gold':'neu';
+
+  return`
+<div class="page-header">
+  <div>
+    <div class="page-title">${isE?'Conexión con Entidades Financieras':'Financial Institution Connections'}</div>
+    <div class="page-subtitle">${isE?'Open Banking · OFX · SWIFT MT940 · API REST · CSV — Sincronización automática por cliente':'Open Banking · OFX · SWIFT MT940 · REST API · CSV — Auto-sync per client'}</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-ghost btn-sm" onclick="nav('bankfeed')">${isE?'Ver Transacciones':'View Transactions'}</button>
+    <button class="btn btn-navy btn-sm" onclick="openModal(modalAddBankConn())">${isE?'+ Conectar Banco':'+ Connect Bank'}</button>
+  </div>
+</div>
+
+<!-- STATUS STRIP -->
+<div class="g3">
+  ${[
+    [isE?'Conexiones Activas':'Active Connections', totalConnected, 'success', isE?'Sincronización automática':'Auto-sync'],
+    [isE?'Requieren Atención':'Need Attention', totalWarning, totalWarning>0?'danger':'stone', totalWarning>0?(isE?'Error o advertencia':'Error or warning'):(isE?'Todo OK':'All OK')],
+    [isE?'Saldo Total Verificado':'Total Verified Balance', fmt(totalBalance), 'gold', isE?'Suma de cuentas conectadas':'Sum of connected accounts'],
+  ].map(([l,v,c,s])=>`<div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div>
+    <div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:${typeof v==='string'?16:22}px">${v}</div>
+    <div class="kpi-sub">${s}</div></div>`).join('')}
+</div>
+
+<!-- CONNECTIONS BY CLIENT -->
+${connections.map(c=>`
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">🏢 ${c.clientName}</div>
+      <div class="card-sub">${c.clientId} · ${c.banks.length} ${isE?'cuenta(s) vinculada(s)':'account(s) linked'}</div>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalAddBankConn('${c.clientId}','${c.clientName}'))">${isE?'+ Agregar Banco':'+ Add Bank'}</button>
+  </div>
+
+  ${c.banks.length===0?`
+  <div style="text-align:center;padding:24px;color:var(--stone)">
+    <div style="font-size:28px;margin-bottom:8px">🏦</div>
+    <div style="font-size:13px;font-weight:500;margin-bottom:6px">${isE?'Sin cuentas vinculadas':'No accounts linked'}</div>
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalAddBankConn('${c.clientId}','${c.clientName}'))">${isE?'+ Conectar Primera Cuenta':'+ Connect First Account'}</button>
+  </div>`:``}
+
+  ${c.banks.length>0?`
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+  ${c.banks.map(b=>`
+  <div style="background:var(--stone-pale);border-radius:var(--radius-lg);padding:14px;border-left:4px solid var(--${b.status==='connected'?'success':b.status==='warning'?'warning':'danger'})">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="width:38px;height:38px;border-radius:8px;background:var(--navy);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--gold)">${b.inst.split(' ').map(w=>w[0]).join('').slice(0,3)}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600;color:var(--navy)">${b.inst}</div>
+        <div style="font-size:11px;color:var(--stone)">${b.type} · ${b.acct}</div>
+      </div>
+      <div style="width:10px;height:10px;border-radius:50%;background:var(--${b.status==='connected'?'success':b.status==='warning'?'warning':'danger'});flex-shrink:0"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;margin-bottom:10px">
+      <div><span style="color:var(--stone)">${isE?'Saldo:':'Balance:'}</span> <strong class="mono">${fmt(b.bal)}</strong></div>
+      <div><span style="color:var(--stone)">${isE?'Moneda:':'Currency:'}</span> <strong>${b.currency}</strong></div>
+      <div><span style="color:var(--stone)">Protocolo:</span> <span class="badge b-${protoColor(b.protocol)}" style="font-size:9px">${b.protocol}</span></div>
+      <div><span style="color:var(--stone)">${isE?'Último sync:':'Last sync:'}</span> <span style="color:var(--${b.status==='error'?'danger':'stone'})">${b.lastSync}</span></div>
+      ${b.aba?`<div><span style="color:var(--stone)">ABA/Routing:</span> <code style="font-size:10px">${b.aba}</code></div>`:''}
+      ${b.swift?`<div><span style="color:var(--stone)">SWIFT:</span> <code style="font-size:10px">${b.swift}</code></div>`:''}
+    </div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-sm btn-ghost" style="flex:1" onclick="gMsg(es()?'Sincronizando ${b.inst}...':'Syncing ${b.inst}...')">${isE?'↺ Sync':'↺ Sync'}</button>
+      <button class="btn btn-sm btn-ghost" style="flex:1" onclick="nav('cashbook')">${isE?'Ver Mov.':'Movements'}</button>
+      <button class="btn btn-sm btn-ghost" onclick="gMsg(es()?'Configuración bancaria...':'Bank settings...')">⚙</button>
+    </div>
+    ${b.status==='error'?`<div class="alert a-danger mt2" style="font-size:10px;padding:6px 10px">⚠ ${isE?'Error de conexión. Verifique credenciales API o renueve autorización.':'Connection error. Verify API credentials or renew authorization.'}</div>`:''}
+    ${b.status==='warning'?`<div class="alert a-warn mt2" style="font-size:10px;padding:6px 10px">⚠ ${isE?'Token expira pronto. Renueve autorización en el portal bancario.':'Token expiring soon. Renew authorization in bank portal.'}</div>`:''}
+  </div>`).join('')}
+  </div>`:``}
+</div>`).join('')}
+
+<!-- PROTOCOLS EXPLAINED -->
+<div class="card">
+  <div class="card-header"><div class="card-title">${isE?'Protocolos de Conexión Bancaria Soportados':'Supported Bank Connection Protocols'}</div></div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+  ${[
+    { proto:'Open Banking API', icon:'⚡', color:'info',
+      desc_en:'Real-time REST API connection. Best for US banks (Plaid, MX, Finicity). Full transaction history and balance.',
+      desc_es:'Conexión REST API en tiempo real. Ideal para bancos USA (Plaid, MX, Finicity). Historial y saldo completo.' },
+    { proto:'OFX / QFX', icon:'📄', color:'ok',
+      desc_en:'Open Financial Exchange — industry standard. Supported by QuickBooks, Quicken, most US credit unions and banks.',
+      desc_es:'Estándar OFX — soportado por QuickBooks, Quicken, cooperativas de crédito y bancos USA.' },
+    { proto:'SWIFT MT940', icon:'🌐', color:'gold',
+      desc_en:'International bank statement format. Required for Santander, HSBC, BBVA, Scotiabank and European banks.',
+      desc_es:'Formato internacional SWIFT. Requerido para Santander, HSBC, BBVA, Scotiabank y bancos europeos.' },
+    { proto:'CSV / Excel', icon:'📊', color:'stone',
+      desc_en:'Manual import via CSV/Excel file. Compatible with any bank. AI auto-classifies transactions on import.',
+      desc_es:'Importación manual CSV/Excel. Compatible con cualquier banco. IA clasifica transacciones automáticamente.' },
+  ].map(p=>`
+  <div style="background:var(--stone-pale);border-radius:var(--radius-lg);padding:14px;border-top:3px solid var(--${p.color})">
+    <div style="font-size:24px;margin-bottom:8px">${p.icon}</div>
+    <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:6px">${p.proto}</div>
+    <div style="font-size:11px;color:var(--stone);line-height:1.6">${isE?p.desc_es:p.desc_en}</div>
+  </div>`).join('')}
+  </div>
+</div>`;
+}
+
+function modalAddBankConn(clientId, clientName){
+  const isE=es();
+  const clients=DB.clients.filter(c=>c.status==='active');
+  return`
+<h3>${isE?'Conectar Nueva Cuenta Bancaria':'Connect New Bank Account'}</h3>
+<div class="mf">
+  <div class="mf-field full"><label>${isE?'Cliente':'Client'}</label>
+    <select id="abc-client">${clients.map(c=>`<option value="${c.id}" ${c.id===clientId?'selected':''}>${c.name}</option>`).join('')}</select></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Institución Financiera':'Financial Institution'}</label>
+      <input type="text" id="abc-inst" placeholder="${isE?'Ej: Bank of America':'e.g. Bank of America'}"></div>
+    <div class="mf-field"><label>${isE?'Tipo de Cuenta':'Account Type'}</label>
+      <select id="abc-type"><option>${isE?'Cuenta Corriente':'Checking'}</option><option>${isE?'Cuenta de Ahorros':'Savings'}</option><option>${isE?'Nómina':'Payroll'}</option><option>${isE?'Línea de Crédito':'Credit Line'}</option></select></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Últimos 4 dígitos':'Last 4 digits'}</label><input type="text" id="abc-acct" placeholder="1234" maxlength="4"></div>
+    <div class="mf-field"><label>${isE?'Moneda':'Currency'}</label>
+      <select id="abc-curr"><option value="USD">USD — Dólar</option><option value="EUR">EUR — Euro</option><option value="MXN">MXN — Peso</option><option value="COP">COP — Peso Col.</option><option value="PEN">PEN — Sol</option></select></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Protocolo de Conexión':'Connection Protocol'}</label>
+    <select id="abc-proto" onchange="showBankProtocolFields(this.value)">
+      <option value="api">Open Banking API (Plaid/MX)</option>
+      <option value="ofx">OFX / QFX</option>
+      <option value="swift">SWIFT MT940</option>
+      <option value="csv">CSV / Excel Manual</option>
+    </select></div>
+  <div id="abc-proto-fields" style="display:flex;flex-direction:column;gap:10px">
+    <div class="mf-row">
+      <div class="mf-field"><label>ABA / Routing Number</label><input type="text" placeholder="021000021"></div>
+      <div class="mf-field"><label>SWIFT / BIC Code</label><input type="text" placeholder="CHASUS33"></div>
+    </div>
+    <div class="mf-field full"><label>${isE?'API Key / Token (cifrado)':'API Key / Token (encrypted)'}</label>
+      <input type="password" placeholder="${isE?'Se cifra con AES-256 — nunca se almacena en texto plano':'Encrypted with AES-256 — never stored in plain text'}"></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Frecuencia de Sync':'Sync Frequency'}</label>
+      <select><option>${isE?'Cada 15 minutos':'Every 15 minutes'}</option><option>${isE?'Cada hora':'Every hour'}</option><option>${isE?'Diario':'Daily'}</option><option>${isE?'Manual':'Manual'}</option></select></div>
+    <div class="mf-field"><label>${isE?'Fecha inicio importación':'Import start date'}</label>
+      <input type="date" value="${new Date(Date.now()-90*24*3600*1000).toISOString().slice(0,10)}"></div>
+  </div>
+</div>
+<div class="alert a-info" style="margin-top:10px;font-size:11px">
+  🔒 ${isE?'Las credenciales bancarias se cifran con AES-256. Nunca se almacenan en texto plano. Conexión via TLS 1.3 con certificate pinning.':'Bank credentials encrypted with AES-256. Never stored in plain text. Connection via TLS 1.3 with certificate pinning.'}
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-gold" onclick="closeModal();gMsg(es()?'✓ Banco conectado. Primera sincronización iniciada...':'✓ Bank connected. First sync initiated...')">${isE?'✓ Conectar y Sincronizar':'✓ Connect & Sync'}</button>
+</div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// MODULE: INVENTORY — Control de Inventarios
+// ══════════════════════════════════════════════════════
+function rInventory(){
+  const isE=es();
+
+  const items = [
+    { id:'INV-001', name_en:'Portland Cement Type I/II — 94lb bags', name_es:'Cemento Portland Tipo I/II — sacos 94lb', cat:'mat', unit:'bag',  qty:850,  min:200, max:2000, cost:12.80,  location:'Warehouse A', proj:'PRJ-001', status:'ok'      },
+    { id:'INV-002', name_en:'#4 Rebar — 20ft sticks',               name_es:'Varilla #4 — barras 20ft',                cat:'mat', unit:'ea',   qty:1240, min:500, max:5000, cost:8.40,   location:'Yard B',      proj:'PRJ-001', status:'ok'      },
+    { id:'INV-003', name_en:'Concrete Form Plywood — 3/4"',          name_es:'Triplay de Cimbra — 3/4"',               cat:'mat', unit:'sheet', qty:85,   min:100, max:500,  cost:48.00,  location:'Warehouse A', proj:'PRJ-002', status:'low'     },
+    { id:'INV-004', name_en:'Structural Steel W8x31 — 20ft',        name_es:'Acero Estructural W8x31 — 20ft',         cat:'mat', unit:'ea',   qty:0,    min:20,  max:200,  cost:285.00, location:'Yard C',      proj:'PRJ-002', status:'out'     },
+    { id:'INV-005', name_en:'Hydraulic Concrete Pump Oil — 5gal',   name_es:'Aceite Bomba de Concreto — 5gal',        cat:'equip',unit:'gal',  qty:28,   min:10,  max:100,  cost:42.00,  location:'Shop',        proj:'ALL',     status:'ok'      },
+    { id:'INV-006', name_en:'Safety Harness — Full Body',            name_es:'Arnés de Seguridad — Cuerpo Completo',  cat:'safety',unit:'ea',  qty:22,   min:15,  max:60,   cost:85.00,  location:'Tool Room',   proj:'ALL',     status:'ok'      },
+    { id:'INV-007', name_en:'PVC Conduit 1" — 10ft',                name_es:'Tubería PVC 1" — 3m',                    cat:'elec', unit:'ea',   qty:340,  min:100, max:1000, cost:4.20,   location:'Warehouse B', proj:'PRJ-001', status:'ok'      },
+    { id:'INV-008', name_en:'Wire 12AWG THHN — 250ft rolls',        name_es:'Cable 12AWG THHN — rollos 75m',         cat:'elec', unit:'roll', qty:18,   min:20,  max:100,  cost:62.00,  location:'Warehouse B', proj:'PRJ-001', status:'low'     },
+  ];
+
+  const catColors = {mat:'info',equip:'gold',safety:'success',elec:'warning'};
+  const catLabels = {mat:isE?'Materiales':'Materials',equip:isE?'Equipo':'Equipment',safety:isE?'Seguridad':'Safety',elec:isE?'Eléctrico':'Electrical'};
+
+  const totalValue = items.reduce((s,i)=>s+i.qty*i.cost,0);
+  const lowItems   = items.filter(i=>i.status==='low'||i.status==='out').length;
+  const outItems   = items.filter(i=>i.status==='out').length;
+
+  // Category totals
+  const catTotals = {};
+  items.forEach(i=>{if(!catTotals[i.cat])catTotals[i.cat]=0; catTotals[i.cat]+=i.qty*i.cost;});
+
+  return`
+<div class="page-header">
+  <div>
+    <div class="page-title">${isE?'Control de Inventarios':'Inventory Control'}</div>
+    <div class="page-subtitle">${isE?'Materiales de construcción · Stock mínimo/máximo · Costeo FIFO / Promedio Ponderado · Vinculado a proyectos':'Construction materials · Min/max stock · FIFO / Weighted Average costing · Project-linked'}</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalInventoryMove())">${isE?'↔ Mover Stock':'↔ Move Stock'}</button>
+    <button class="btn btn-navy btn-sm" onclick="openModal(modalNewInventoryItem())">${isE?'+ Nuevo Artículo':'+ New Item'}</button>
+  </div>
+</div>
+
+<!-- KPIs -->
+<div class="kpi-grid">
+  ${kpi(isE?'Valor Total Inventario':'Total Inventory Value', fmt(totalValue), isE?`${items.length} artículos`:`${items.length} items`,'gold','')}
+  ${kpi(isE?'Artículos bajo Mínimo':'Items Below Minimum', lowItems+'', lowItems>0?(isE?'Requiere reabasto':'Reorder needed'):(isE?'Stock OK':'Stock OK'),lowItems>0?'danger':'success','')}
+  ${kpi(isE?'Agotados':'Out of Stock', outItems+'', outItems>0?(isE?'Sin existencia':'Zero on hand'):(isE?'Ninguno':'None'),outItems>0?'danger':'success','')}
+  ${kpi(isE?'Categorías':'Categories', Object.keys(catTotals).length+'', isE?'Tipos de artículo':'Item types','info','')}
+</div>
+
+${lowItems>0?`<div class="alert a-danger">⚠ ${lowItems} ${isE?'artículo(s) con stock bajo o agotado. Genere órdenes de compra.':'item(s) low or out of stock. Generate purchase orders.'}</div>`:''}
+
+<!-- INVENTORY TABLE -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">${isE?'Registro de Inventario':'Inventory Register'}</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="openModal(modalInventoryImport())">${isE?'↓ Importar':'↓ Import'}</button>
+      <button class="btn btn-ghost btn-sm">↓ PDF</button>
+    </div>
+  </div>
+  <div style="overflow-x:auto"><table class="dt">
+    <thead><tr>
+      <th>ID</th>
+      <th style="min-width:220px">${isE?'Artículo':'Item'}</th>
+      <th>${isE?'Categoría':'Category'}</th>
+      <th class="num">${isE?'Existencia':'On Hand'}</th>
+      <th class="num">${isE?'Mín / Máx':'Min / Max'}</th>
+      <th class="num">${isE?'Costo Unit.':'Unit Cost'}</th>
+      <th class="num">${isE?'Valor Total':'Total Value'}</th>
+      <th>${isE?'Ubicación':'Location'}</th>
+      <th>${isE?'Proyecto':'Project'}</th>
+      <th>${isE?'Estado':'Status'}</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+    ${items.map(i=>`<tr ${i.status==='out'?'style="background:var(--danger-light)"':i.status==='low'?'style="background:var(--warning-light)"':''}>
+      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${i.id}</code></td>
+      <td style="font-size:12.5px;font-weight:500">${isE?i.name_es:i.name_en}</td>
+      <td><span class="badge b-${catColors[i.cat]}" style="font-size:9px">${catLabels[i.cat]}</span></td>
+      <td class="num mono bold ${i.status==='out'?'red':i.status==='low'?'warning':'green'}">${i.qty} ${i.unit}</td>
+      <td class="num mono" style="font-size:11px;color:var(--stone)">${i.min} / ${i.max}</td>
+      <td class="num mono">${fmt(i.cost)}</td>
+      <td class="num mono bold">${fmt(i.qty*i.cost)}</td>
+      <td style="font-size:11px;color:var(--stone)">${i.location}</td>
+      <td><span class="badge b-neu" style="font-size:9px">${i.proj}</span></td>
+      <td>
+        ${i.status==='out'
+          ?`<span class="badge b-no" style="font-size:10px">🚨 ${isE?'Agotado':'Out of Stock'}</span>`
+          :i.status==='low'
+          ?`<span class="badge b-warn" style="font-size:10px">⚠ ${isE?'Stock Bajo':'Low Stock'}</span>`
+          :`<span class="badge b-ok" style="font-size:10px">${isE?'OK':'OK'}</span>`}
+      </td>
+      <td>
+        <button class="btn btn-sm btn-ghost" onclick="openModal(modalInventoryAdjust('${i.id}','${isE?i.name_es:i.name_en}',${i.qty}))">${isE?'Ajustar':'Adjust'}</button>
+      </td>
+    </tr>`).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:var(--navy);color:#fff;font-weight:700">
+        <td colspan="6">TOTAL INVENTARIO</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(totalValue)}</td>
+        <td colspan="4"></td>
+      </tr>
+    </tfoot>
+  </table></div>
+  <div class="alert a-info mt2" style="font-size:11px">
+    ⓘ ${isE?'Método de costeo: Promedio Ponderado (compatible GAAP ASC 330 e IFRS IAS 2). Los costos de inventario se transfieren automáticamente a WIP cuando se asignan a un proyecto.':'Costing method: Weighted Average (compliant GAAP ASC 330 & IFRS IAS 2). Inventory costs automatically transferred to WIP when assigned to a project.'}
+  </div>
+</div>
+
+<!-- REORDER ALERTS -->
+${lowItems>0?`<div class="card">
+  <div class="card-header"><div class="card-title">${isE?'Alertas de Reabasto — Órdenes de Compra Sugeridas':'Reorder Alerts — Suggested Purchase Orders'}</div></div>
+  ${items.filter(i=>i.status!=='ok').map(i=>{
+    const reorderQty=i.max-i.qty; const reorderValue=reorderQty*i.cost;
+    return`<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(0,0,0,.05)">
+      <div style="width:34px;height:34px;border-radius:8px;background:${i.status==='out'?'var(--danger-light)':'var(--warning-light)'};display:flex;align-items:center;justify-content:center;font-size:16px">${i.status==='out'?'🚨':'⚠'}</div>
+      <div style="flex:1">
+        <div style="font-size:12.5px;font-weight:600;color:var(--navy)">${isE?i.name_es:i.name_en}</div>
+        <div style="font-size:11px;color:var(--stone)">${isE?'Existencia actual':'Current stock'}: <strong style="color:${i.status==='out'?'var(--danger)':'var(--warning)'}">${i.qty} ${i.unit}</strong> · ${isE?'Mínimo':'Minimum'}: ${i.min} · ${isE?'Reabastecer':'Reorder'}: <strong>${reorderQty} ${i.unit}</strong></div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--navy)">${fmt(reorderValue)}</div>
+        <div style="font-size:10px;color:var(--stone)">${isE?'Costo estimado':'Est. cost'}</div>
+      </div>
+      <button class="btn btn-sm btn-navy" onclick="gMsg(es()?'Orden de compra generada para ${i.id}':'Purchase order generated for ${i.id}')">${isE?'Generar OC':'Generate PO'}</button>
+    </div>`;
+  }).join('')}
+</div>`:''}`;
+}
+
+function modalNewInventoryItem(){const isE=es();return`
+<h3>${isE?'Nuevo Artículo de Inventario':'New Inventory Item'}</h3>
+<div class="mf">
+  <div class="mf-field full"><label>${isE?'Descripción del Artículo':'Item Description'}</label>
+    <input type="text" placeholder="${isE?'Ej: Cemento Portland 94lb':'e.g. Portland Cement 94lb bag'}"></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Categoría':'Category'}</label>
+      <select><option>${isE?'Materiales':'Materials'}</option><option>${isE?'Equipo':'Equipment'}</option><option>${isE?'Seguridad':'Safety'}</option><option>${isE?'Eléctrico':'Electrical'}</option><option>${isE?'Herramientas':'Tools'}</option></select></div>
+    <div class="mf-field"><label>${isE?'Unidad de Medida':'Unit of Measure'}</label>
+      <select><option>bag</option><option>ea</option><option>sheet</option><option>gal</option><option>roll</option><option>ton</option><option>yd³</option><option>lf</option></select></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Cantidad Inicial':'Initial Quantity'}</label><input type="number" placeholder="0" min="0"></div>
+    <div class="mf-field"><label>${isE?'Costo Unitario ($)':'Unit Cost ($)'}</label><input type="number" placeholder="0.00" min="0" step="0.01"></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Cantidad Mínima':'Min Quantity'}</label><input type="number" placeholder="50" min="0"></div>
+    <div class="mf-field"><label>${isE?'Cantidad Máxima':'Max Quantity'}</label><input type="number" placeholder="500" min="0"></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Ubicación':'Storage Location'}</label><input type="text" placeholder="${isE?'Ej: Almacén A':'e.g. Warehouse A'}"></div>
+    <div class="mf-field"><label>${isE?'Proyecto':'Project'}</label>
+      <select><option value="ALL">ALL — General</option>${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}</select></div>
+  </div>
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Artículo agregado al inventario':'✓ Item added to inventory')">${isE?'✓ Agregar':'✓ Add Item'}</button>
+</div>`}
+
+function modalInventoryAdjust(id,name,qty){const isE=es();return`
+<h3>${isE?'Ajuste de Inventario':'Inventory Adjustment'}</h3>
+<div style="background:var(--stone-pale);border-radius:var(--radius);padding:12px;margin-bottom:14px">
+  <div style="font-size:12px;font-weight:600;color:var(--navy)">${name}</div>
+  <div style="font-size:11px;color:var(--stone)">${id} · ${isE?'Existencia actual':'Current stock'}: <strong>${qty}</strong></div>
+</div>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Tipo de Ajuste':'Adjustment Type'}</label>
+      <select><option>${isE?'Entrada (Compra/Recepción)':'Entry (Purchase/Receipt)'}</option><option>${isE?'Salida (Uso en Obra)':'Exit (Used on Project)'}</option><option>${isE?'Ajuste por Inventario Físico':'Physical Count Adjustment'}</option><option>${isE?'Pérdida / Merma':'Loss / Waste'}</option></select></div>
+    <div class="mf-field"><label>${isE?'Cantidad':'Quantity'}</label><input type="number" placeholder="0" min="0"></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Proyecto / Destino':'Project / Destination'}</label>
+    <select><option value="ALL">ALL — General</option>${PROJECTS.map(p=>`<option>${p.id} — ${p.name}</option>`).join('')}</select></div>
+  <div class="mf-field full"><label>${isE?'Notas':'Notes'}</label><input type="text" placeholder="${isE?'Motivo del ajuste...':'Reason for adjustment...'}"></div>
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Ajuste registrado':'✓ Adjustment recorded')">${isE?'✓ Registrar Ajuste':'✓ Record Adjustment'}</button>
+</div>`}
+
+function modalInventoryMove(){const isE=es();return`
+<h3>${isE?'Transferencia de Stock entre Proyectos':'Stock Transfer Between Projects'}</h3>
+<div class="mf">
+  <div class="mf-field full"><label>${isE?'Artículo':'Item'}</label>
+    <select><option>${isE?'Cemento Portland 94lb':'Portland Cement 94lb'}</option><option>${isE?'Varilla #4 20ft':'Rebar #4 20ft'}</option></select></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'De Proyecto':'From Project'}</label>
+      <select>${PROJECTS.map(p=>`<option>${p.id} — ${p.name}</option>`).join('')}</select></div>
+    <div class="mf-field"><label>${isE?'A Proyecto':'To Project'}</label>
+      <select>${PROJECTS.map(p=>`<option>${p.id} — ${p.name}</option>`).join('')}</select></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Cantidad a Transferir':'Quantity to Transfer'}</label><input type="number" placeholder="0" min="0"></div>
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="closeModal();gMsg(es()?'✓ Transferencia registrada':'✓ Transfer recorded')">${isE?'✓ Transferir':'✓ Transfer'}</button>
+</div>`}
+
+function modalInventoryImport(){const isE=es();return`
+<h3>${isE?'Importar Inventario':'Import Inventory'}</h3>
+<div class="mf">
+  <div class="mf-field full"><label>${isE?'Formato':'Format'}</label>
+    <select><option>CSV</option><option>Excel XLSX</option><option>${isE?'Exportación Procore':'Procore Export'}</option><option>${isE?'Exportación Viewpoint':'Viewpoint Export'}</option></select></div>
+  <div class="mf-field full"><label>${isE?'Archivo':'File'}</label><input type="file" accept=".csv,.xlsx"></div>
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-gold" onclick="closeModal();gMsg(es()?'✓ Inventario importado':'✓ Inventory imported')">${isE?'↓ Importar':'↓ Import'}</button>
 </div>`}
 
 function modalAuditExport(){const isE=es();return`
