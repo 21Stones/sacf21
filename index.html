@@ -488,6 +488,7 @@ By signing, I affirm: (1) Strict confidentiality of all client financial data ac
         <div class="sb-sec-title" id="sbt-billing">Ventas y Cobranza</div>
         <div class="nav-item" onclick="nav('sales')"><span class="nav-icon">🧾</span><span id="sn-sales">Ventas / Facturación</span></div>
         <div class="nav-item" onclick="nav('ar')"><span class="nav-icon">📥</span><span id="sn-ar">Cuentas por Cobrar</span></div>
+        <div class="nav-item" onclick="nav('purchases')"><span class="nav-icon">🛒</span><span id="sn-pur">Compras / Órdenes de Compra</span></div>
         <div class="nav-item" onclick="nav('ap')"><span class="nav-icon">📤</span><span id="sn-ap">Cuentas por Pagar</span></div>
       </div>
       <div class="sb-section">
@@ -563,11 +564,12 @@ const DB = {
     { id:'JE-0339',  date:'2026-03-27', desc:'AP Elite MEP Group inv #0412',         proj:'PRJ-001', dr:'1-01-03-001', cr:'2-01-01-002', amt:84500,  std:'both', wip:true  },
     { id:'JE-0338',  date:'2026-03-26', desc:'Payroll accrual March',                proj:'ALL',     dr:'5-01-02-001', cr:'2-01-03-001', amt:97230,  std:'both', wip:true  },
   ],
-  cos:       [],        // change orders added by user
-  assets:    [],        // fixed assets added by user
-  inventory: [],        // inventory items added by user
-  bankConns: [],        // user-added bank connections
-  invoices:  [],        // sales invoices
+  cos:           [],   // change orders
+  assets:        [],   // fixed assets
+  inventory:     [],   // inventory items
+  bankConns:     [],   // bank connections
+  invoices:      [],   // sales invoices
+  purchaseOrders:[],   // purchase orders (OC)
 };
 
 // ── STORAGE ENGINE ──────────────────────────────────────────
@@ -584,9 +586,10 @@ function dbSaveSync() {
       cos:       DB.cos,
       assets:    DB.assets,
       journal:   DB.journal,
-      inventory: DB.inventory||[],
-      bankConns: DB.bankConns||[],
-      invoices:  DB.invoices||[],
+      inventory:      DB.inventory||[],
+      bankConns:      DB.bankConns||[],
+      invoices:       DB.invoices||[],
+      purchaseOrders: DB.purchaseOrders||[],
       lang:      S.lang,
       projects:  PROJECTS,
       sectors:   SECTORS,
@@ -627,10 +630,11 @@ async function dbLoad() {
     if (saved.subs?.length)    DB.subs    = saved.subs;
     if (saved.cos?.length)     DB.cos     = saved.cos;
     if (saved.assets?.length)  DB.assets  = saved.assets;
-    if (saved.journal?.length)    DB.journal    = saved.journal;
-    if (saved.inventory?.length)  DB.inventory  = saved.inventory;
-    if (saved.bankConns?.length)  DB.bankConns  = saved.bankConns;
-    if (saved.invoices?.length)   DB.invoices   = saved.invoices;
+    if (saved.journal?.length)         DB.journal         = saved.journal;
+    if (saved.inventory?.length)       DB.inventory       = saved.inventory;
+    if (saved.bankConns?.length)       DB.bankConns       = saved.bankConns;
+    if (saved.invoices?.length)        DB.invoices        = saved.invoices;
+    if (saved.purchaseOrders?.length)  DB.purchaseOrders  = saved.purchaseOrders;
     if (saved.lang)            S.lang     = saved.lang;
     if (saved.sectors?.length) {
       // Merge saved sectors with defaults (no duplicates)
@@ -807,7 +811,7 @@ function openNewClientModal() {
   <div class="mf-row">
     <div class="mf-field">
       <label>${isE?'Sector / Industria':'Sector / Industry'} <span style="color:var(--danger)">*</span></label>
-      <select id="nc-sector" onchange="updateCOAPreview()">
+      <select id="nc-sector" onchange="updateCOAPreview();updateClientModalBySector()">
         ${sectorOpts}
         <option value="__custom__">${isE?'+ Agregar sector nuevo...':'+ Add custom sector...'}</option>
       </select>
@@ -826,6 +830,11 @@ function openNewClientModal() {
   <div class="mf-field full" id="nc-custom-sector-wrap" style="display:none">
     <label>${isE?'Nombre del nuevo sector':'New sector name'}</label>
     <input type="text" id="nc-custom-sector" placeholder="${isE?'Ej: Minería & Extracción':'e.g. Mining & Extraction'}">
+  </div>
+
+  <!-- Construction-only: project tracking notice -->
+  <div id="nc-constr-note" style="background:var(--gold-pale);border-left:3px solid var(--gold);border-radius:var(--radius);padding:9px 12px;font-size:11px;color:var(--navy)">
+    🏗 ${isE?'Sector Construcción: se habilitarán módulos de WIP, Retenciones, Job Cost y Revenue Engine (ASC 606/NIIF 15).':'Construction Sector: WIP, Retainage, Job Cost and Revenue Engine modules (ASC 606/IFRS 15) will be enabled.'}
   </div>
 
   <!-- COA Preview — auto-updates based on sector -->
@@ -878,6 +887,7 @@ function openNewClientModal() {
   // Wire up the sector dropdown after modal renders
   setTimeout(() => {
     updateCOAPreview();
+    updateClientModalBySector();
     const sectorSel = document.getElementById('nc-sector');
     if (sectorSel) sectorSel.addEventListener('change', function() {
       const customWrap = document.getElementById('nc-custom-sector-wrap');
@@ -888,8 +898,20 @@ function openNewClientModal() {
         if (customWrap) customWrap.style.display = 'none';
         updateCOAPreview();
       }
+      updateClientModalBySector();
     });
   }, 60);
+}
+
+function updateClientModalBySector() {
+  const sectorSel = document.getElementById('nc-sector');
+  if (!sectorSel) return;
+  const sector = sectorSel.value === '__custom__'
+    ? (document.getElementById('nc-custom-sector')?.value || '')
+    : sectorSel.value;
+  const isCons = CONSTRUCTION_SECTORS.some(s => sector.toLowerCase().includes(s.toLowerCase()));
+  const note = document.getElementById('nc-constr-note');
+  if (note) note.style.display = isCons ? 'block' : 'none';
 }
 
 function updateCOAPreview() {
@@ -1059,7 +1081,7 @@ const T={
     assets:'Fixed Assets',bs:'Balance Sheet',pl:'P&L Statement',
     cf:'Cash Flow',soce:'Stmt of Equity',jobcost:'Job Cost / Projects',revengine:'Revenue Engine',wip:'WIP / ASC 606',
     budget:'Live Budget',subs:'Subcontractors',security:'Security & Users',audit:'Master Audit Log',
-    sales:'Sales / Invoicing',ar:'Accounts Receivable',ap:'Accounts Payable',
+    sales:'Sales / Invoicing',ar:'Accounts Receivable',ap:'Accounts Payable',purchases:'Purchases / POs',
     core:'Core',billing:'Sales & Collections',fsTitle:'Financial Statements',construction:'Construction',administration:'Administration',
   },
   es:{
@@ -1072,7 +1094,7 @@ const T={
     assets:'Activos Fijos',bs:'Balance General',pl:'Estado de Resultados',
     cf:'Flujo de Efectivo',soce:'Estado de Capital',jobcost:'Costo por Proyecto',revengine:'Motor de Ingresos',wip:'WIP / NIIF 15',
     budget:'Presupuesto Vivo',subs:'Subcontratistas',security:'Seguridad y Usuarios',audit:'Bitácora Maestra',
-    sales:'Ventas / Facturación',ar:'Cuentas por Cobrar',ap:'Cuentas por Pagar',
+    sales:'Ventas / Facturación',ar:'Cuentas por Cobrar',ap:'Cuentas por Pagar',purchases:'Compras / Órdenes de Compra',
     core:'Núcleo',billing:'Ventas y Cobranza',fsTitle:'Estados Financieros',construction:'Construcción',administration:'Administración',
   }
 };
@@ -1091,7 +1113,7 @@ function applyI18n(){
     'sn-assets':'assets','sn-bs':'bs','sn-pl':'pl',
     'sn-cf':'cf','sn-soce':'soce','sn-jc':'jobcost','sn-rev':'revengine','sn-wip':'wip',
     'sn-bud':'budget','sn-subs':'subs','sn-sec':'security','sn-audit':'audit',
-    'sn-sales':'sales','sn-ar':'ar','sn-ap':'ap',
+    'sn-sales':'sales','sn-ar':'ar','sn-ap':'ap','sn-pur':'purchases',
     'sbt-core':'core','sbt-fs':'fsTitle','sbt-billing':'billing','sbt-constr':'construction','sbt-admin':'administration',
     'ob-sn':null,'ob-st':null,'ob-ss':null,'ob-sp':null,
   };
@@ -1635,7 +1657,7 @@ function renderMod(mod){
     cashbook:rCashbook, bankconn:rBankConn, inventory:rInventory,
     assets:rAssets,
     bs:rBS, pl:rPL, cf:rCF, soce:rSOCE,
-    sales:rSales, ar:rAR, ap:rAP,
+    sales:rSales, ar:rAR, ap:rAP, purchases:rPurchases,
     jobcost:rJobCost, revengine:rRevEngine, wip:rWIP, budget:rBudget, subs:rSubs,
     security:rSecurity, audit:rAudit
   };
@@ -1651,6 +1673,22 @@ document.addEventListener('click',e=>{if(e.target.id==='modal-bg')closeModal()})
 const es=()=>S.lang==='es';
 const fmt=(n,d=0)=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:d,maximumFractionDigits:d}).format(n);
 const fmtN=(n)=>n>=0?`<span class="green mono">${fmt(n)}</span>`:`<span class="red mono">(${fmt(Math.abs(n))})</span>`;
+
+// ── SECTOR HELPER ──────────────────────────────────────
+// Returns true if the active client is in a construction-related sector.
+// Retainage (retención) is only applicable to construction/contracting.
+const CONSTRUCTION_SECTORS = [
+  'Construction', 'Contracting', 'Real Estate Development',
+  'Real Estate', 'Infrastructure', 'Engineering',
+];
+function isConstruction() {
+  const client = DB.clients.find(c => c.name === S.client && c.status === 'active');
+  if (!client) return true; // default to showing retainage if no client loaded
+  const sector = (client.sector || '').toLowerCase();
+  return CONSTRUCTION_SECTORS.some(s => sector.includes(s.toLowerCase()));
+}
+// Alias for shorter inline use
+const isCons = () => isConstruction();
 
 // ══════════════════════════════════════════════════════
 // MODULE: DASHBOARD — Welcome screen + System overview
@@ -1716,10 +1754,11 @@ ${alertCount>0?`<div class="alert a-warn" style="display:flex;align-items:center
       {icon:'🔗', mod:'bankconn',   label_en:'Bank Connections',     label_es:'Conexión Bancaria',     color:'info',    section_en:'Cash',          section_es:'Caja'},
       {icon:'📡', mod:'bankfeed',   label_en:'Bank Feeds',           label_es:'Feeds Bancarios',       color:'stone',   section_en:'Cash',          section_es:'Caja'},
       {icon:'🏦', mod:'treasury',   label_en:'Treasury',             label_es:'Tesorería',             color:'navy',    section_en:'Cash',          section_es:'Caja'},
-      // Billing
+      // Billing & Purchases
       {icon:'🧾', mod:'sales',      label_en:'Sales / Invoicing',    label_es:'Ventas / Facturación',  color:'success', section_en:'Billing',       section_es:'Facturación'},
       {icon:'📥', mod:'ar',         label_en:'Accounts Receivable',  label_es:'Cuentas por Cobrar',    color:'success', section_en:'Billing',       section_es:'Facturación'},
-      {icon:'📤', mod:'ap',         label_en:'Accounts Payable',     label_es:'Cuentas por Pagar',     color:'warning', section_en:'Billing',       section_es:'Facturación'},
+      {icon:'🛒', mod:'purchases',  label_en:'Purchases / PO',       label_es:'Compras / OC',          color:'gold',    section_en:'Billing',       section_es:'Compras'},
+      {icon:'📤', mod:'ap',         label_en:'Accounts Payable',     label_es:'Cuentas por Pagar',     color:'warning', section_en:'Billing',       section_es:'Pagos'},
       {icon:'📦', mod:'inventory',  label_en:'Inventory Control',    label_es:'Control de Inventarios',color:'gold',    section_en:'Operations',    section_es:'Operaciones'},
       // Construction
       {icon:'🧱', mod:'jobcost',    label_en:'Job Cost',             label_es:'Costo por Proyecto',    color:'gold',    section_en:'Construction',  section_es:'Construcción'},
@@ -1849,10 +1888,10 @@ ${alertCount>0?`<div class="alert a-warn" style="display:flex;align-items:center
       ${[
         ['🧾',isE?'Nueva Factura de Venta':'New Sales Invoice','sales'],
         ['📥',isE?'Registrar Cobro':'Record Payment','ar'],
+        ['🛒',isE?'Nueva Orden de Compra':'New Purchase Order','purchases'],
         ['📤',isE?'Pagar Proveedor':'Pay Vendor','ap'],
         ['🧱',isE?'Nuevo Proyecto':'New Project','jobcost'],
         ['⚡',isE?'Motor de Ingresos ASC 606':'Revenue Engine ASC 606','revengine'],
-        ['📒',isE?'Mayor General':'General Ledger','gl'],
       ].map(([ico,lbl,mod])=>`
       <div onclick="nav('${mod}')" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--stone-pale);border-radius:var(--radius);cursor:pointer;transition:var(--tr)"
         onmouseover="this.style.background='var(--gold-pale)'" onmouseout="this.style.background='var(--stone-pale)'">
@@ -5855,23 +5894,22 @@ ${[['Nivel 1 — Exacto','42','$1,847,230','ok','94%'],['Nivel 2 — Fuzzy ±2d'
 
 function rAssets(){
   const isE=es();
-  // Seed default assets if DB.assets is empty
   const seedAssets = [
-    {id:'AST-001',desc:'Caterpillar 320 Excavator', cat:'Heavy Equipment',cost:184000,book:'SL',macrs:'5yr',life:5, date:'2022-01-15',slDepr:36800,macrsYr1:36800,accumulated:147200,status:'active'},
-    {id:'AST-002',desc:'Tower Crane — Riverside',   cat:'Heavy Equipment',cost:320000,book:'SL',macrs:'5yr',life:5, date:'2023-06-01',slDepr:64000,macrsYr1:64000,accumulated:128000,status:'active'},
-    {id:'AST-003',desc:'Ford F-350 Fleet (×4)',     cat:'Vehicles',       cost:168000,book:'SL',macrs:'5yr',life:5, date:'2023-03-10',slDepr:33600,macrsYr1:33600,accumulated:100800,status:'active'},
-    {id:'AST-004',desc:'Portable Generator 250kW',  cat:'Heavy Equipment',cost:42000, book:'SL',macrs:'7yr',life:7, date:'2024-09-01',slDepr:6000, macrsYr1:6000, accumulated:6000, status:'active'},
-    {id:'AST-005',desc:'Office Buildout HQ',        cat:'Leasehold',      cost:95000, book:'SL',macrs:'15yr',life:10,date:'2022-01-01',slDepr:9500, macrsYr1:4750, accumulated:38000,status:'active'},
+    {id:'AST-001',desc:'Caterpillar 320 Excavator',    cat:'Heavy Equipment',cost:184000,book:'SL',macrs:'5yr',life:5,  purchaseDate:'2022-01-15',inServiceDate:'2022-02-01',invoiceRef:'FACT-2022-0042',vendor:'Caterpillar Financial',slDepr:36800,macrsYr1:36800,accumulated:147200,status:'active',proj:'PRJ-001'},
+    {id:'AST-002',desc:'Tower Crane — Riverside Plaza', cat:'Heavy Equipment',cost:320000,book:'SL',macrs:'5yr',life:5,  purchaseDate:'2023-06-01',inServiceDate:'2023-06-15',invoiceRef:'FACT-2023-0188',vendor:'Liebherr Equipment Corp',slDepr:64000,macrsYr1:64000,accumulated:128000,status:'active',proj:'PRJ-001'},
+    {id:'AST-003',desc:'Ford F-350 Fleet (×4)',         cat:'Vehicles',       cost:168000,book:'SL',macrs:'5yr',life:5,  purchaseDate:'2023-03-10',inServiceDate:'2023-03-20',invoiceRef:'FORD-2023-0074',vendor:'Ford Motor Credit',    slDepr:33600,macrsYr1:33600,accumulated:100800,status:'active',proj:'ALL'},
+    {id:'AST-004',desc:'Portable Generator 250kW',      cat:'Machinery',      cost:42000, book:'SL',macrs:'7yr',life:7,  purchaseDate:'2024-09-01',inServiceDate:'2024-09-10',invoiceRef:'GEN-2024-0031',vendor:'Generac Industrial',   slDepr:6000, macrsYr1:6000, accumulated:6000, status:'active',proj:'ALL'},
+    {id:'AST-005',desc:'Office Buildout HQ',             cat:'Leasehold',      cost:95000, book:'SL',macrs:'15yr',life:10,purchaseDate:'2022-01-01',inServiceDate:'2022-03-01',invoiceRef:'CONST-2022-001',vendor:'Interior Contractors LLC',slDepr:9500,macrsYr1:4750,accumulated:38000,status:'active',proj:'ALL'},
   ];
   const allAssets = seedAssets.concat(DB.assets.filter(a=>!seedAssets.find(s=>s.id===a.id)));
-  const totalCost = allAssets.reduce((s,a)=>s+a.cost,0);
-  const totalAccum= allAssets.reduce((s,a)=>s+a.accumulated,0);
+  const totalCost  = allAssets.reduce((s,a)=>s+a.cost,0);
+  const totalAccum = allAssets.reduce((s,a)=>s+a.accumulated,0);
 
   return`
 <div class="page-header">
   <div>
     <div class="page-title">${isE?'Activos Fijos':'Fixed Assets'}</div>
-    <div class="page-subtitle">MACRS (${isE?'Fiscal':'Tax'}) + ${isE?'Línea Recta SL (Libros)':'Straight-Line SL (Books)'} · ${isE?'Diferencia temporal automática → ISR Diferido ASC 740':'Auto timing difference → Deferred Tax ASC 740'}</div>
+    <div class="page-subtitle">MACRS (${isE?'Fiscal':'Tax'}) + SL (${isE?'Libros':'Books'}) · ${isE?'Factura de compra · Fecha de puesta en operación · ISR Diferido ASC 740':'Purchase invoice · In-service date · Deferred Tax ASC 740'}</div>
   </div>
   <div class="page-actions">
     <button class="btn btn-navy btn-sm" onclick="openModal(modalAsset())">${isE?'+ Nuevo Activo':'+ Add Asset'}</button>
@@ -5880,9 +5918,9 @@ function rAssets(){
 
 <div class="g3" style="margin-bottom:0">
   ${[
-    [isE?'Costo Total':'Total Cost',          fmt(totalCost),          'navy'],
-    [isE?'Depreciación Acum.':'Accum. Depreciation', fmt(totalAccum), 'stone'],
-    [isE?'Valor Neto en Libros':'Net Book Value',     fmt(totalCost-totalAccum),'success'],
+    [isE?'Costo Total':'Total Cost',               fmt(totalCost),           'navy'],
+    [isE?'Depreciación Acumulada':'Accum. Depreciation', fmt(totalAccum),   'stone'],
+    [isE?'Valor Neto en Libros':'Net Book Value',  fmt(totalCost-totalAccum),'success'],
   ].map(([l,v,c])=>`<div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div>
     <div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:20px">${v}</div></div>`).join('')}
 </div>
@@ -5890,39 +5928,47 @@ function rAssets(){
 <div class="card">
   <div style="overflow-x:auto"><table class="dt">
     <thead><tr>
-      <th>${isE?'Activo':'Asset'}</th>
+      <th>ID</th>
+      <th style="min-width:180px">${isE?'Activo':'Asset'}</th>
       <th>${isE?'Categoría':'Category'}</th>
-      <th>${isE?'Adq.':'Acq.'}</th>
+      <th>${isE?'Factura Compra':'Purchase Invoice'}</th>
+      <th>${isE?'Proveedor':'Vendor'}</th>
+      <th>${isE?'F. Compra':'Purchase Date'}</th>
+      <th>${isE?'F. Operación':'In-Service'}</th>
       <th class="num">${isE?'Costo':'Cost'}</th>
-      <th class="num">${isE?'Depr. Acum. (SL)':'Acc. Dep. (SL)'}</th>
+      <th class="num">${isE?'Depr. Acum.':'Accum. Dep.'}</th>
       <th class="num">${isE?'Valor Libro':'Book Value'}</th>
       <th class="num">MACRS Yr1</th>
-      <th class="num">${isE?'Dif. Temporal':'Timing Diff.'}</th>
-      <th class="num">${isE?'DTL (21%)':'DTL (21%)'}</th>
+      <th class="num">${isE?'Dif. Temp.':'Timing Diff'}</th>
+      <th class="num">DTL 21%</th>
       <th>Status</th>
     </tr></thead>
     <tbody>
     ${allAssets.map(a=>{
       const bv   = a.cost - a.accumulated;
-      const diff = a.macrsYr1 - a.slDepr;
+      const diff = (a.macrsYr1||0) - (a.slDepr||0);
       const dtl  = Math.round(Math.abs(diff)*0.21);
       return`<tr>
+        <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${a.id}</code></td>
         <td style="font-weight:500;font-size:12.5px">${a.desc}</td>
-        <td><span class="badge b-info" style="font-size:10px">${a.cat}</span></td>
-        <td class="mono" style="font-size:11px">${a.date?.slice(0,7)||'—'}</td>
+        <td><span class="badge b-info" style="font-size:9px">${a.cat}</span></td>
+        <td>${a.invoiceRef?`<code style="font-size:10px;background:rgba(201,168,76,.1);color:var(--gold);padding:1px 5px;border-radius:3px">${a.invoiceRef}</code>`:'—'}</td>
+        <td style="font-size:11px;color:var(--stone)">${a.vendor||'—'}</td>
+        <td class="mono" style="font-size:11px">${(a.purchaseDate||a.date||'—').slice(0,10)}</td>
+        <td class="mono" style="font-size:11px;color:${a.inServiceDate&&a.inServiceDate!==(a.purchaseDate||a.date)?'var(--gold)':'var(--stone)'}">${(a.inServiceDate||a.purchaseDate||a.date||'—').slice(0,10)}</td>
         <td class="num mono">${fmt(a.cost)}</td>
         <td class="num mono stone">${fmt(a.accumulated)}</td>
         <td class="num mono bold">${fmt(bv)}</td>
-        <td class="num mono gold">${fmt(a.macrsYr1)}</td>
+        <td class="num mono gold">${fmt(a.macrsYr1||0)}</td>
         <td class="num mono ${diff>0?'red':diff<0?'green':''} bold">${diff>=0?'+':''}${fmt(diff)}</td>
         <td class="num mono ${diff!==0?'danger':''}">${diff!==0?fmt(dtl):'—'}</td>
-        <td><span class="badge b-ok" style="font-size:10px">${a.status}</span></td>
+        <td><span class="badge b-ok" style="font-size:9px">${a.status||'active'}</span></td>
       </tr>`;
     }).join('')}
     </tbody>
     <tfoot>
       <tr style="background:var(--navy);color:#fff;font-weight:700">
-        <td colspan="3">TOTAL</td>
+        <td colspan="7">TOTAL</td>
         <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(totalCost)}</td>
         <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.6)">${fmt(totalAccum)}</td>
         <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(totalCost-totalAccum)}</td>
@@ -5931,12 +5977,13 @@ function rAssets(){
     </tfoot>
   </table></div>
   <div class="alert a-info mt2" style="font-size:11px">
-    ⓘ ${isE?'Dif. Temporal = MACRS Yr1 − SL. Positiva → Pasivo ISR Diferido (DTL). El sistema la registra automáticamente en 2-02-01-002 al cierre de período.':'Timing Diff = MACRS Yr1 − SL. Positive → Deferred Tax Liability (DTL). System auto-posts to 2-02-01-002 at period close.'}
+    ⓘ ${isE
+      ?'F. Compra = fecha de la factura del proveedor. F. Operación = fecha en que el activo entró en uso (inicio de depreciación). La columna dorada indica cuando ambas fechas difieren.'
+      :'Purchase Date = vendor invoice date. In-Service Date = date the asset entered use (depreciation start). Gold column indicates when both dates differ.'
+    }
   </div>
 </div>`}
 
-// ══════════════════════════════════════════════════════
-// MODULE: SECURITY — Full SOD + Fee Mgmt + Violation Log
 // ══════════════════════════════════════════════════════
 function rSecurity(){
   if(S.role!=='A')return`<div class="alert a-danger">Access denied. Level A only.</div>`;
@@ -6295,24 +6342,36 @@ ${active.map(c=>{
 // ══════════════════════════════════════════════════════
 function rSales(){
   const isE=es();
-  // Invoice data — seeded + from DB
-  const invoices=[
-    {id:'INV-001',date:'2026-03-29',client:'Summit Properties LLC',proj:'PRJ-001',desc:isE?'AIA G702 Factura #5 — Riverside Plaza':'AIA G702 Invoice #5 — Riverside Plaza',gross:547320,tax:0,net:547320,ret:54732,status:'sent',     due:'2026-04-28'},
-    {id:'INV-002',date:'2026-03-20',client:'Oceanic Dev. Group',   proj:'PRJ-002',desc:isE?'AIA G702 Factura #3 — Harbor View Tower':'AIA G702 Invoice #3 — Harbor View Tower',gross:810000,tax:0,net:810000,ret:81000,status:'overdue',  due:'2026-03-31'},
-    {id:'INV-003',date:'2026-03-15',client:'City Transit Authority',proj:'PRJ-003',desc:isE?'AIA G702 Factura #4 — Metro Line Ext.':'AIA G702 Invoice #4 — Metro Line Ext.',gross:243000,tax:0,net:243000,ret:24300,status:'paid',      due:'2026-04-14'},
-    {id:'INV-004',date:'2026-02-28',client:'Summit Properties LLC',proj:'PRJ-001',desc:isE?'AIA G702 Factura #4 — Riverside Plaza':'AIA G702 Invoice #4 — Riverside Plaza',gross:420000,tax:0,net:420000,ret:42000,status:'paid',      due:'2026-03-29'},
-    {id:'INV-005',date:'2026-03-28',client:'Oceanic Dev. Group',   proj:'PRJ-002',desc:isE?'Orden de Cambio #2 — Harbor View':'CO #2 — Harbor View Tower',                  gross:47500, tax:0,net:47500, ret:4750, status:'draft',     due:'2026-04-27'},
+  const cons=isCons(); // retainage only for construction sectors
+
+  // Merge seeded invoices + DB.invoices
+  const seeded=[
+    {id:'INV-001',date:'2026-03-29',client:'Summit Properties LLC',proj:'PRJ-001',desc:isE?'AIA G702 Factura #5 — Riverside Plaza':'AIA G702 Invoice #5 — Riverside Plaza',gross:547320,ret:54732,status:'sent',   due:'2026-04-28'},
+    {id:'INV-002',date:'2026-03-20',client:'Oceanic Dev. Group',   proj:'PRJ-002',desc:isE?'AIA G702 Factura #3 — Harbor View Tower':'AIA G702 Invoice #3 — Harbor View Tower',gross:810000,ret:81000,status:'overdue',due:'2026-03-31'},
+    {id:'INV-003',date:'2026-03-15',client:'City Transit Authority',proj:'PRJ-003',desc:isE?'AIA G702 Factura #4 — Metro Line Ext.':'AIA G702 Invoice #4 — Metro Line Ext.',gross:243000,ret:24300,status:'paid',   due:'2026-04-14'},
+    {id:'INV-004',date:'2026-02-28',client:'Summit Properties LLC',proj:'PRJ-001',desc:isE?'AIA G702 Factura #4 — Riverside Plaza':'AIA G702 Invoice #4 — Riverside Plaza',gross:420000,ret:42000,status:'paid',   due:'2026-03-29'},
+    {id:'INV-005',date:'2026-03-28',client:'Oceanic Dev. Group',   proj:'PRJ-002',desc:isE?'Orden de Cambio #2 — Harbor View':'CO #2 — Harbor View Tower',                  gross:47500, ret:4750, status:'draft',  due:'2026-04-27'},
   ];
-  const totPending=invoices.filter(i=>i.status==='sent'||i.status==='overdue').reduce((s,i)=>s+i.net-i.ret,0);
-  const totOverdue=invoices.filter(i=>i.status==='overdue').reduce((s,i)=>s+i.net-i.ret,0);
-  const totPaid   =invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+i.net-i.ret,0);
+  const invoices=[...seeded,...(DB.invoices||[]).filter(i=>!seeded.find(s=>s.id===i.id))];
+
+  // For non-construction: treat retainage as 0
+  const effectiveRet  = inv => cons ? (inv.ret||0) : 0;
+  const effectiveNet  = inv => inv.gross - effectiveRet(inv);
+
+  const totPending=invoices.filter(i=>i.status==='sent'||i.status==='overdue').reduce((s,i)=>s+effectiveNet(i),0);
+  const totOverdue=invoices.filter(i=>i.status==='overdue').reduce((s,i)=>s+effectiveNet(i),0);
+  const totPaid   =invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+effectiveNet(i),0);
   const statusBadge=s=>s==='paid'?'b-ok':s==='overdue'?'b-no':s==='sent'?'b-info':'b-neu';
   const statusLabel=s=>s==='paid'?(isE?'Pagada':'Paid'):s==='overdue'?(isE?'Vencida':'Overdue'):s==='sent'?(isE?'Enviada':'Sent'):(isE?'Borrador':'Draft');
 
   return`
 <div class="page-header">
-  <div><div class="page-title">${isE?'Ventas y Facturación':'Sales & Invoicing'}</div>
-  <div class="page-subtitle">${isE?'Facturación AIA G702/G703 · Órdenes de Cambio · Retenciones separadas del corriente':'AIA G702/G703 Billing · Change Orders · Retainage segregated from current AR'}</div></div>
+  <div>
+    <div class="page-title">${isE?'Ventas y Facturación':'Sales & Invoicing'}</div>
+    <div class="page-subtitle">${cons
+      ?(isE?'Facturación AIA G702/G703 · Órdenes de Cambio · Retenciones segregadas':'AIA G702/G703 Billing · Change Orders · Retainage segregated')
+      :(isE?'Registro de facturas · Seguimiento de cobros · Gestión de clientes':'Invoice register · Collections tracking · Client management')}</div>
+  </div>
   <div class="page-actions">
     <button class="btn btn-ghost btn-sm" onclick="nav('ar')">${isE?'Ver Cobros':'View AR'}</button>
     <button class="btn btn-navy btn-sm" onclick="openModal(modalNewInvoice())">${isE?'+ Nueva Factura':'+ New Invoice'}</button>
@@ -6323,7 +6382,7 @@ function rSales(){
   ${kpi(isE?'Facturado Pendiente':'Outstanding Billed',fmt(totPending),isE?'Por cobrar corriente':'Current receivables','warning','')}
   ${kpi(isE?'Vencido':'Overdue',fmt(totOverdue),isE?'Requiere gestión inmediata':'Requires immediate action','danger',totOverdue>0?'dn':'')}
   ${kpi(isE?'Cobrado YTD':'Collected YTD',fmt(totPaid),isE?'Recibido en el período':'Received this period','success','up')}
-  ${kpi(isE?'Total Facturas':'Total Invoices',invoices.length+'',isE?`${invoices.filter(i=>i.status==='draft').length} en borrador`:`${invoices.filter(i=>i.status==='draft').length} drafts`,'info','')}
+  ${kpi(isE?'Total Facturas':'Total Invoices',invoices.length+'',`${invoices.filter(i=>i.status==='draft').length} ${isE?'borrador':'draft'}`,'info','')}
 </div>
 
 ${totOverdue>0?`<div class="alert a-danger">⚠ ${isE?`${fmt(totOverdue)} en facturas VENCIDAS. Se recomienda gestión de cobro inmediata.`:`${fmt(totOverdue)} in OVERDUE invoices. Immediate collection action recommended.`}</div>`:''}
@@ -6341,7 +6400,7 @@ ${totOverdue>0?`<div class="alert a-danger">⚠ ${isE?`${fmt(totOverdue)} en fac
       <th>${isE?'Proyecto':'Project'}</th>
       <th style="min-width:180px">${isE?'Descripción':'Description'}</th>
       <th class="num">${isE?'Monto Bruto':'Gross Amount'}</th>
-      <th class="num">${isE?'Retención':'Retainage'}</th>
+      ${cons?`<th class="num">${isE?'Retención':'Retainage'}</th>`:''}
       <th class="num">${isE?'Neto Cobrable':'Net Receivable'}</th>
       <th>${isE?'Vencimiento':'Due Date'}</th>
       <th>${isE?'Estado':'Status'}</th>
@@ -6351,11 +6410,11 @@ ${totOverdue>0?`<div class="alert a-danger">⚠ ${isE?`${fmt(totOverdue)} en fac
       <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 7px;border-radius:4px">${inv.id}</code></td>
       <td class="mono" style="font-size:11px">${inv.date}</td>
       <td style="font-size:12px;font-weight:500">${inv.client}</td>
-      <td><span class="badge b-neu" style="font-size:9px">${inv.proj}</span></td>
+      <td><span class="badge b-neu" style="font-size:9px">${inv.proj||'—'}</span></td>
       <td style="font-size:11.5px">${inv.desc}</td>
       <td class="num mono">${fmt(inv.gross)}</td>
-      <td class="num mono gold">${fmt(inv.ret)}</td>
-      <td class="num mono bold ${inv.status==='overdue'?'red':'green'}">${fmt(inv.net-inv.ret)}</td>
+      ${cons?`<td class="num mono gold">${fmt(effectiveRet(inv))}</td>`:''}
+      <td class="num mono bold ${inv.status==='overdue'?'red':'green'}">${fmt(effectiveNet(inv))}</td>
       <td class="mono" style="font-size:11px;color:${inv.status==='overdue'?'var(--danger)':'var(--stone)'}">${inv.due}</td>
       <td><span class="badge ${statusBadge(inv.status)}" style="font-size:10px">${statusLabel(inv.status)}</span></td>
     </tr>`).join('')}
@@ -6364,73 +6423,129 @@ ${totOverdue>0?`<div class="alert a-danger">⚠ ${isE?`${fmt(totOverdue)} en fac
       <tr style="background:var(--navy);color:#fff;font-weight:700">
         <td colspan="5">TOTAL</td>
         <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(invoices.reduce((s,i)=>s+i.gross,0))}</td>
-        <td class="num" style="font-family:var(--font-mono);color:var(--gold-light)">${fmt(invoices.reduce((s,i)=>s+i.ret,0))}</td>
-        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(invoices.reduce((s,i)=>s+i.net-i.ret,0))}</td>
+        ${cons?`<td class="num" style="font-family:var(--font-mono);color:var(--gold-light)">${fmt(invoices.reduce((s,i)=>s+effectiveRet(i),0))}</td>`:''}
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(invoices.reduce((s,i)=>s+effectiveNet(i),0))}</td>
         <td colspan="2"></td>
       </tr>
     </tfoot>
   </table></div>
-  <div class="alert a-info mt2" style="font-size:11px">
-    ⓘ ${isE?'La columna "Retención" representa el % retenido por el cliente (5%-10%). Esta cantidad NO se incluye en el flujo de caja corriente — se registra como Retención por Cobrar (cuenta 1-01-02-002) hasta el cierre de la obra.':'The "Retainage" column represents the % withheld by the client (5%-10%). This amount is NOT included in current cash flow — it is recorded as Retainage Receivable (account 1-01-02-002) until project closeout.'}
-  </div>
+  ${cons?`<div class="alert a-info mt2" style="font-size:11px">
+    ⓘ ${isE?'La columna "Retención" representa el % retenido por el cliente (5%-10%) hasta el cierre de la obra. Se registra en cuenta 1-01-02-002 (Retención por Cobrar — No Corriente).':'The "Retainage" column represents the % withheld by the client (5%-10%) until project closeout. Recorded in account 1-01-02-002 (Retainage Receivable — Non-Current).'}
+  </div>`:''}
 </div>`;
 }
 
-function modalNewInvoice(){const isE=es();return`
-<h3>${isE?'Nueva Factura de Venta':'New Sales Invoice'}</h3>
+function modalNewInvoice(){
+  const isE=es();
+  const cons=isCons();
+  // Pre-calculate next invoice number
+  if(!DB.invoices) DB.invoices=[];
+  const allNums=[...[1,2,3,4,5],...DB.invoices.map(i=>parseInt(i.id?.replace('INV-','')||0))];
+  const nextInvId=`INV-${String(Math.max(...allNums)+1).padStart(3,'0')}`;
+
+  return`
+<h3 style="font-family:var(--font-display)">${isE?'Nueva Factura de Venta':'New Sales Invoice'}</h3>
+
+<div style="display:flex;align-items:center;gap:10px;background:var(--navy);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px">
+  <div style="font-size:10px;color:rgba(255,255,255,.5);letter-spacing:1px">${isE?'NÚMERO DE FACTURA':'INVOICE NUMBER'}</div>
+  <div style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--gold)">${nextInvId}</div>
+  <div style="margin-left:auto;font-size:10px;color:rgba(255,255,255,.4)">${isE?'Se asignará al emitir':'Assigned on issue'}</div>
+</div>
+
 <div class="mf">
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Cliente':'Client'}</label>
-      <select id="ni-client">${DB.clients.filter(c=>c.status==='active').map(c=>`<option>${c.name}</option>`).join('')}</select></div>
-    <div class="mf-field"><label>${isE?'Proyecto':'Project'}</label>
-      <select id="ni-proj">${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name}</option>`).join('')}</select></div>
+    <div class="mf-field"><label>${isE?'Cliente':'Client'} <span style="color:var(--danger)">*</span></label>
+      <select id="ni-client" onchange="updateInvoiceClientType()">
+        ${DB.clients.filter(c=>c.status==='active').map(c=>`<option value="${c.name}" data-sector="${c.sector||''}">${c.name}</option>`).join('')}
+      </select></div>
+    <div class="mf-row" id="ni-proj-row" style="${cons?'':'display:none'}">
+      <div class="mf-field"><label>${isE?'Proyecto':'Project'}</label>
+        <select id="ni-proj">
+          <option value="">— ${isE?'Sin proyecto':'No project'} —</option>
+          ${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name.split(' ').slice(0,2).join(' ')}</option>`).join('')}
+        </select></div>
+    </div>
   </div>
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Fecha':'Invoice Date'}</label><input type="date" id="ni-date" value="${new Date().toISOString().slice(0,10)}"></div>
-    <div class="mf-field"><label>${isE?'Vencimiento':'Due Date'}</label><input type="date" id="ni-due"></div>
+    <div class="mf-field"><label>${isE?'Fecha':'Date'}</label>
+      <input type="date" id="ni-date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="mf-field"><label>${isE?'Vencimiento':'Due Date'}</label>
+      <input type="date" id="ni-due" value="${new Date(Date.now()+30*24*3600*1000).toISOString().slice(0,10)}"></div>
   </div>
-  <div class="mf-field full"><label>${isE?'Descripción':'Description'}</label><input type="text" id="ni-desc" placeholder="${isE?'AIA G702 Factura #6 — Descripción':'AIA G702 Invoice #6 — Description'}"></div>
+  <div class="mf-field full"><label>${isE?'Descripción':'Description'}</label>
+    <input type="text" id="ni-desc" placeholder="${cons?(isE?'Ej: AIA G702 Factura de avance — Obra':'e.g. AIA G702 Progress Invoice'):(isE?'Ej: Servicios de Consultoría — Abril 2026':'e.g. Consulting Services April 2026')}"></div>
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Monto Bruto ($)':'Gross Amount ($)'}</label><input type="number" id="ni-gross" placeholder="0" min="0"></div>
-    <div class="mf-field"><label>${isE?'Retención %':'Retainage %'}</label>
-      <select id="ni-ret"><option value="10">10%</option><option value="5">5%</option><option value="0">0%</option></select></div>
+    <div class="mf-field"><label>${isE?'Monto Bruto ($)':'Gross Amount ($)'} <span style="color:var(--danger)">*</span></label>
+      <input type="number" id="ni-gross" placeholder="0.00" min="0" step="0.01"></div>
+    <div id="ni-ret-wrap" style="${cons?'':'display:none'}">
+      <div class="mf-field"><label>${isE?'Retención %':'Retainage %'}</label>
+        <select id="ni-ret">
+          <option value="10">10%</option><option value="5">5%</option>
+          <option value="0">0% (${isE?'sin retención':'no retainage'})</option>
+        </select></div>
+    </div>
+    <div id="ni-tax-wrap" style="${cons?'display:none':''}">
+      <div class="mf-field"><label>${isE?'Impuesto %':'Tax %'}</label>
+        <input type="number" id="ni-tax" placeholder="0" min="0" max="30" value="0"></div>
+    </div>
   </div>
 </div>
+${cons?`<div class="alert a-info" style="margin-top:10px;font-size:11px">
+  ⓘ ${isE?'Retención: activo no corriente (1-01-02-002). No afecta flujo de caja hasta liberación al cierre de obra.':'Retainage: non-current asset (1-01-02-002). Does not affect cash flow until release at project closeout.'}
+</div>`:''}
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-ghost" onclick="saveInvoice('draft')">${isE?'Guardar Borrador':'Save Draft'}</button>
+  <button class="btn btn-ghost" onclick="saveInvoice('draft')">${isE?'💾 Guardar Borrador':'💾 Save Draft'}</button>
   <button class="btn btn-navy" onclick="saveInvoice('sent')">${isE?'✓ Emitir Factura':'✓ Issue Invoice'}</button>
-</div>`}
+</div>
+<script>
+function updateInvoiceClientType(){
+  const sel=document.getElementById('ni-client');
+  const opt=sel?.options[sel.selectedIndex];
+  const sector=(opt?.dataset?.sector||'').toLowerCase();
+  const isCons=${JSON.stringify(CONSTRUCTION_SECTORS)}.some(s=>sector.includes(s.toLowerCase()));
+  document.getElementById('ni-proj-row').style.display=isCons?'':'none';
+  document.getElementById('ni-ret-wrap').style.display=isCons?'':'none';
+  document.getElementById('ni-tax-wrap').style.display=isCons?'none':'';
+}
+setTimeout(updateInvoiceClientType,80);
+<\/script>`;}
 
 // Persistent invoice store
 if(!DB.invoices) DB.invoices=[];
 
 function saveInvoice(status){
   const isE=es();
-  const client= document.getElementById('ni-client')?.value;
-  const proj  = document.getElementById('ni-proj')?.value;
-  const date  = document.getElementById('ni-date')?.value;
-  const due   = document.getElementById('ni-due')?.value;
-  const desc  = document.getElementById('ni-desc')?.value.trim();
-  const gross = parseFloat(document.getElementById('ni-gross')?.value)||0;
-  const retPct= parseFloat(document.getElementById('ni-ret')?.value)||10;
+  const cons   = isCons();
+  const client = document.getElementById('ni-client')?.value;
+  const proj   = document.getElementById('ni-proj')?.value||'';
+  const date   = document.getElementById('ni-date')?.value;
+  const due    = document.getElementById('ni-due')?.value;
+  const desc   = document.getElementById('ni-desc')?.value.trim();
+  const gross  = parseFloat(document.getElementById('ni-gross')?.value)||0;
+  // Retainage only for construction sectors
+  const retPct = cons ? (parseFloat(document.getElementById('ni-ret')?.value)||0) : 0;
   if(!client||!gross){gMsg(isE?'⚠ Cliente y monto son obligatorios':'⚠ Client and amount are required');return;}
   if(!DB.invoices) DB.invoices=[];
+  // Correct sequential ID: find max across seeded (INV-001..INV-005) and DB.invoices
+  const allInvNums = [...[1,2,3,4,5], ...(DB.invoices||[]).map(i=>parseInt(i.id?.replace('INV-','')||0))];
+  const nextNum    = Math.max(...allInvNums) + 1;
+  const invId      = `INV-${String(nextNum).padStart(3,'0')}`;
   const ret    = Math.round(gross*retPct/100);
   const net    = gross - ret;
-  const invId  = `INV-${String(DB.invoices.length+6).padStart(3,'0')}`;
-  const invoice = {id:invId,date,due,client,proj,desc:desc||`AIA G702 ${invId}`,gross,ret,net,status,retPct};
-  DB.invoices.push(invoice);
+  DB.invoices.push({id:invId,date,due,client,proj,desc:desc||invId,gross,ret,net,status,retPct});
   // Post AR journal entry
-  DB.journal.push({id:`JE-${invId}`,date,desc:`${isE?'Factura emitida':'Invoice issued'}: ${invId} — ${client}`,
-    proj,dr:'1-01-02-001',cr:'4-01-01-001',amt:net,std:'both',wip:false});
-  if(ret>0) DB.journal.push({id:`JE-${invId}-RET`,date,desc:`${isE?'Retención por cobrar':'Retainage receivable'}: ${invId}`,
-    proj,dr:'1-01-02-002',cr:'4-01-01-001',amt:ret,std:'both',wip:false});
+  DB.journal.push({id:`JE-${invId}`,date,desc:`${isE?'Factura':'Invoice'}: ${invId} — ${client}`,
+    proj:proj||'ALL', dr:'1-01-02-001', cr:'4-01-01-001', amt:net, std:'both', wip:false});
+  if(cons&&ret>0) DB.journal.push({id:`JE-${invId}-RET`,date,
+    desc:`${isE?'Retención por cobrar':'Retainage receivable'}: ${invId}`,
+    proj:proj||'ALL', dr:'1-01-02-002', cr:'4-01-01-001', amt:ret, std:'both', wip:false});
   dbSaveSync(); dbSave().catch(()=>{});
   log((S.user||'U').toUpperCase(),`Invoice ${status}: ${invId} — ${client} ${fmt(gross)}`,'medium');
   closeModal();
-  gMsg(isE?`✓ ${invId} ${status==='draft'?'guardada como borrador':'emitida'}. Asiento AR registrado.`:
-    `✓ ${invId} ${status==='draft'?'saved as draft':'issued'}. AR entry posted.`);
+  gMsg(isE
+    ?`✓ ${invId} ${status==='draft'?'guardada':'emitida'}. AR: ${fmt(net)}${cons&&ret>0?` + Retención LP: ${fmt(ret)}`:''}.`
+    :`✓ ${invId} ${status==='draft'?'saved as draft':'issued'}. AR: ${fmt(net)}${cons&&ret>0?` + Retainage LT: ${fmt(ret)}`:''}.`);
   renderMod('sales');
 }
 
@@ -6439,6 +6554,7 @@ function saveInvoice(status){
 // ══════════════════════════════════════════════════════
 function rAR(){
   const isE=es();
+  const cons=isCons(); // retainage only for construction
   const arRows=[
     {client:'Summit Properties LLC',   inv:'INV-001',proj:'PRJ-001',date:'2026-03-29',due:'2026-04-28',gross:547320,ret:54732,cur:492588,d30:0,d60:0,d90:0,  status:'current'},
     {client:'Oceanic Dev. Group',       inv:'INV-002',proj:'PRJ-002',date:'2026-03-20',due:'2026-03-31',gross:810000,ret:81000,cur:0,    d30:729000,d60:0,d90:0,status:'overdue'},
@@ -6462,7 +6578,9 @@ function rAR(){
   return`
 <div class="page-header">
   <div><div class="page-title">${isE?'Cuentas por Cobrar':'Accounts Receivable'}</div>
-  <div class="page-subtitle">${isE?'Antigüedad de cartera · Retenciones segregadas · Gestión de cobros':'Aging report · Retainage segregated · Collections management'}</div></div>
+  <div class="page-subtitle">${cons
+    ?(isE?'Antigüedad de cartera · Retenciones segregadas · Gestión de cobros':'Aging report · Retainage segregated · Collections management')
+    :(isE?'Antigüedad de cartera · Gestión de cobros':'Accounts receivable aging · Collections management')}</div></div>
   <div class="page-actions">
     <button class="btn btn-ghost btn-sm" onclick="nav('sales')">${isE?'Ver Facturas':'View Invoices'}</button>
     <button class="btn btn-navy btn-sm" onclick="openModal(modalRegisterPayment())">${isE?'+ Registrar Cobro':'+ Record Payment'}</button>
@@ -6470,10 +6588,11 @@ function rAR(){
 </div>
 
 <div class="kpi-grid">
-  ${kpi(isE?'Total AR':'Total AR', fmt(totAll), isE?'Corriente + Vencido + Retención':'Current + Overdue + Retainage','info','')}
+  ${kpi(isE?'Total AR':'Total AR', fmt(cons?totAll:totCur+tot30+tot60+tot90), isE?`Corriente + Vencido${cons?' + Retención':''}`:`Current + Overdue`,'info','')}
   ${kpi(isE?'Corriente (0-30d)':'Current (0-30d)', fmt(totCur), isE?'Cobrable inmediato':'Immediately collectible','success','')}
   ${kpi(isE?'Vencido (>30d)':'Overdue (>30d)', fmt(tot30+tot60+tot90), isE?'Requiere gestión':'Requires action','danger', tot30+tot60+tot90>0?'dn':'')}
-  ${kpi(isE?'Retención por Cobrar LP':'Retainage Receivable LT', fmt(totRet), isE?'No corriente — al cierre de obra':'Non-current — at project closeout','warning','')}
+  ${cons?kpi(isE?'Retención por Cobrar LP':'Retainage Receivable LT', fmt(totRet), isE?'No corriente — al cierre de obra':'Non-current — at project closeout','warning',''):
+    kpi(isE?'Proyectado Próx. 30d':'Projected Next 30d', fmt(totCur*1.1), isE?'Estimado próximo período':'Estimated next period','gold','')}
 </div>
 
 <div class="card">
@@ -6487,7 +6606,7 @@ function rAR(){
       <tr style="background:rgba(0,0,0,.02)">
         <th colspan="4"></th>
         <th colspan="4" style="text-align:center;font-size:10px;color:var(--danger);letter-spacing:1px;border-left:2px solid rgba(0,0,0,.08)">${isE?'DÍAS DE ATRASO':'DAYS PAST DUE'}</th>
-        <th style="text-align:center;font-size:10px;color:var(--warning);border-left:2px solid rgba(0,0,0,.08)">LP</th>
+        ${cons?`<th style="text-align:center;font-size:10px;color:var(--warning);border-left:2px solid rgba(0,0,0,.08)">LP</th>`:''}
       </tr>
       <tr>
         <th>${isE?'Cliente':'Client'}</th>
@@ -6498,7 +6617,7 @@ function rAR(){
         <th class="num">1-30 ${isE?'días':'days'}</th>
         <th class="num">31-60 ${isE?'días':'days'}</th>
         <th class="num">61-90 ${isE?'días':'days'}</th>
-        <th class="num" style="border-left:2px solid rgba(0,0,0,.08)">${isE?'Retención LP':'Retainage LT'}</th>
+        ${cons?`<th class="num" style="border-left:2px solid rgba(0,0,0,.08)">${isE?'Retención LP':'Retainage LT'}</th>`:''}
         <th>${isE?'Estado':'Status'}</th>
       </tr>
     </thead>
@@ -6512,7 +6631,7 @@ function rAR(){
       <td class="num mono ${r.d30?'warning':''}">${r.d30?fmt(r.d30):'—'}</td>
       <td class="num mono ${r.d60?'danger':''} bold">${r.d60?fmt(r.d60):'—'}</td>
       <td class="num mono ${r.d90?'danger':''} bold">${r.d90?fmt(r.d90):'—'}</td>
-      <td class="num mono gold bold" style="border-left:2px solid rgba(0,0,0,.06)">${fmt(r.ret)}</td>
+      ${cons?`<td class="num mono gold bold" style="border-left:2px solid rgba(0,0,0,.06)">${fmt(r.ret)}</td>`:''}
       <td><span class="badge ${r.status==='current'?'b-ok':'b-no'}" style="font-size:10px">${r.status==='current'?(isE?'Al día':'Current'):(isE?'Vencida':'Overdue')}</span></td>
     </tr>`).join('')}
     </tbody>
@@ -6523,15 +6642,16 @@ function rAR(){
         <td class="num" style="font-family:var(--font-mono);color:var(--warning-light)">${fmt(tot30)}</td>
         <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(tot60)}</td>
         <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(tot90)}</td>
-        <td class="num" style="font-family:var(--font-mono);color:var(--gold-light);border-left:2px solid rgba(255,255,255,.1)">${fmt(totRet)}</td>
+        ${cons?`<td class="num" style="font-family:var(--font-mono);color:var(--gold-light);border-left:2px solid rgba(255,255,255,.1)">${fmt(totRet)}</td>`:''}
         <td></td>
       </tr>
     </tfoot>
   </table></div>
-  <div class="g2 mt2">
+  ${cons?`<div class="g2 mt2">
     <div class="alert a-ok" style="font-size:11px">✓ <strong>${isE?'Activo Corriente (1-01-02-001):':'Current Asset (1-01-02-001):'}</strong> ${fmt(totCur+tot30+tot60+tot90)} — ${isE?'Incluido en flujo de caja operativo':'Included in operating cash flow'}</div>
-    <div class="alert a-warn" style="font-size:11px">⚑ <strong>${isE?'Retención por Cobrar LP (1-01-02-002):':'Retainage Receivable LT (1-01-02-002):'}</strong> ${fmt(totRet)} — ${isE?'NO corriente. Cobrable solo al cierre de obra.':'NOT current. Collectible only at project closeout.'}</div>
-  </div>
+    <div class="alert a-warn" style="font-size:11px">⚑ <strong>${isE?'Retención LP (1-01-02-002):':'Retainage Receivable LT (1-01-02-002):'}</strong> ${fmt(totRet)} — ${isE?'NO corriente. Cobrable solo al cierre de obra.':'NOT current. Collectible only at project closeout.'}</div>
+  </div>`:
+  `<div class="alert a-ok" style="font-size:11px;margin-top:12px">✓ <strong>${isE?'Total AR por cobrar:':'Total AR receivable:'}</strong> ${fmt(totCur+tot30+tot60+tot90)}</div>`}
 </div>
 
 <div class="card">
@@ -6605,132 +6725,143 @@ function saveARPayment(){
 // ══════════════════════════════════════════════════════
 function rAP(){
   const isE=es();
-  // Build AP from DB.subs + seeded vendor invoices
-  const apRows=[
-    {vendor:'Elite MEP Group',    type:'sub',  inv:'AP-001',proj:'PRJ-001',date:'2026-03-27',due:'2026-04-26',gross:84500,ret:8450,cur:76050,status:'pending',  w9:'filed',blocked:false},
-    {vendor:'Rodriguez Concrete', type:'sub',  inv:'AP-002',proj:'PRJ-002',date:'2026-03-15',due:'2026-04-14',gross:68400,ret:6840,cur:61560,status:'blocked',   w9:'missing',blocked:true, reason:'W-9 MISSING'},
-    {vendor:'SteelPro Inc.',      type:'sub',  inv:'AP-003',proj:'PRJ-002',date:'2026-03-20',due:'2026-04-19',gross:285300,ret:28530,cur:256770,status:'blocked', w9:'filed',blocked:true,  reason:'COI EXPIRED'},
-    {vendor:'Apex Framing LLC',   type:'sub',  inv:'AP-004',proj:'PRJ-003',date:'2026-03-22',due:'2026-04-21',gross:80100,ret:8010,cur:72090,status:'approved', w9:'filed',blocked:false},
-    {vendor:'Home Depot',         type:'vendor',inv:'AP-005',proj:'PRJ-001',date:'2026-03-30',due:'2026-04-29',gross:3842, ret:0,   cur:3842, status:'pending',  w9:'n/a', blocked:false},
-    {vendor:'SkyHigh Glass',      type:'sub',  inv:'AP-006',proj:'PRJ-001',date:'2026-03-28',due:'2026-04-27',gross:42000,ret:2100,cur:39900,status:'pending',  w9:'filed',blocked:false},
+  const cons=isCons();
+
+  const seeded=[
+    {vendor:'Elite MEP Group',    type:'sub',  inv:'AP-001',proj:'PRJ-001',date:'2026-03-27',due:'2026-04-26',gross:84500, ret:8450,  paid:0,     poRef:'',      w9:'filed',  blocked:false,status:'pending'},
+    {vendor:'Rodriguez Concrete', type:'sub',  inv:'AP-002',proj:'PRJ-002',date:'2026-03-15',due:'2026-04-14',gross:68400, ret:6840,  paid:0,     poRef:'',      w9:'missing',blocked:true, status:'blocked',reason:'W-9 MISSING'},
+    {vendor:'SteelPro Inc.',      type:'sub',  inv:'AP-003',proj:'PRJ-002',date:'2026-03-20',due:'2026-04-19',gross:285300,ret:28530, paid:0,     poRef:'',      w9:'filed',  blocked:true, status:'blocked',reason:'COI EXPIRED'},
+    {vendor:'Apex Framing LLC',   type:'sub',  inv:'AP-004',proj:'PRJ-003',date:'2026-03-22',due:'2026-04-21',gross:80100, ret:8010,  paid:72090, poRef:'OC-001',w9:'filed',  blocked:false,status:'approved'},
+    {vendor:'Home Depot',         type:'vendor',inv:'AP-005',proj:'PRJ-001',date:'2026-03-30',due:'2026-04-29',gross:3842,  ret:0,    paid:0,     poRef:'OC-001',w9:'n/a',   blocked:false,status:'pending'},
+    {vendor:'SkyHigh Glass',      type:'sub',  inv:'AP-006',proj:'PRJ-001',date:'2026-03-28',due:'2026-04-27',gross:42000, ret:2100,  paid:15000, poRef:'',      w9:'filed',  blocked:false,status:'pending'},
   ];
-  const totPending =apRows.filter(r=>!r.blocked&&r.status!=='paid').reduce((s,r)=>s+r.cur,0);
-  const totBlocked =apRows.filter(r=>r.blocked).reduce((s,r)=>s+r.gross,0);
-  const totRet     =apRows.reduce((s,r)=>s+r.ret,0);
+  const liveAP=DB.journal.filter(j=>j.apEntry===true).filter(j=>!seeded.find(s=>s.inv===j.id))
+    .map(j=>({vendor:j.vendor||'—',type:'vendor',inv:j.id,proj:j.proj||'ALL',date:j.date,due:j.due||'—',gross:j.amt||0,ret:0,paid:j.paid||0,poRef:j.poRef||'',w9:'n/a',blocked:false,status:(j.paid||0)>=(j.amt||0)?'paid':'pending',isLive:true}));
+  const apRows=[...seeded,...liveAP];
+  const retRows=r=>cons?r.ret:0;
+  const rowBalance=r=>Math.max(0,(r.gross-retRows(r))-r.paid);
+  const totPending=apRows.filter(r=>!r.blocked&&r.status!=='paid').reduce((s,r)=>s+rowBalance(r),0);
+  const totBlocked=apRows.filter(r=>r.blocked).reduce((s,r)=>s+r.gross,0);
+  const totRet=cons?apRows.reduce((s,r)=>s+r.ret,0):0;
+  const totPaid=apRows.reduce((s,r)=>s+r.paid,0);
   const blockedCount=apRows.filter(r=>r.blocked).length;
+  const today=new Date();
+  const isOverdue=r=>r.due&&r.due!=='—'&&new Date(r.due)<today&&r.status!=='paid'&&!r.blocked;
 
   return`
 <div class="page-header">
   <div><div class="page-title">${isE?'Cuentas por Pagar':'Accounts Payable'}</div>
-  <div class="page-subtitle">${isE?'Pagos a proveedores y subcontratistas · Muro de Cumplimiento · Retenciones LP separadas':'Vendor & subcontractor payments · Compliance Wall · LT retainage segregated'}</div></div>
+  <div class="page-subtitle">${isE?'Saldo por factura · Muro de Cumplimiento W-9/COI · OC vinculada':'Balance per invoice · Compliance Wall W-9/COI · Linked PO'}</div></div>
   <div class="page-actions">
+    <button class="btn btn-ghost btn-sm" onclick="nav('purchases')">${isE?'Ver OC':'View POs'}</button>
     <button class="btn btn-ghost btn-sm" onclick="nav('subs')">${isE?'Ver Subs':'View Subs'}</button>
     <button class="btn btn-navy btn-sm" onclick="openModal(modalRegisterPaymentAP())">${isE?'+ Pagar Factura':'+ Pay Invoice'}</button>
   </div>
 </div>
-
 <div class="kpi-grid">
-  ${kpi(isE?'AP Corriente':'Current AP', fmt(totPending), isE?'Listo para pagar':'Ready to pay','info','')}
-  ${kpi(isE?'Bloqueado':'Blocked', fmt(totBlocked), isE?`${blockedCount} pagos suspendidos`:`${blockedCount} payments suspended`,'danger','')}
-  ${kpi(isE?'Retención por Pagar LP':'Retainage Payable LT', fmt(totRet), isE?'NO corriente — pago al cierre de obra':'NOT current — pay at project closeout','warning','')}
-  ${kpi(isE?'Total AP Bruto':'Total AP Gross', fmt(apRows.reduce((s,r)=>s+r.gross,0)), isE?'Todos los proveedores':'All vendors','stone','')}
+  ${kpi(isE?'Saldo Pendiente':'Outstanding Balance',fmt(totPending),isE?'Por pagar (sin bloqueados)':'Payable (excl. blocked)','danger','')}
+  ${kpi(isE?'Pagado YTD':'Paid YTD',fmt(totPaid),isE?'Pagos realizados':'Payments made','success','')}
+  ${kpi(isE?'Bloqueado':'Blocked',fmt(totBlocked),isE?`${blockedCount} suspendido(s)`:`${blockedCount} suspended`,'stone','')}
+  ${cons?kpi(isE?'Retención LP':'Retainage LT',fmt(totRet),isE?'Al cierre de obra':'At closeout','warning',''):kpi(isE?'Facturas Activas':'Active Invoices',apRows.filter(r=>r.status!=='paid').length+'',isE?'Con saldo pendiente':'With pending balance','info','')}
 </div>
-
-${blockedCount>0?`<div class="alert a-danger">🚫 ${blockedCount} ${isE?`proveedor(es) bloqueado(s). Pagos suspendidos hasta regularizar cumplimiento W-9 / COI.`:`vendor(s) blocked. Payments suspended until W-9/COI compliance is resolved.`}</div>`:''}
-
+${blockedCount>0?`<div class="alert a-danger">🚫 ${blockedCount} ${isE?'proveedor(es) bloqueado(s). Regularice W-9/COI.':'vendor(s) blocked. Resolve W-9/COI.'}</div>`:''}
+${apRows.filter(isOverdue).length>0?`<div class="alert a-warn">⚠ ${apRows.filter(isOverdue).length} ${isE?'factura(s) VENCIDA(s)':'overdue invoice(s)'}: ${fmt(apRows.filter(isOverdue).reduce((s,r)=>s+rowBalance(r),0))}</div>`:''}
 <div class="card">
-  <div class="card-header">
-    <div><div class="card-title">${isE?'Registro de Cuentas por Pagar':'Accounts Payable Register'}</div>
-    <div class="card-sub">${isE?'Columna "Corriente" = pago inmediato. "Retención LP" = NO exigible hasta cierre de obra.':'Column "Current" = immediate payment. "Retainage LT" = NOT due until project closeout.'}</div></div>
-  </div>
-  <div style="overflow-x:auto"><table class="dt">
-    <thead><tr>
-      <th>${isE?'Proveedor / Sub':'Vendor / Sub'}</th>
-      <th>${isE?'Tipo':'Type'}</th>
-      <th>${isE?'Factura':'Invoice'}</th>
-      <th>${isE?'Proyecto':'Project'}</th>
-      <th>${isE?'Vencimiento':'Due'}</th>
-      <th class="num">${isE?'Monto Bruto':'Gross Amt'}</th>
-      <th class="num" style="border-left:2px solid var(--success-light)">${isE?'Pago Corriente':'Current Payable'}</th>
-      <th class="num" style="border-left:2px solid var(--warning-light)">${isE?'Retención LP':'Retainage LT'}</th>
-      <th>W-9 / COI</th>
-      <th>${isE?'Estado':'Status'}</th>
-    </tr></thead>
-    <tbody>
-    ${apRows.map(r=>`<tr ${r.blocked?'style="background:var(--danger-light)"':''}>
-      <td><div style="font-weight:600;font-size:12.5px">${r.vendor}</div></td>
+  <div class="card-header"><div><div class="card-title">${isE?'Registro AP — Saldo por Factura':'AP Register — Balance per Invoice'}</div>
+  <div class="card-sub">${isE?'Saldo = (Bruto − Ret.) − Pagado':'Balance = (Gross − Ret.) − Paid'}</div></div></div>
+  <div style="overflow-x:auto"><table class="dt"><thead><tr>
+    <th>${isE?'Proveedor':'Vendor'}</th>
+    <th>${isE?'Tipo':'Type'}</th>
+    <th>${isE?'Factura':'Invoice'}</th>
+    <th>${isE?'OC':'PO'}</th>
+    <th>${isE?'Proyecto':'Project'}</th>
+    <th>${isE?'Vencimiento':'Due'}</th>
+    <th class="num">${isE?'Monto Bruto':'Gross'}</th>
+    ${cons?`<th class="num">${isE?'Ret. LP':'Ret. LT'}</th>`:''} 
+    <th class="num" style="color:var(--success)">${isE?'Pagado':'Paid'}</th>
+    <th class="num" style="color:var(--danger);font-weight:700">${isE?'SALDO':'BALANCE'}</th>
+    <th>${isE?'Cumplimiento':'Compliance'}</th>
+    <th>${isE?'Estado':'Status'}</th>
+    <th></th>
+  </tr></thead><tbody>
+  ${apRows.map(r=>{
+    const bal=rowBalance(r); const ov=isOverdue(r);
+    return`<tr ${r.blocked?'style="background:var(--danger-light)"':ov?'style="background:rgba(192,57,43,.04)"':r.isLive?'style="border-left:3px solid var(--success)"':''}>
+      <td style="font-weight:600;font-size:12.5px">${r.vendor}</td>
       <td><span class="badge ${r.type==='sub'?'b-warn':'b-neu'}" style="font-size:9px">${r.type==='sub'?'Sub':'Vendor'}</span></td>
-      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${r.inv}</code></td>
+      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 6px;border-radius:3px">${r.inv}</code></td>
+      <td>${r.poRef?`<code style="font-size:10px;background:rgba(201,168,76,.1);color:var(--gold);padding:1px 5px;border-radius:3px">${r.poRef}</code>`:'—'}</td>
       <td><span class="badge b-neu" style="font-size:9px">${r.proj}</span></td>
-      <td class="mono" style="font-size:11px">${r.due}</td>
+      <td class="mono" style="font-size:11px;color:${ov?'var(--danger)':'var(--stone)'}">${r.due}${ov?' ⚠':''}</td>
       <td class="num mono">${fmt(r.gross)}</td>
-      <td class="num mono ${r.blocked?'red':'green'} bold" style="border-left:2px solid rgba(26,122,74,.15)">${fmt(r.cur)}</td>
-      <td class="num mono gold bold" style="border-left:2px solid rgba(201,168,76,.15)">${r.ret?fmt(r.ret):'—'}</td>
+      ${cons?`<td class="num mono gold">${r.ret?fmt(r.ret):'—'}</td>`:''} 
+      <td class="num mono green">${r.paid?fmt(r.paid):'—'}</td>
+      <td class="num bold" style="font-size:${bal>0?14:12}px;color:${bal>0?(ov?'var(--danger)':'var(--warning)'):'var(--success)'}">${bal>0?fmt(bal):'✓'}</td>
       <td>
-        ${r.w9==='filed'?'<span class="badge b-ok" style="font-size:9px">✓</span>':r.w9==='missing'?'<span class="badge b-no" style="font-size:9px">W-9 ✗</span>':'<span class="badge b-neu" style="font-size:9px">N/A</span>'}
-        ${r.blocked&&r.reason==='COI EXPIRED'?'<span class="badge b-no" style="font-size:9px">COI ✗</span>':''}
+        ${r.w9==='filed'?'<span class="badge b-ok" style="font-size:9px">W-9 ✓</span>':r.w9==='missing'?'<span class="badge b-no" style="font-size:9px">W-9 ✗</span>':'<span class="badge b-neu" style="font-size:9px">N/A</span>'}
+        ${r.blocked&&(r.reason||'').includes('COI')?'<span class="badge b-no" style="font-size:9px">COI ✗</span>':''} 
       </td>
-      <td>
-        ${r.blocked
-          ? `<div><span class="badge b-no" style="font-size:9px">🚫 BLOCKED</span><div style="font-size:9px;color:var(--danger)">${r.reason}</div></div>`
-          : r.status==='approved'
-          ? '<span class="badge b-ok" style="font-size:9px">✓ Approved</span>'
-          : '<span class="badge b-info" style="font-size:9px">Pending</span>'}
-      </td>
-    </tr>`).join('')}
-    </tbody>
-    <tfoot>
-      <tr style="background:var(--navy);color:#fff;font-weight:700">
-        <td colspan="5">TOTAL</td>
-        <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(apRows.reduce((s,r)=>s+r.gross,0))}</td>
-        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6;border-left:2px solid rgba(255,255,255,.1)">${fmt(totPending)}</td>
-        <td class="num" style="font-family:var(--font-mono);color:var(--gold-light);border-left:2px solid rgba(255,255,255,.1)">${fmt(totRet)}</td>
-        <td colspan="2"></td>
-      </tr>
-    </tfoot>
+      <td>${r.blocked?`<span class="badge b-no" style="font-size:9px">🚫 ${r.reason||'BLOCKED'}</span>`:bal<=0?`<span class="badge b-ok" style="font-size:9px">✓ ${isE?'Pagado':'Paid'}</span>`:ov?`<span class="badge b-no" style="font-size:9px">⚠ ${isE?'Vencida':'Overdue'}</span>`:`<span class="badge b-info" style="font-size:9px">${isE?'Pendiente':'Pending'}</span>`}</td>
+      <td>${!r.blocked&&bal>0?`<button class="btn btn-sm btn-ghost" onclick="openModal(modalRegisterPaymentAP('${r.inv}','${r.vendor}',${bal}))" title="${isE?'Pagar':'Pay'}">💳</button>`:''}</td>
+    </tr>`;
+  }).join('')}
+  </tbody>
+  <tfoot><tr style="background:var(--navy);color:#fff;font-weight:700">
+    <td colspan="${cons?6:5}">TOTAL</td>
+    <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(apRows.reduce((s,r)=>s+r.gross,0))}</td>
+    ${cons?`<td class="num" style="font-family:var(--font-mono);color:var(--gold-light)">${fmt(totRet)}</td>`:''}
+    <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(totPaid)}</td>
+    <td class="num" style="font-family:var(--font-mono);color:var(--warning-light);font-size:15px">${fmt(totPending)}</td>
+    <td colspan="3"></td>
+  </tr></tfoot>
   </table></div>
-  <div class="alert a-info mt2" style="font-size:11px">
-    ⚑ ${isE?`Arquitectura de retención (AP): Dr 5-01-03-001 COGS / Cr 2-01-01-002 AP Corriente + Cr 2-01-02-002 Retención LP. Los ${fmt(totRet)} de retención LP no aparecen como obligación corriente en el flujo de caja.`:`Retainage AP architecture: Dr 5-01-03-001 COGS / Cr 2-01-01-002 AP Current + Cr 2-01-02-002 Retainage Payable LT. The ${fmt(totRet)} in LT retainage does not appear as a current obligation in cash flow.`}
-  </div>
 </div>`;
 }
 
-function modalRegisterPaymentAP(){const isE=es();return`
-<h3>${isE?'Pagar Factura de Proveedor':'Pay Vendor Invoice'}</h3>
+function modalRegisterPaymentAP(invRef='', vendorName='', balance=0){
+  const isE=es();
+  const cons=isCons();
+  return`
+<h3 style="font-family:var(--font-display)">${isE?'Pagar Factura de Proveedor':'Pay Vendor Invoice'}</h3>
+${balance>0?`<div style="background:var(--info-light);border-left:3px solid var(--info);border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;font-size:12px">
+  <strong>${invRef||isE?'Factura seleccionada':'Selected invoice'}</strong>${vendorName?' — '+vendorName:''}
+  · ${isE?'Saldo pendiente:':'Outstanding balance:'} <strong style="color:var(--danger)">${fmt(balance)}</strong>
+</div>`:''}
 <div class="mf">
   <div class="mf-row">
     <div class="mf-field"><label>${isE?'Proveedor / Sub':'Vendor / Sub'}</label>
       <select id="pv-vendor">
-        ${DB.subs.filter(s=>!s.blocked).map(s=>`<option value="${s.name}">${s.name}</option>`).join('')}
-        <option value="Home Depot">Home Depot</option>
+        ${DB.subs.filter(s=>!s.blocked).map(s=>`<option value="${s.name}" ${s.name===vendorName?'selected':''}>${s.name}</option>`).join('')}
+        <option value="Home Depot" ${vendorName==='Home Depot'?'selected':''}>Home Depot</option>
+        ${vendorName&&!DB.subs.find(s=>s.name===vendorName)&&vendorName!=='Home Depot'?`<option value="${vendorName}" selected>${vendorName}</option>`:''}
       </select></div>
     <div class="mf-field"><label>${isE?'Factura AP':'AP Invoice'}</label>
-      <input type="text" id="pv-inv" placeholder="AP-001"></div>
+      <input type="text" id="pv-inv" value="${invRef}" placeholder="AP-001"></div>
   </div>
   <div class="mf-row">
     <div class="mf-field"><label>${isE?'Fecha de Pago':'Payment Date'}</label>
       <input type="date" id="pv-date" value="${new Date().toISOString().slice(0,10)}"></div>
     <div class="mf-field"><label>${isE?'Monto a Pagar ($)':'Amount to Pay ($)'}</label>
-      <input type="number" id="pv-amt" placeholder="0" min="0"></div>
+      <input type="number" id="pv-amt" placeholder="${balance||0}" value="${balance||''}" min="0" step="0.01"></div>
   </div>
   <div class="mf-field full"><label>${isE?'Cuenta Bancaria Origen':'Source Bank Account'}</label>
     <select id="pv-acct">
-      <option value="CA-002">BofA ****4821 — ${isE?'Cuenta Operativa':'Operating'}</option>
+      <option value="CA-002">BofA ****4821 — ${isE?'Operativa':'Operating'}</option>
       <option value="CA-003">Wells Fargo ****9201</option>
     </select></div>
-  <div class="mf-field full"><label>${isE?'Tipo de Pago':'Payment Type'}</label>
+  ${cons?`<div class="mf-field full"><label>${isE?'Tipo de Pago':'Payment Type'}</label>
     <select id="pv-type">
       <option value="current">${isE?'Pago corriente (sin retención)':'Current payment (no retainage)'}</option>
       <option value="ret">${isE?'Liberación de retención (cierre de obra)':'Retainage release (project closeout)'}</option>
-    </select></div>
+    </select></div>`:'<input type="hidden" id="pv-type" value="current">'}
 </div>
 <div class="alert a-info" style="margin-top:10px;font-size:11px">
-  ${isE?'Asiento generado: Dr 2-01-01-002 (AP Corriente) / Cr 1-01-01-001 (Efectivo/Banco)':'Generated entry: Dr 2-01-01-002 (Current AP) / Cr 1-01-01-001 (Cash/Bank)'}
+  ${isE?'Asiento: Dr 2-01-01-002 (AP) / Cr 1-01-01-001 (Banco)':'Entry: Dr 2-01-01-002 (AP) / Cr 1-01-01-001 (Bank)'}
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
   <button class="btn btn-navy" onclick="saveAPPayment()">${isE?'✓ Registrar Pago':'✓ Record Payment'}</button>
-</div>`}
+</div>`;}
 
 function saveAPPayment(){
   const isE=es();
@@ -6740,19 +6871,25 @@ function saveAPPayment(){
   const amt    = parseFloat(document.getElementById('pv-amt')?.value)||0;
   const isRet  = document.getElementById('pv-type')?.value==='ret';
   if(!vendor||!amt){gMsg(isE?'⚠ Proveedor y monto son obligatorios':'⚠ Vendor and amount are required');return;}
+
+  // Update paid amount on live AP entries in journal
+  const apEntry=DB.journal.find(j=>j.apEntry&&j.id===inv);
+  if(apEntry){ apEntry.paid=(apEntry.paid||0)+amt; }
+
   const ref=`APPAY-${Date.now().toString().slice(-5)}`;
   DB.journal.push({
     id:ref, date, proj:'ALL',
-    desc:`${isE?'Pago AP':'AP Payment'}: ${vendor} — ${inv}`,
+    desc:`${isE?'Pago AP':'AP Payment'}: ${vendor} — ${inv} — ${fmt(amt)}`,
     dr: isRet?'2-01-02-002':'2-01-01-002',
     cr:'1-01-01-001',
-    amt, std:'both', wip:false, type:'out', cat:'Subcontractors', acct:'CA-002'
+    amt, std:'both', wip:false, type:'out', cat:'Subcontractors', acct:'CA-002',
+    apPayRef:inv
   });
   dbSaveSync(); dbSave().catch(()=>{});
-  log((S.user||'U').toUpperCase(),`AP payment: ${ref} — ${vendor} ${fmt(amt)}`,'medium');
+  log((S.user||'U').toUpperCase(),`AP payment: ${ref} — ${vendor} ${fmt(amt)} on ${inv}`,'medium');
   closeModal();
-  gMsg(isE?`✓ ${ref}: Pago de ${fmt(amt)} a ${vendor} registrado. Asiento generado.`:
-    `✓ ${ref}: Payment of ${fmt(amt)} to ${vendor} posted. Entry generated.`);
+  gMsg(isE?`✓ ${ref}: Pago de ${fmt(amt)} a ${vendor} registrado. Saldo de ${inv} actualizado.`:
+    `✓ ${ref}: Payment of ${fmt(amt)} to ${vendor} posted. Balance of ${inv} updated.`);
   renderMod('ap');
 }
 
@@ -7680,6 +7817,324 @@ function runInventoryImport(){
   renderMod('inventory');
 }
 
+// ══════════════════════════════════════════════════════
+// MODULE: PURCHASES — Compras y Órdenes de Compra
+// ══════════════════════════════════════════════════════
+function rPurchases(){
+  const isE=es();
+  if(!DB.purchaseOrders) DB.purchaseOrders=[];
+
+  // Seeded POs
+  const seeded=[
+    {id:'OC-001',date:'2026-03-20',vendor:'Home Depot',          desc_en:'Structural materials — PRJ-001',desc_es:'Materiales estructurales — PRJ-001', proj:'PRJ-001',total:18500,received:18500,invoiced:18500,invoiceRef:'AP-005',status:'closed',   category:'Materials'},
+    {id:'OC-002',date:'2026-03-25',vendor:'Steel Supply Corp',   desc_en:'W8x31 steel beams — PRJ-002',  desc_es:'Vigas de acero W8x31 — PRJ-002',   proj:'PRJ-002',total:42000,received:0,    invoiced:0,    invoiceRef:'',       status:'pending',  category:'Materials'},
+    {id:'OC-003',date:'2026-03-28',vendor:'Grainger Industrial', desc_en:'Safety equipment Q2',         desc_es:'Equipo de seguridad Q2',             proj:'ALL',    total:5840, received:5840, invoiced:0,    invoiceRef:'',       status:'received', category:'Safety'},
+    {id:'OC-004',date:'2026-04-01',vendor:'Sunbelt Rentals',     desc_en:'Crane rental — April',        desc_es:'Renta de grúa — Abril',              proj:'PRJ-001',total:12000,received:0,    invoiced:0,    invoiceRef:'',       status:'approved', category:'Equipment'},
+    {id:'OC-005',date:'2026-04-02',vendor:'Rebar Direct',        desc_en:'#5 Rebar 500 pcs',            desc_es:'Varilla #5 500 barras',               proj:'PRJ-003',total:9200, received:0,    invoiced:0,    invoiceRef:'',       status:'draft',    category:'Materials'},
+  ];
+  const allPOs=[...seeded,...DB.purchaseOrders.filter(p=>!seeded.find(s=>s.id===p.id))];
+
+  const totOrdered  =allPOs.reduce((s,p)=>s+p.total,0);
+  const totReceived =allPOs.reduce((s,p)=>s+p.received,0);
+  const totInvoiced =allPOs.reduce((s,p)=>s+p.invoiced,0);
+  const totPending  =totOrdered-totInvoiced;
+  const pendingPOs  =allPOs.filter(p=>p.status!=='closed').length;
+
+  const statusColor = s=>s==='closed'?'b-ok':s==='received'?'b-info':s==='approved'?'b-warn':s==='pending'?'b-neu':'b-stone';
+  const statusLabel = s=>({
+    closed:   isE?'Cerrada':'Closed',
+    received: isE?'Recibida':'Received',
+    approved: isE?'Aprobada':'Approved',
+    pending:  isE?'Pendiente':'Pending',
+    draft:    isE?'Borrador':'Draft',
+  }[s]||s);
+
+  return`
+<div class="page-header">
+  <div>
+    <div class="page-title">${isE?'Compras y Órdenes de Compra':'Purchases & Purchase Orders'}</div>
+    <div class="page-subtitle">${isE?'OC → Recepción → Factura de Proveedor → AP · Seguimiento completo del ciclo de compra':'PO → Receipt → Vendor Invoice → AP · Full purchase cycle tracking'}</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-ghost btn-sm" onclick="nav('ap')">${isE?'Ver AP':'View AP'}</button>
+    <button class="btn btn-gold btn-sm" onclick="openModal(modalNewPO())">${isE?'+ Nueva OC':'+ New PO'}</button>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  ${kpi(isE?'Total Órdenes Emitidas':'Total POs Issued', fmt(totOrdered), `${allPOs.length} ${isE?'órdenes':'orders'}`,'navy','')}
+  ${kpi(isE?'Recibido':'Received', fmt(totReceived), `${allPOs.filter(p=>p.received>0).length} ${isE?'con recepción':'with receipt'}`,'success','')}
+  ${kpi(isE?'Facturado por Proveedor':'Vendor-Invoiced', fmt(totInvoiced), isE?'Con factura recibida':'With invoice received','info','')}
+  ${kpi(isE?'Pendiente de Facturar':'Pending Invoice', fmt(totPending), `${pendingPOs} ${isE?'OCs abiertas':'open POs'}`, totPending>0?'warning':'success','')}
+</div>
+
+<!-- PURCHASE ORDER REGISTER -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">${isE?'Registro de Órdenes de Compra':'Purchase Order Register'}</div>
+      <div class="card-sub">${isE?'Ciclo: OC Emitida → Aprobada → Recibida → Facturada → Pagada (AP)':'Cycle: PO Issued → Approved → Received → Invoiced → Paid (AP)'}</div>
+    </div>
+  </div>
+  <div style="overflow-x:auto"><table class="dt">
+    <thead><tr>
+      <th>OC #</th>
+      <th>${isE?'Fecha':'Date'}</th>
+      <th>${isE?'Proveedor':'Vendor'}</th>
+      <th style="min-width:160px">${isE?'Descripción':'Description'}</th>
+      <th>${isE?'Proyecto':'Project'}</th>
+      <th>${isE?'Categoría':'Category'}</th>
+      <th class="num">${isE?'Total OC':'PO Total'}</th>
+      <th class="num">${isE?'Recibido':'Received'}</th>
+      <th class="num">${isE?'Facturado':'Invoiced'}</th>
+      <th class="num">${isE?'Pendiente':'Pending'}</th>
+      <th>${isE?'Factura Prov.':'Vendor Inv.'}</th>
+      <th>${isE?'Estado':'Status'}</th>
+      <th>${isE?'Acciones':'Actions'}</th>
+    </tr></thead>
+    <tbody>
+    ${allPOs.map(po=>{
+      const pend=po.total-po.invoiced;
+      return`<tr ${po.status==='draft'?'style="background:rgba(0,0,0,.02)"':po.status==='received'?'style="background:var(--info-light)"':''}>
+        <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 7px;border-radius:4px">${po.id}</code></td>
+        <td class="mono" style="font-size:11px">${po.date}</td>
+        <td style="font-weight:500;font-size:12.5px">${po.vendor}</td>
+        <td style="font-size:12px">${isE?po.desc_es:po.desc_en}</td>
+        <td><span class="badge b-neu" style="font-size:9px">${po.proj}</span></td>
+        <td><span class="badge b-info" style="font-size:9px">${po.category}</span></td>
+        <td class="num mono bold">${fmt(po.total)}</td>
+        <td class="num mono ${po.received===po.total?'green':po.received>0?'warning':'stone'}">${po.received?fmt(po.received):'—'}</td>
+        <td class="num mono ${po.invoiced>0?'green':'stone'}">${po.invoiced?fmt(po.invoiced):'—'}</td>
+        <td class="num mono bold ${pend>0?'warning':''}">${pend>0?fmt(pend):'✓'}</td>
+        <td style="font-size:11px">${po.invoiceRef?`<code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${po.invoiceRef}</code>`:'—'}</td>
+        <td><span class="badge ${statusColor(po.status)}" style="font-size:10px">${statusLabel(po.status)}</span></td>
+        <td>
+          <div style="display:flex;gap:4px">
+            ${po.status!=='received'&&po.status!=='closed'?`<button class="btn btn-sm btn-ghost" onclick="openModal(modalReceivePO('${po.id}','${po.vendor}',${po.total},${po.received}))" title="${isE?'Registrar Recepción':'Register Receipt'}">📦</button>`:''}
+            ${po.received>0&&!po.invoiceRef?`<button class="btn btn-sm btn-ghost" onclick="openModal(modalLinkPOInvoice('${po.id}','${po.vendor}',${po.received}))" title="${isE?'Vincular Factura':'Link Invoice'}">🧾</button>`:''}
+            ${po.invoiceRef?`<button class="btn btn-sm btn-ghost" onclick="nav('ap')" title="${isE?'Ver en AP':'View in AP'}">📤</button>`:''}
+          </div>
+        </td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+    <tfoot>
+      <tr style="background:var(--navy);color:#fff;font-weight:700">
+        <td colspan="6">TOTAL</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(totOrdered)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(totReceived)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(totInvoiced)}</td>
+        <td class="num" style="font-family:var(--font-mono);color:var(--warning-light)">${fmt(totPending)}</td>
+        <td colspan="3"></td>
+      </tr>
+    </tfoot>
+  </table></div>
+  <div class="alert a-info mt2" style="font-size:11px">
+    ⓘ ${isE?'Flujo de compra: OC Emitida → (📦) Registrar recepción de bienes/servicios → (🧾) Vincular factura del proveedor → se crea automáticamente en AP (Cuentas por Pagar).':'Purchase flow: PO Issued → (📦) Register goods/services receipt → (🧾) Link vendor invoice → automatically created in AP (Accounts Payable).'}
+  </div>
+</div>`;
+}
+
+function modalNewPO(){
+  const isE=es();
+  if(!DB.purchaseOrders) DB.purchaseOrders=[];
+  const allNums=[...[1,2,3,4,5],...DB.purchaseOrders.map(p=>parseInt(p.id?.replace('OC-','')||0))];
+  const nextId=`OC-${String(Math.max(...allNums)+1).padStart(3,'0')}`;
+  return`
+<h3 style="font-family:var(--font-display)">${isE?'Nueva Orden de Compra':'New Purchase Order'}</h3>
+<div style="background:var(--navy);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px">
+  <span style="font-size:10px;color:rgba(255,255,255,.5)">${isE?'NÚMERO OC':'PO NUMBER'}</span>
+  <span style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--gold)">${nextId}</span>
+</div>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Proveedor':'Vendor'} *</label>
+      <input type="text" id="po-vendor" placeholder="${isE?'Nombre del proveedor':'Vendor name'}"></div>
+    <div class="mf-field"><label>${isE?'Categoría':'Category'}</label>
+      <select id="po-cat">
+        <option value="Materials">${isE?'Materiales':'Materials'}</option>
+        <option value="Equipment">${isE?'Equipo/Renta':'Equipment/Rental'}</option>
+        <option value="Services">${isE?'Servicios':'Services'}</option>
+        <option value="Safety">${isE?'Seguridad':'Safety'}</option>
+        <option value="Tools">${isE?'Herramientas':'Tools'}</option>
+        <option value="Other">${isE?'Otros':'Other'}</option>
+      </select></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Descripción':'Description'} *</label>
+    <input type="text" id="po-desc" placeholder="${isE?'Ej: Cemento Portland 1000 sacos para PRJ-001':'e.g. Portland Cement 1000 bags for PRJ-001'}"></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Proyecto':'Project'}</label>
+      <select id="po-proj">
+        <option value="ALL">ALL — General</option>
+        ${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name.split(' ').slice(0,2).join(' ')}</option>`).join('')}
+      </select></div>
+    <div class="mf-field"><label>${isE?'Fecha requerida':'Required Date'}</label>
+      <input type="date" id="po-req" value="${new Date(Date.now()+7*24*3600*1000).toISOString().slice(0,10)}"></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Monto Total OC ($)':'PO Total Amount ($)'} *</label>
+      <input type="number" id="po-total" placeholder="0.00" min="0" step="0.01"></div>
+    <div class="mf-field"><label>${isE?'Condición de Pago':'Payment Terms'}</label>
+      <select id="po-terms">
+        <option value="Net 30">Net 30</option>
+        <option value="Net 15">Net 15</option>
+        <option value="Net 60">Net 60</option>
+        <option value="Immediate">Immediate / Contado</option>
+        <option value="COD">COD</option>
+      </select></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Notas / Especificaciones':'Notes / Specifications'}</label>
+    <input type="text" id="po-notes" placeholder="${isE?'Especificaciones técnicas, condiciones de entrega...':'Technical specs, delivery conditions...'}"></div>
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-ghost" onclick="savePO('draft')">${isE?'💾 Borrador':'💾 Draft'}</button>
+  <button class="btn btn-gold" onclick="savePO('approved')">${isE?'✓ Emitir OC':'✓ Issue PO'}</button>
+</div>`;}
+
+function savePO(status){
+  const isE=es();
+  const vendor=document.getElementById('po-vendor')?.value.trim();
+  const desc  =document.getElementById('po-desc')?.value.trim();
+  const proj  =document.getElementById('po-proj')?.value||'ALL';
+  const total =parseFloat(document.getElementById('po-total')?.value)||0;
+  const cat   =document.getElementById('po-cat')?.value||'Materials';
+  const req   =document.getElementById('po-req')?.value;
+  const terms =document.getElementById('po-terms')?.value||'Net 30';
+  const notes =document.getElementById('po-notes')?.value.trim();
+  if(!vendor||!desc||!total){gMsg(isE?'⚠ Proveedor, descripción y monto son obligatorios':'⚠ Vendor, description and amount are required');return;}
+  if(!DB.purchaseOrders) DB.purchaseOrders=[];
+  const allNums=[...[1,2,3,4,5],...DB.purchaseOrders.map(p=>parseInt(p.id?.replace('OC-','')||0))];
+  const poId=`OC-${String(Math.max(...allNums)+1).padStart(3,'0')}`;
+  const po={id:poId,date:new Date().toISOString().slice(0,10),vendor,desc_en:desc,desc_es:desc,proj,total,received:0,invoiced:0,invoiceRef:'',status,category:cat,reqDate:req,terms,notes};
+  DB.purchaseOrders.push(po);
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),`PO ${status}: ${poId} — ${vendor} ${fmt(total)}`,'medium');
+  closeModal();
+  gMsg(isE?`✓ OC ${poId} ${status==='draft'?'guardada como borrador':'emitida a '+vendor}. Total: ${fmt(total)}.`:
+    `✓ PO ${poId} ${status==='draft'?'saved as draft':'issued to '+vendor}. Total: ${fmt(total)}.`);
+  renderMod('purchases');
+}
+
+function modalReceivePO(poId, vendor, total, received){
+  const isE=es();
+  const remaining=total-received;
+  return`
+<h3>${isE?'Registrar Recepción de Bienes/Servicios':'Register Goods/Services Receipt'}</h3>
+<div style="background:var(--stone-pale);border-radius:var(--radius);padding:12px;margin-bottom:14px">
+  <div style="font-size:13px;font-weight:600;color:var(--navy)">${vendor}</div>
+  <div style="font-size:11px;color:var(--stone)">${poId} · ${isE?'Total OC:':'PO Total:'} ${fmt(total)} · ${isE?'Pendiente de recibir:':'Pending receipt:'} <strong>${fmt(remaining)}</strong></div>
+</div>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Fecha de Recepción':'Receipt Date'}</label>
+      <input type="date" id="rec-date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="mf-field"><label>${isE?'Monto Recibido ($)':'Amount Received ($)'}</label>
+      <input type="number" id="rec-amt" placeholder="${remaining}" value="${remaining}" min="0" max="${total}"></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Receptor / Firmante':'Received By'}</label>
+    <input type="text" id="rec-by" value="${S.user||''}" placeholder="${isE?'Nombre del receptor':'Receiver name'}"></div>
+  <div class="mf-field full"><label>${isE?'Notas de Recepción':'Receipt Notes'}</label>
+    <input type="text" id="rec-notes" placeholder="${isE?'Ej: Recibido conforme, sin daños':'e.g. Received in good condition'}"></div>
+</div>
+<div class="alert a-info" style="font-size:11px;margin-top:10px">
+  ${isE?'Al registrar la recepción, el estado de la OC cambia a "Recibida" y se habilita el botón para vincular la factura del proveedor.':'After registering receipt, PO status changes to "Received" and the vendor invoice linking button is enabled.'}
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="saveReceivePO('${poId}',${total},${received})">${isE?'✓ Confirmar Recepción':'✓ Confirm Receipt'}</button>
+</div>`;}
+
+function saveReceivePO(poId, total, prevReceived){
+  const isE=es();
+  const date =document.getElementById('rec-date')?.value;
+  const amt  =parseFloat(document.getElementById('rec-amt')?.value)||0;
+  const by   =document.getElementById('rec-by')?.value.trim()||S.user;
+  const notes=document.getElementById('rec-notes')?.value.trim();
+  if(!amt){gMsg(isE?'Ingrese el monto recibido':'Enter the amount received');return;}
+  if(!DB.purchaseOrders) DB.purchaseOrders=[];
+  // Find in DB.purchaseOrders or seeded (for seeded, add to DB)
+  let po=DB.purchaseOrders.find(p=>p.id===poId);
+  if(!po){
+    // Clone seeded
+    const seededStatus=['OC-001','OC-002','OC-003','OC-004','OC-005'];
+    if(seededStatus.includes(poId)){
+      po={id:poId,vendor:'Vendor',desc_en:'',desc_es:'',proj:'ALL',total,received:prevReceived,invoiced:0,invoiceRef:'',status:'pending',category:'Materials',date:'2026-03-20'};
+      DB.purchaseOrders.push(po);
+    }
+  }
+  if(po){
+    po.received=Math.min(prevReceived+amt,total);
+    po.status=po.received>=po.total?'received':'approved';
+    if(notes) po.receiptNotes=notes;
+    po.receivedBy=by; po.receiptDate=date;
+  }
+  // Post inventory receipt note to journal
+  DB.journal.push({id:`REC-${poId}`,date,desc:`${isE?'Recepción OC':'PO Receipt'}: ${poId} — ${fmt(amt)}`,
+    proj:po?.proj||'ALL',dr:'1-04-01-001',cr:'2-01-01-001',amt,std:'both',wip:false});
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),`PO receipt: ${poId} — ${fmt(amt)} received by ${by}`,'medium');
+  closeModal();
+  gMsg(isE?`✓ Recepción registrada: ${fmt(amt)} contra OC ${poId}. Estado actualizado.`:
+    `✓ Receipt recorded: ${fmt(amt)} against PO ${poId}. Status updated.`);
+  renderMod('purchases');
+}
+
+function modalLinkPOInvoice(poId, vendor, received){
+  const isE=es();
+  if(!DB.purchaseOrders) DB.purchaseOrders=[];
+  const apNums=[...['AP-001','AP-002','AP-003','AP-004','AP-005','AP-006'],...DB.purchaseOrders.filter(p=>p.invoiceRef).map(p=>p.invoiceRef)];
+  const nextAP=`AP-${String(Math.max(...apNums.map(a=>parseInt(a.replace('AP-','')||0)))+1).padStart(3,'0')}`;
+  return`
+<h3>${isE?'Vincular Factura del Proveedor':'Link Vendor Invoice'}</h3>
+<div style="background:var(--stone-pale);border-radius:var(--radius);padding:12px;margin-bottom:14px">
+  <div style="font-size:13px;font-weight:600;color:var(--navy)">${vendor}</div>
+  <div style="font-size:11px;color:var(--stone)">${poId} · ${isE?'Bienes/servicios recibidos:':'Received amount:'} <strong>${fmt(received)}</strong></div>
+</div>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Número Factura Proveedor':'Vendor Invoice #'}</label>
+      <input type="text" id="lpi-ref" placeholder="${nextAP}" value="${nextAP}"></div>
+    <div class="mf-field"><label>${isE?'Fecha de Factura':'Invoice Date'}</label>
+      <input type="date" id="lpi-date" value="${new Date().toISOString().slice(0,10)}"></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Monto Facturado ($)':'Invoiced Amount ($)'}</label>
+      <input type="number" id="lpi-amt" value="${received}" min="0"></div>
+    <div class="mf-field"><label>${isE?'Vencimiento':'Due Date'}</label>
+      <input type="date" id="lpi-due" value="${new Date(Date.now()+30*24*3600*1000).toISOString().slice(0,10)}"></div>
+  </div>
+</div>
+<div class="alert a-ok" style="font-size:11px;margin-top:10px">
+  ✓ ${isE?'Al vincular la factura, se crea automáticamente la entrada en Cuentas por Pagar (AP) con el saldo pendiente.':'Linking the invoice automatically creates the Accounts Payable (AP) entry with the pending balance.'}
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-navy" onclick="saveLinkPOInvoice('${poId}','${vendor}')">${isE?'✓ Vincular y Crear AP':'✓ Link & Create AP'}</button>
+</div>`;}
+
+function saveLinkPOInvoice(poId, vendor){
+  const isE=es();
+  const ref  =document.getElementById('lpi-ref')?.value.trim();
+  const date =document.getElementById('lpi-date')?.value;
+  const amt  =parseFloat(document.getElementById('lpi-amt')?.value)||0;
+  const due  =document.getElementById('lpi-due')?.value;
+  if(!ref||!amt){gMsg(isE?'Referencia y monto son obligatorios':'Reference and amount are required');return;}
+  if(!DB.purchaseOrders) DB.purchaseOrders=[];
+  const po=DB.purchaseOrders.find(p=>p.id===poId);
+  if(po){po.invoiceRef=ref;po.invoiced=amt;po.status='closed';}
+  // Create AP entry in journal
+  DB.journal.push({id:ref,date,desc:`AP ${isE?'vinculada a':'linked to'} OC ${poId} — ${vendor}`,
+    proj:po?.proj||'ALL',dr:'1-04-01-001',cr:'2-01-01-002',amt,std:'both',wip:false,
+    apEntry:true,vendor,poRef:poId,due,balance:amt,paid:0});
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),`PO invoice linked: ${ref} — ${vendor} ${fmt(amt)} due ${due}`,'medium');
+  closeModal();
+  gMsg(isE?`✓ Factura ${ref} vinculada a OC ${poId}. Entrada AP creada por ${fmt(amt)}.`:
+    `✓ Invoice ${ref} linked to PO ${poId}. AP entry created for ${fmt(amt)}.`);
+  renderMod('purchases');
+}
+
 function modalAuditExport(){const isE=es();return`
 <h3>${isE?'Exportación Forense':'Forensic Export'}</h3>
 <div class="mf">
@@ -7907,56 +8362,127 @@ function saveNewProject() {
 }
 
 function modalAsset(){const isE=es();return`
-<h3>${isE?'Nuevo Activo Fijo':'New Fixed Asset'}</h3>
+<h3 style="font-family:var(--font-display)">${isE?'Nuevo Activo Fijo':'New Fixed Asset'}</h3>
 <div class="mf">
-<div class="mf-field full"><label>${isE?'Descripción del Activo':'Asset Description'}</label>
-  <input type="text" id="na-desc" placeholder="${isE?'Ej: Excavadora Cat 325':'e.g. Caterpillar 325 Excavator'}"></div>
-<div class="mf-row">
-  <div class="mf-field"><label>${isE?'Categoría':'Category'}</label>
-    <select id="na-cat"><option value="Heavy Equipment">Heavy Equipment</option><option value="Vehicles">Vehicles</option><option value="Buildings">Buildings</option><option value="Leasehold">Leasehold Improvement</option></select></div>
-  <div class="mf-field"><label>${isE?'Costo de Adquisición ($)':'Acquisition Cost ($)'}</label>
-    <input type="number" id="na-cost" placeholder="0" min="0" step="1000"></div>
-</div>
-<div class="mf-row">
-  <div class="mf-field"><label>${isE?'Método Libro (Depreciación)':'Book Depreciation Method'}</label>
-    <select id="na-book"><option value="SL">Straight-Line (SL)</option><option value="DDB">Double Declining Balance</option></select></div>
-  <div class="mf-field"><label>MACRS ${isE?'(Fiscal)':'(Tax)'}</label>
-    <select id="na-macrs"><option value="5yr">5-Year</option><option value="7yr">7-Year</option><option value="15yr">15-Year</option><option value="179">Section 179 (Full Expensing)</option></select></div>
-</div>
-<div class="mf-row">
-  <div class="mf-field"><label>${isE?'Vida Útil — Libros (años)':'Useful Life — Books (yrs)'}</label>
-    <input type="number" id="na-life" placeholder="5" min="1" max="50" value="5"></div>
-  <div class="mf-field"><label>${isE?'Fecha de Adquisición':'Acquisition Date'}</label>
-    <input type="date" id="na-date" value="${new Date().toISOString().slice(0,10)}"></div>
-</div>
+  <div class="mf-field full">
+    <label>${isE?'Descripción del Activo':'Asset Description'} *</label>
+    <input type="text" id="na-desc" placeholder="${isE?'Ej: Excavadora Caterpillar 325 — Serie XYZ':'e.g. Caterpillar 325 Excavator — Serial XYZ'}">
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Categoría':'Category'}</label>
+      <select id="na-cat">
+        <option value="Heavy Equipment">Heavy Equipment</option>
+        <option value="Vehicles">Vehicles</option>
+        <option value="Buildings">Buildings</option>
+        <option value="Leasehold">Leasehold Improvement</option>
+        <option value="Machinery">Machinery</option>
+        <option value="IT Equipment">IT Equipment</option>
+        <option value="Furniture">Furniture & Fixtures</option>
+      </select>
+    </div>
+    <div class="mf-field"><label>${isE?'Costo de Adquisición ($)':'Acquisition Cost ($)'} *</label>
+      <input type="number" id="na-cost" placeholder="0" min="0" step="100">
+    </div>
+  </div>
+
+  <!-- Purchase invoice and dates -->
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Factura de Compra #':'Purchase Invoice #'}</label>
+      <input type="text" id="na-invoice" placeholder="${isE?'Ej: FACT-2026-0481':'e.g. INV-2026-0481'}">
+    </div>
+    <div class="mf-field"><label>${isE?'Proveedor':'Vendor'}</label>
+      <input type="text" id="na-vendor" placeholder="${isE?'Ej: Caterpillar Financial':'e.g. Caterpillar Financial'}">
+    </div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Fecha de Compra (Factura)':'Purchase Date (Invoice Date)'}</label>
+      <input type="date" id="na-date" value="${new Date().toISOString().slice(0,10)}">
+    </div>
+    <div class="mf-field"><label>${isE?'Fecha de Puesta en Operación':'In-Service Date'}</label>
+      <input type="date" id="na-inservice" value="${new Date().toISOString().slice(0,10)}">
+      <div style="font-size:10px;color:var(--stone);margin-top:3px">${isE?'Inicio de depreciación fiscal (MACRS) desde esta fecha':'Depreciation start date for tax purposes (MACRS)'}</div>
+    </div>
+  </div>
+
+  <!-- Depreciation -->
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Método Depreciación Contable':'Book Depreciation Method'}</label>
+      <select id="na-book">
+        <option value="SL">Straight-Line (SL)</option>
+        <option value="DDB">Double Declining Balance</option>
+      </select>
+    </div>
+    <div class="mf-field"><label>MACRS ${isE?'(Fiscal / Tax)':'(Tax Method)'}</label>
+      <select id="na-macrs">
+        <option value="5yr">5-Year (Vehicles, Equipment)</option>
+        <option value="7yr">7-Year (Furniture, Office)</option>
+        <option value="15yr">15-Year (Land Improvements)</option>
+        <option value="179">Section 179 (Full Expensing)</option>
+      </select>
+    </div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Vida Útil — Libros (años)':'Useful Life — Books (yrs)'}</label>
+      <input type="number" id="na-life" placeholder="5" min="1" max="50" value="5">
+    </div>
+    <div class="mf-field"><label>${isE?'Ubicación / Proyecto':'Location / Project'}</label>
+      <select id="na-proj">
+        <option value="ALL">ALL — General</option>
+        ${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name.split(' ').slice(0,2).join(' ')}</option>`).join('')}
+      </select>
+    </div>
+  </div>
 </div>
 <div class="alert a-info" style="margin-top:12px;font-size:11px">
-  ${isE?'El sistema calculará depreciación SL vs MACRS y la diferencia temporal para ISR Diferido (ASC 740 / IAS 12).':'System auto-calculates SL vs MACRS depreciation and timing difference for Deferred Tax (ASC 740 / IAS 12).'}
+  ⓘ ${isE?'La depreciación contable (SL) inicia en la Fecha de Puesta en Operación. El sistema calcula automáticamente la diferencia temporal MACRS vs SL para ISR Diferido (ASC 740 / IAS 12).':'Book depreciation (SL) starts on In-Service Date. System auto-calculates MACRS vs SL timing difference for Deferred Tax (ASC 740 / IAS 12).'}
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
-  <button class="btn btn-navy" onclick="saveAsset()">${isE?'✓ Agregar Activo':'✓ Add Asset'}</button>
+  <button class="btn btn-navy" onclick="saveAsset()">✓ ${isE?'Agregar Activo':'Add Asset'}</button>
 </div>`}
 
 function saveAsset(){
   const isE=es();
-  const desc =document.getElementById('na-desc')?.value.trim();
-  const cat  =document.getElementById('na-cat')?.value;
-  const cost =parseFloat(document.getElementById('na-cost')?.value)||0;
-  const book =document.getElementById('na-book')?.value;
-  const macrs=document.getElementById('na-macrs')?.value;
-  const life =parseInt(document.getElementById('na-life')?.value)||5;
-  const date =document.getElementById('na-date')?.value;
-  if(!desc||!cost){gMsg(isE?'Descripción y costo son obligatorios':'Description and cost are required');return;}
-  const slDepr=Math.round(cost/life);
-  const macrsMultipliers={'5yr':0.2,'7yr':0.1429,'15yr':0.05,'179':1.0};
-  const macrsYr1=Math.round(cost*(macrsMultipliers[macrs]||0.2));
-  const assetId=nextId('AST',DB.assets);
-  DB.assets.push({id:assetId,desc,cat,cost,book,macrs,life,date,slDepr,macrsYr1,accumulated:0,status:'active',addedBy:S.user});
+  const desc     = document.getElementById('na-desc')?.value.trim();
+  const cat      = document.getElementById('na-cat')?.value||'Heavy Equipment';
+  const cost     = parseFloat(document.getElementById('na-cost')?.value)||0;
+  const invoice  = document.getElementById('na-invoice')?.value.trim()||'';
+  const vendor   = document.getElementById('na-vendor')?.value.trim()||'';
+  const date     = document.getElementById('na-date')?.value;
+  const inservice= document.getElementById('na-inservice')?.value||date;
+  const book     = document.getElementById('na-book')?.value||'SL';
+  const macrs    = document.getElementById('na-macrs')?.value||'5yr';
+  const life     = parseInt(document.getElementById('na-life')?.value)||5;
+  const proj     = document.getElementById('na-proj')?.value||'ALL';
+
+  if(!desc||!cost){gMsg(isE?'⚠ Descripción y costo son obligatorios':'⚠ Description and cost are required');return;}
+
+  const slDepr  = Math.round(cost/life);
+  const macrsM  = {'5yr':0.2,'7yr':0.1429,'15yr':0.05,'179':1.0};
+  const macrsYr1= Math.round(cost*(macrsM[macrs]||0.2));
+  const assetId = nextId('AST',DB.assets);
+
+  DB.assets.push({
+    id:assetId, desc, cat, cost, book, macrs, life,
+    purchaseDate: date, inServiceDate: inservice,
+    invoiceRef: invoice, vendor,
+    proj, slDepr, macrsYr1, accumulated:0,
+    status:'active', addedBy:S.user
+  });
+
+  // Post asset acquisition journal entry
+  DB.journal.push({
+    id:`JE-${assetId}`, date, proj,
+    desc:`${isE?'Adquisición activo fijo':'Fixed asset acquisition'}: ${assetId} — ${desc}${invoice?' ('+invoice+')':''}`,
+    dr:'1-02-01-001', cr:'2-01-01-001', amt:cost, std:'both', wip:false
+  });
+
   dbSaveSync(); dbSave().catch(()=>{});
-  log(S.user?.toUpperCase()||'U',`Asset added: ${assetId} — ${desc} (${fmt(cost)})`, 'medium');
+  log(S.user?.toUpperCase()||'U', `Asset added: ${assetId} — ${desc} (${fmt(cost)})${invoice?' Inv:'+invoice:''}`, 'medium');
   closeModal();
-  gMsg(isE?`✓ Activo "${desc}" agregado (${assetId}). Depr SL: ${fmt(slDepr)}/año`:`✓ Asset "${desc}" added (${assetId}). SL Depr: ${fmt(slDepr)}/yr`);
+  gMsg(isE
+    ?`✓ Activo "${desc}" (${assetId}) agregado. Factura: ${invoice||'N/A'}. Depr SL: ${fmt(slDepr)}/año.`
+    :`✓ Asset "${desc}" (${assetId}) added. Invoice: ${invoice||'N/A'}. SL Depr: ${fmt(slDepr)}/yr.`);
   renderMod(S.mod);
 }
 
