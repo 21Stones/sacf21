@@ -6523,145 +6523,172 @@ function saveInvoice(status){
   const due    = document.getElementById('ni-due')?.value;
   const desc   = document.getElementById('ni-desc')?.value.trim();
   const gross  = parseFloat(document.getElementById('ni-gross')?.value)||0;
-  // Retainage only for construction sectors
-  const retPct = cons ? (parseFloat(document.getElementById('ni-ret')?.value)||0) : 0;
+  const retPct = cons?(parseFloat(document.getElementById('ni-ret')?.value)||0):0;
   if(!client||!gross){gMsg(isE?'⚠ Cliente y monto son obligatorios':'⚠ Client and amount are required');return;}
   if(!DB.invoices) DB.invoices=[];
-  // Correct sequential ID: find max across seeded (INV-001..INV-005) and DB.invoices
-  const allInvNums = [...[1,2,3,4,5], ...(DB.invoices||[]).map(i=>parseInt(i.id?.replace('INV-','')||0))];
-  const nextNum    = Math.max(...allInvNums) + 1;
-  const invId      = `INV-${String(nextNum).padStart(3,'0')}`;
-  const ret    = Math.round(gross*retPct/100);
-  const net    = gross - ret;
-  DB.invoices.push({id:invId,date,due,client,proj,desc:desc||invId,gross,ret,net,status,retPct});
-  // Post AR journal entry
-  DB.journal.push({id:`JE-${invId}`,date,desc:`${isE?'Factura':'Invoice'}: ${invId} — ${client}`,
-    proj:proj||'ALL', dr:'1-01-02-001', cr:'4-01-01-001', amt:net, std:'both', wip:false});
+  const allInvNums=[...[1,2,3,4,5],...DB.invoices.map(i=>parseInt(i.id?.replace('INV-','')||0))];
+  const invId=`INV-${String(Math.max(...allInvNums)+1).padStart(3,'0')}`;
+  const ret=Math.round(gross*retPct/100);
+  const net=gross-ret;
+  // Store full AR record with balance tracking
+  DB.invoices.push({id:invId,date,due,client,proj,desc:desc||invId,gross,ret,net,status,retPct,paid:0,balance:net,arStatus:'open'});
+  // Post AR journal entries
+  DB.journal.push({id:`JE-${invId}`,date,desc:`${isE?'Factura emitida':'Invoice issued'}: ${invId} — ${client}`,
+    proj:proj||'ALL',dr:'1-01-02-001',cr:'4-01-01-001',amt:net,std:'both',wip:false,invoiceRef:invId,client});
   if(cons&&ret>0) DB.journal.push({id:`JE-${invId}-RET`,date,
-    desc:`${isE?'Retención por cobrar':'Retainage receivable'}: ${invId}`,
-    proj:proj||'ALL', dr:'1-01-02-002', cr:'4-01-01-001', amt:ret, std:'both', wip:false});
+    desc:`${isE?'Retención':'Retainage'}: ${invId}`,
+    proj:proj||'ALL',dr:'1-01-02-002',cr:'4-01-01-001',amt:ret,std:'both',wip:false});
   dbSaveSync(); dbSave().catch(()=>{});
   log((S.user||'U').toUpperCase(),`Invoice ${status}: ${invId} — ${client} ${fmt(gross)}`,'medium');
   closeModal();
   gMsg(isE
-    ?`✓ ${invId} ${status==='draft'?'guardada':'emitida'}. AR: ${fmt(net)}${cons&&ret>0?` + Retención LP: ${fmt(ret)}`:''}.`
-    :`✓ ${invId} ${status==='draft'?'saved as draft':'issued'}. AR: ${fmt(net)}${cons&&ret>0?` + Retainage LT: ${fmt(ret)}`:''}.`);
-  renderMod('sales');
+    ?`✓ ${invId} emitida. AR actualizado — ${client} debe ${fmt(net)}${cons&&ret>0?` + Ret.LP ${fmt(ret)}`:''}.`
+    :`✓ ${invId} issued. AR updated — ${client} owes ${fmt(net)}${cons&&ret>0?` + Retainage ${fmt(ret)}`:''}.`);
+  if(status==='sent'){S.mod='ar';renderMod('ar');}else renderMod('sales');
 }
 
 // ══════════════════════════════════════════════════════
 // MODULE: AR — Accounts Receivable / Cuentas por Cobrar
 // ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+// MODULE: AR — Accounts Receivable (live from DB.invoices)
+// ══════════════════════════════════════════════════════
 function rAR(){
   const isE=es();
-  const cons=isCons(); // retainage only for construction
-  const arRows=[
-    {client:'Summit Properties LLC',   inv:'INV-001',proj:'PRJ-001',date:'2026-03-29',due:'2026-04-28',gross:547320,ret:54732,cur:492588,d30:0,d60:0,d90:0,  status:'current'},
-    {client:'Oceanic Dev. Group',       inv:'INV-002',proj:'PRJ-002',date:'2026-03-20',due:'2026-03-31',gross:810000,ret:81000,cur:0,    d30:729000,d60:0,d90:0,status:'overdue'},
-    {client:'City Transit Authority',   inv:'INV-003',proj:'PRJ-003',date:'2026-02-15',due:'2026-03-15',gross:243000,ret:24300,cur:0,    d30:0,d60:218700,d90:0,status:'overdue'},
-    {client:'Summit Properties LLC',   inv:'INV-004',proj:'PRJ-001',date:'2026-01-31',due:'2026-02-28',gross:420000,ret:42000,cur:0,    d30:0,d60:0,d90:378000,status:'overdue'},
-  ];
-  const totCur =arRows.reduce((s,r)=>s+r.cur,0);
-  const tot30  =arRows.reduce((s,r)=>s+r.d30,0);
-  const tot60  =arRows.reduce((s,r)=>s+r.d60,0);
-  const tot90  =arRows.reduce((s,r)=>s+r.d90,0);
-  const totRet =arRows.reduce((s,r)=>s+r.ret,0);
-  const totAll =totCur+tot30+tot60+tot90+totRet;
+  const cons=isCons();
 
-  // Collection actions seeded
+  // Seeded AR rows (hard-coded history)
+  const seeded=[
+    {id:'INV-001',client:'Summit Properties LLC', proj:'PRJ-001',date:'2026-03-29',due:'2026-04-28',gross:547320,ret:54732,net:492588,paid:0,   balance:492588,arStatus:'open',   d30:0,d60:0,d90:0},
+    {id:'INV-002',client:'Oceanic Dev. Group',    proj:'PRJ-002',date:'2026-03-20',due:'2026-03-31',gross:810000,ret:81000,net:729000,paid:0,   balance:729000,arStatus:'overdue',d30:729000,d60:0,d90:0},
+    {id:'INV-003',client:'City Transit Auth.',    proj:'PRJ-003',date:'2026-02-15',due:'2026-03-15',gross:243000,ret:24300,net:218700,paid:218700,balance:0,    arStatus:'paid',  d30:0,d60:0,d90:0},
+    {id:'INV-004',client:'Summit Properties LLC', proj:'PRJ-001',date:'2026-01-31',due:'2026-02-28',gross:420000,ret:42000,net:378000,paid:378000,balance:0,   arStatus:'paid',  d30:0,d60:0,d90:0},
+  ];
+
+  // Live invoices from DB.invoices (user-created, only 'sent' status)
+  const liveAR=(DB.invoices||[]).filter(i=>!seeded.find(s=>s.id===i.id)&&i.status==='sent')
+    .map(i=>({
+      id:i.id, client:i.client, proj:i.proj||'ALL',
+      date:i.date, due:i.due, gross:i.gross, ret:i.ret||0, net:i.net,
+      paid:i.paid||0, balance:i.balance??i.net,
+      arStatus:((i.balance??i.net)<=0)?'paid':new Date(i.due)<new Date()?'overdue':'open',
+      d30:((i.balance??i.net)>0&&new Date(i.due)<new Date()&&(new Date()-new Date(i.due))<31*864e5)?(i.balance??i.net):0,
+      d60:((i.balance??i.net)>0&&(new Date()-new Date(i.due))>=31*864e5&&(new Date()-new Date(i.due))<61*864e5)?(i.balance??i.net):0,
+      d90:((i.balance??i.net)>0&&(new Date()-new Date(i.due))>=61*864e5)?(i.balance??i.net):0,
+      isLive:true,
+    }));
+
+  const allAR=[...seeded,...liveAR];
+  const openAR=allAR.filter(r=>r.arStatus!=='paid');
+  const totCur =allAR.filter(r=>r.arStatus==='open').reduce((s,r)=>s+r.balance,0);
+  const tot30  =allAR.reduce((s,r)=>s+r.d30,0);
+  const tot60  =allAR.reduce((s,r)=>s+r.d60,0);
+  const tot90  =allAR.reduce((s,r)=>s+r.d90,0);
+  const totRet =cons?allAR.reduce((s,r)=>s+(r.ret||0),0):0;
+  const totAll =totCur+tot30+tot60+tot90+(cons?totRet:0);
+  const totPaid=allAR.reduce((s,r)=>s+r.paid,0);
+
+  // Collection history
   const actions=[
-    {date:'2026-04-01',client:'Oceanic Dev. Group',action:isE?'Email recordatorio enviado — INV-002 vencida':'Reminder email sent — INV-002 overdue',type:'reminder'},
-    {date:'2026-03-28',client:'City Transit Authority',action:isE?'Llamada de cobro realizada — prometieron pago 15 Apr':'Collection call made — promised payment Apr 15',type:'call'},
-    {date:'2026-03-25',client:'Summit Properties LLC',action:isE?'Pago recibido INV-004 — $378,000':'Payment received INV-004 — $378,000',type:'payment'},
+    {date:'2026-04-01',client:'Oceanic Dev. Group',   action:isE?'Email recordatorio enviado — INV-002 vencida':'Reminder email — INV-002 overdue',type:'reminder'},
+    {date:'2026-03-28',client:'City Transit Auth.',    action:isE?'Cobro recibido INV-003 — $218,700':'Payment received INV-003 — $218,700',type:'payment'},
+    {date:'2026-03-25',client:'Summit Properties LLC', action:isE?'Cobro recibido INV-004 — $378,000':'Payment received INV-004 — $378,000',type:'payment'},
+    ...(DB.journal||[]).filter(j=>j.cat==='AR Collection'&&j.type==='in')
+      .map(j=>({date:j.date,client:j.desc?.split('—')[1]?.trim()||'',action:isE?`Cobro registrado: ${fmt(j.amt)}`:`Payment recorded: ${fmt(j.amt)}`,type:'payment'})),
   ];
 
   return`
 <div class="page-header">
   <div><div class="page-title">${isE?'Cuentas por Cobrar':'Accounts Receivable'}</div>
   <div class="page-subtitle">${cons
-    ?(isE?'Antigüedad de cartera · Retenciones segregadas · Gestión de cobros':'Aging report · Retainage segregated · Collections management')
-    :(isE?'Antigüedad de cartera · Gestión de cobros':'Accounts receivable aging · Collections management')}</div></div>
+    ?(isE?'Antigüedad · Retenciones segregadas · Cobros actualizados en tiempo real':'Aging · Retainage segregated · Real-time payment tracking')
+    :(isE?'Antigüedad de cartera · Saldo por factura · Cobros en tiempo real':'Aging report · Balance per invoice · Real-time collections')}</div></div>
   <div class="page-actions">
-    <button class="btn btn-ghost btn-sm" onclick="nav('sales')">${isE?'Ver Facturas':'View Invoices'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="nav('sales')">${isE?'Ver Facturas':'Invoices'}</button>
     <button class="btn btn-navy btn-sm" onclick="openModal(modalRegisterPayment())">${isE?'+ Registrar Cobro':'+ Record Payment'}</button>
   </div>
 </div>
 
 <div class="kpi-grid">
-  ${kpi(isE?'Total AR':'Total AR', fmt(cons?totAll:totCur+tot30+tot60+tot90), isE?`Corriente + Vencido${cons?' + Retención':''}`:`Current + Overdue`,'info','')}
-  ${kpi(isE?'Corriente (0-30d)':'Current (0-30d)', fmt(totCur), isE?'Cobrable inmediato':'Immediately collectible','success','')}
-  ${kpi(isE?'Vencido (>30d)':'Overdue (>30d)', fmt(tot30+tot60+tot90), isE?'Requiere gestión':'Requires action','danger', tot30+tot60+tot90>0?'dn':'')}
-  ${cons?kpi(isE?'Retención por Cobrar LP':'Retainage Receivable LT', fmt(totRet), isE?'No corriente — al cierre de obra':'Non-current — at project closeout','warning',''):
-    kpi(isE?'Proyectado Próx. 30d':'Projected Next 30d', fmt(totCur*1.1), isE?'Estimado próximo período':'Estimated next period','gold','')}
+  ${kpi(isE?'Total AR Pendiente':'Total AR Outstanding',fmt(totAll),isE?`${openAR.length} facturas abiertas`:`${openAR.length} open invoices`,'info','')}
+  ${kpi(isE?'Cobrado YTD':'Collected YTD',fmt(totPaid),isE?'Pagos recibidos':'Payments received','success','up')}
+  ${kpi(isE?'Vencido (>30d)':'Overdue (>30d)',fmt(tot30+tot60+tot90),isE?'Requiere gestión':'Requires action','danger',tot30+tot60+tot90>0?'dn':'')}
+  ${cons?kpi(isE?'Retención LP':'Retainage LT',fmt(totRet),isE?'No corriente':'Non-current','warning',''):
+    kpi(isE?'Al corriente':'Current',fmt(totCur),isE?'0-30 días':'0-30 days','success','')}
 </div>
 
 <div class="card">
   <div class="card-header">
-    <div><div class="card-title">${isE?'Reporte de Antigüedad de Cartera':'Accounts Receivable Aging Report'}</div>
-    <div class="card-sub">${isE?'Al '+new Date().toLocaleDateString('es-MX'):'As of '+new Date().toLocaleDateString('en-US')}</div></div>
+    <div><div class="card-title">${isE?'Registro AR — Saldo por Factura':'AR Register — Balance per Invoice'}</div>
+    <div class="card-sub">${isE?'Saldo = Net − Pagado · Facturas nuevas aparecen automáticamente al emitir':'Balance = Net − Paid · New invoices appear automatically on issue'}</div></div>
     <span class="badge b-no">${fmt(tot30+tot60+tot90)} ${isE?'vencido':'overdue'}</span>
   </div>
-  <div style="overflow-x:auto"><table class="dt">
-    <thead>
-      <tr style="background:rgba(0,0,0,.02)">
-        <th colspan="4"></th>
-        <th colspan="4" style="text-align:center;font-size:10px;color:var(--danger);letter-spacing:1px;border-left:2px solid rgba(0,0,0,.08)">${isE?'DÍAS DE ATRASO':'DAYS PAST DUE'}</th>
-        ${cons?`<th style="text-align:center;font-size:10px;color:var(--warning);border-left:2px solid rgba(0,0,0,.08)">LP</th>`:''}
-      </tr>
-      <tr>
-        <th>${isE?'Cliente':'Client'}</th>
-        <th>${isE?'Factura':'Invoice'}</th>
-        <th>${isE?'Proyecto':'Project'}</th>
-        <th class="num">${isE?'Monto Bruto':'Gross Amt'}</th>
-        <th class="num" style="border-left:2px solid rgba(0,0,0,.08)">${isE?'Corriente':'Current'}</th>
-        <th class="num">1-30 ${isE?'días':'days'}</th>
-        <th class="num">31-60 ${isE?'días':'days'}</th>
-        <th class="num">61-90 ${isE?'días':'days'}</th>
-        ${cons?`<th class="num" style="border-left:2px solid rgba(0,0,0,.08)">${isE?'Retención LP':'Retainage LT'}</th>`:''}
-        <th>${isE?'Estado':'Status'}</th>
-      </tr>
-    </thead>
-    <tbody>
-    ${arRows.map(r=>`<tr ${r.status==='overdue'?'style="background:rgba(192,57,43,.03)"':''}>
-      <td style="font-weight:500">${r.client}</td>
-      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 6px;border-radius:4px">${r.inv}</code></td>
-      <td><span class="badge b-neu" style="font-size:9px">${r.proj}</span></td>
-      <td class="num mono">${fmt(r.gross)}</td>
-      <td class="num mono ${r.cur?'green':'stone'} bold" style="border-left:2px solid rgba(0,0,0,.06)">${r.cur?fmt(r.cur):'—'}</td>
-      <td class="num mono ${r.d30?'warning':''}">${r.d30?fmt(r.d30):'—'}</td>
-      <td class="num mono ${r.d60?'danger':''} bold">${r.d60?fmt(r.d60):'—'}</td>
-      <td class="num mono ${r.d90?'danger':''} bold">${r.d90?fmt(r.d90):'—'}</td>
-      ${cons?`<td class="num mono gold bold" style="border-left:2px solid rgba(0,0,0,.06)">${fmt(r.ret)}</td>`:''}
-      <td><span class="badge ${r.status==='current'?'b-ok':'b-no'}" style="font-size:10px">${r.status==='current'?(isE?'Al día':'Current'):(isE?'Vencida':'Overdue')}</span></td>
-    </tr>`).join('')}
-    </tbody>
-    <tfoot>
-      <tr style="background:var(--navy);color:#fff;font-weight:700">
-        <td colspan="4">TOTAL</td>
-        <td class="num" style="font-family:var(--font-mono);color:#a8f0c6;border-left:2px solid rgba(255,255,255,.1)">${fmt(totCur)}</td>
-        <td class="num" style="font-family:var(--font-mono);color:var(--warning-light)">${fmt(tot30)}</td>
-        <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(tot60)}</td>
-        <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(tot90)}</td>
-        ${cons?`<td class="num" style="font-family:var(--font-mono);color:var(--gold-light);border-left:2px solid rgba(255,255,255,.1)">${fmt(totRet)}</td>`:''}
-        <td></td>
-      </tr>
-    </tfoot>
-  </table></div>
-  ${cons?`<div class="g2 mt2">
-    <div class="alert a-ok" style="font-size:11px">✓ <strong>${isE?'Activo Corriente (1-01-02-001):':'Current Asset (1-01-02-001):'}</strong> ${fmt(totCur+tot30+tot60+tot90)} — ${isE?'Incluido en flujo de caja operativo':'Included in operating cash flow'}</div>
-    <div class="alert a-warn" style="font-size:11px">⚑ <strong>${isE?'Retención LP (1-01-02-002):':'Retainage Receivable LT (1-01-02-002):'}</strong> ${fmt(totRet)} — ${isE?'NO corriente. Cobrable solo al cierre de obra.':'NOT current. Collectible only at project closeout.'}</div>
-  </div>`:
-  `<div class="alert a-ok" style="font-size:11px;margin-top:12px">✓ <strong>${isE?'Total AR por cobrar:':'Total AR receivable:'}</strong> ${fmt(totCur+tot30+tot60+tot90)}</div>`}
+  <div style="overflow-x:auto"><table class="dt"><thead>
+    <tr style="background:rgba(0,0,0,.02)">
+      <th colspan="5"></th>
+      <th colspan="3" style="text-align:center;font-size:10px;color:var(--danger);letter-spacing:1px;border-left:2px solid rgba(0,0,0,.08)">${isE?'DÍAS VENCIDO':'DAYS PAST DUE'}</th>
+      ${cons?`<th style="text-align:center;font-size:10px;color:var(--warning);border-left:2px solid rgba(0,0,0,.08)">${isE?'RETENCION':'RETAINAGE'}</th>`:''}
+      <th colspan="3"></th>
+    </tr>
+    <tr>
+      <th>${isE?'Factura':'Invoice'}</th>
+      <th>${isE?'Cliente':'Client'}</th>
+      <th>${isE?'Fecha':'Date'}</th>
+      <th>${isE?'Vencimiento':'Due'}</th>
+      <th class="num">${isE?'Monto Neto':'Net Amount'}</th>
+      <th class="num" style="border-left:2px solid rgba(0,0,0,.08)">1-30d</th>
+      <th class="num">31-60d</th>
+      <th class="num">61-90d</th>
+      ${cons?`<th class="num" style="border-left:2px solid rgba(0,0,0,.08)">${isE?'Ret. LP':'Ret. LT'}</th>`:''}
+      <th class="num" style="color:var(--success)">${isE?'Pagado':'Paid'}</th>
+      <th class="num" style="color:var(--danger);font-weight:700">${isE?'SALDO':'BALANCE'}</th>
+      <th>${isE?'Estado':'Status'}</th>
+    </tr>
+  </thead><tbody>
+  ${allAR.map(r=>{
+    const ov=r.arStatus==='overdue';
+    const paid=r.arStatus==='paid';
+    return`<tr ${r.isLive?'style="border-left:3px solid var(--success)"':ov?'style="background:rgba(192,57,43,.04)"':paid?'style="opacity:.7"':''}>
+      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 6px;border-radius:3px">${r.id}</code></td>
+      <td style="font-weight:500;font-size:12.5px">${r.client}</td>
+      <td class="mono" style="font-size:11px">${r.date}</td>
+      <td class="mono" style="font-size:11px;color:${ov?'var(--danger)':'var(--stone)'}">${r.due}${ov?' ⚠':''}</td>
+      <td class="num mono">${fmt(r.net)}</td>
+      <td class="num mono ${r.d30?'warning':''}" style="border-left:2px solid rgba(0,0,0,.06)">${r.d30?fmt(r.d30):'—'}</td>
+      <td class="num mono ${r.d60?'danger':''}">${r.d60?fmt(r.d60):'—'}</td>
+      <td class="num mono ${r.d90?'danger bold':''}">${r.d90?fmt(r.d90):'—'}</td>
+      ${cons?`<td class="num mono gold" style="border-left:2px solid rgba(0,0,0,.06)">${(r.ret||0)?fmt(r.ret):'—'}</td>`:''}
+      <td class="num mono green">${r.paid?fmt(r.paid):'—'}</td>
+      <td class="num bold" style="font-size:${r.balance>0?14:12}px;color:${paid?'var(--success)':ov?'var(--danger)':'var(--warning)'}">${paid?'✓':fmt(r.balance)}</td>
+      <td>
+        ${paid?`<span class="badge b-ok" style="font-size:10px">✓ ${isE?'Pagada':'Paid'}</span>`
+          :ov?`<span class="badge b-no" style="font-size:10px">⚠ ${isE?'Vencida':'Overdue'}</span>`
+          :`<span class="badge b-info" style="font-size:10px">${isE?'Pendiente':'Pending'}</span>`}
+        ${!paid?`<button class="btn btn-sm btn-ghost" style="margin-left:4px" onclick="openModal(modalRegisterPayment('${r.id}','${r.client}',${r.balance||r.net}))" title="${isE?'Cobrar':'Collect'}">💰</button>`:''}
+      </td>
+    </tr>`;
+  }).join('')}
+  </tbody><tfoot>
+    <tr style="background:var(--navy);color:#fff;font-weight:700">
+      <td colspan="4">TOTAL</td>
+      <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(allAR.reduce((s,r)=>s+r.net,0))}</td>
+      <td class="num" style="font-family:var(--font-mono);color:var(--warning-light);border-left:2px solid rgba(255,255,255,.1)">${fmt(tot30)}</td>
+      <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(tot60)}</td>
+      <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(tot90)}</td>
+      ${cons?`<td class="num" style="font-family:var(--font-mono);color:var(--gold-light)">${fmt(totRet)}</td>`:''}
+      <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(totPaid)}</td>
+      <td class="num" style="font-family:var(--font-mono);color:var(--warning-light);font-size:15px">${fmt(totAll)}</td>
+      <td></td>
+    </tr>
+  </tfoot></table></div>
 </div>
 
 <div class="card">
-  <div class="card-header"><div class="card-title">${isE?'Gestión de Cobros — Historial':'Collections Management — History'}</div></div>
-  ${actions.map(a=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(0,0,0,.04)">
-    <div style="width:32px;height:32px;border-radius:8px;background:${a.type==='payment'?'var(--success-light)':a.type==='call'?'var(--info-light)':'var(--warning-light)'};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">${a.type==='payment'?'💰':a.type==='call'?'📞':'📧'}</div>
-    <div style="flex:1">
-      <div style="font-size:12.5px;font-weight:500;color:var(--navy)">${a.client}</div>
-      <div style="font-size:11px;color:var(--stone)">${a.action}</div>
-    </div>
+  <div class="card-header"><div class="card-title">${isE?'Historial de Cobros':'Collections History'}</div></div>
+  ${actions.slice(0,6).map(a=>`
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid rgba(0,0,0,.04)">
+    <div style="width:28px;height:28px;border-radius:6px;background:${a.type==='payment'?'var(--success-light)':a.type==='call'?'var(--info-light)':'var(--warning-light)'};display:flex;align-items:center;justify-content:center;font-size:13px">${a.type==='payment'?'💰':a.type==='call'?'📞':'📧'}</div>
+    <div style="flex:1"><div style="font-size:12.5px;font-weight:500">${a.client}</div><div style="font-size:11px;color:var(--stone)">${a.action}</div></div>
     <span class="mono" style="font-size:10px;color:var(--stone)">${a.date}</span>
   </div>`).join('')}
   <div style="margin-top:10px;text-align:right">
@@ -6670,53 +6697,112 @@ function rAR(){
 </div>`;
 }
 
-function modalRegisterPayment(){const isE=es();return`
-<h3>${isE?'Registrar Cobro de Cliente':'Record Customer Payment'}</h3>
+function modalRegisterPayment(invId='', clientName='', balance=0){
+  const isE=es();
+  // Build list of all open invoices (seeded + DB.invoices)
+  const seededOpen=[
+    {id:'INV-001',client:'Summit Properties LLC', balance:492588},
+    {id:'INV-002',client:'Oceanic Dev. Group',    balance:729000},
+  ];
+  const liveOpen=(DB.invoices||[]).filter(i=>i.status==='sent'&&(i.balance??i.net)>0)
+    .map(i=>({id:i.id,client:i.client,balance:i.balance??i.net}));
+  const allOpen=[...seededOpen,...liveOpen.filter(l=>!seededOpen.find(s=>s.id===l.id))];
+
+  return`
+<h3 style="font-family:var(--font-display)">${isE?'Registrar Cobro de Cliente':'Record Customer Payment'}</h3>
+${invId?`<div style="background:var(--info-light);border-left:3px solid var(--info);border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;font-size:12px">
+  <strong>${invId}</strong>${clientName?' — '+clientName:''} · ${isE?'Saldo pendiente:':'Outstanding:'} <strong style="color:var(--danger)">${fmt(balance)}</strong>
+</div>`:''}
 <div class="mf">
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Cliente':'Client'}</label>
-      <select id="rp-client">${DB.clients.filter(c=>c.status==='active').map(c=>`<option>${c.name}</option>`).join('')}</select></div>
     <div class="mf-field"><label>${isE?'Factura':'Invoice'}</label>
-      <select id="rp-inv"><option>INV-001</option><option>INV-002</option><option>INV-003</option></select></div>
+      <select id="rp-inv" onchange="onRPInvChange()">
+        <option value="">— ${isE?'Seleccionar':'Select'} —</option>
+        ${allOpen.map(i=>`<option value="${i.id}" data-client="${i.client}" data-balance="${i.balance}" ${i.id===invId?'selected':''}>${i.id} — ${i.client} — ${fmt(i.balance)}</option>`).join('')}
+      </select></div>
+    <div class="mf-field"><label>${isE?'Cliente':'Client'}</label>
+      <input type="text" id="rp-client" value="${clientName}" placeholder="${isE?'Auto-completado':'Auto-filled'}" readonly style="background:var(--stone-pale)">
+    </div>
   </div>
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Fecha de Cobro':'Payment Date'}</label><input type="date" id="rp-date" value="${new Date().toISOString().slice(0,10)}"></div>
-    <div class="mf-field"><label>${isE?'Monto Recibido ($)':'Amount Received ($)'}</label><input type="number" id="rp-amt" placeholder="0" min="0"></div>
+    <div class="mf-field"><label>${isE?'Fecha de Cobro':'Payment Date'}</label>
+      <input type="date" id="rp-date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="mf-field"><label>${isE?'Monto Recibido ($)':'Amount Received ($)'}</label>
+      <input type="number" id="rp-amt" placeholder="${balance||0}" value="${balance||''}" min="0" step="0.01"></div>
   </div>
-  <div class="mf-field full"><label>${isE?'Tipo de Cobro':'Payment Type'}</label>
-    <select id="rp-type"><option>${isE?'Pago corriente (sin retención)':'Current payment (no retainage)'}</option><option>${isE?'Liberación de retención (cierre de obra)':'Retainage release (project closeout)'}</option></select></div>
-  <div class="mf-field full"><label>${isE?'Cuenta Bancaria Destino':'Destination Bank Account'}</label>
-    <select><option>BofA ****4821 — ${isE?'Cuenta Operativa':'Operating'}</option><option>Wells Fargo ****9201</option></select></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Cuenta Bancaria Destino':'Deposit Account'}</label>
+      <select id="rp-acct">
+        <option value="CA-002">BofA ****4821 — ${isE?'Operativa':'Operating'}</option>
+        <option value="CA-003">Wells Fargo ****9201</option>
+      </select></div>
+    <div class="mf-field"><label>${isE?'Tipo de Cobro':'Payment Type'}</label>
+      <select id="rp-type">
+        <option value="current">${isE?'Pago corriente':'Current payment'}</option>
+        <option value="ret">${isE?'Liberación de retención':'Retainage release'}</option>
+      </select></div>
+  </div>
 </div>
 <div class="alert a-info" style="margin-top:10px;font-size:11px">
-  ${isE?'Asiento generado: Dr 1-01-01-001 (Efectivo/Banco) / Cr 1-01-02-001 (AR Corriente)':'Generated entry: Dr 1-01-01-001 (Cash/Bank) / Cr 1-01-02-001 (Current AR)'}
+  ${isE?'Asiento: Dr 1-01-01-001 (Banco) / Cr 1-01-02-001 (AR). Saldo de factura y banco actualizados automáticamente.':'Entry: Dr 1-01-01-001 (Bank) / Cr 1-01-02-001 (AR). Invoice balance and bank balance updated automatically.'}
 </div>
 <div class="modal-actions">
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
   <button class="btn btn-navy" onclick="saveARPayment()">${isE?'✓ Registrar Cobro':'✓ Record Payment'}</button>
-</div>`}
+</div>
+<script>
+function onRPInvChange(){
+  const sel=document.getElementById('rp-inv');
+  const opt=sel.options[sel.selectedIndex];
+  if(opt){
+    document.getElementById('rp-client').value=opt.dataset.client||'';
+    document.getElementById('rp-amt').value=opt.dataset.balance||'';
+    document.getElementById('rp-amt').placeholder=opt.dataset.balance||'0';
+  }
+}
+// Pre-select if invId was passed
+if('${invId}'){const sel=document.getElementById('rp-inv');sel.value='${invId}';onRPInvChange();}
+<\/script>`;}
 
 function saveARPayment(){
   const isE=es();
-  const client = document.getElementById('rp-client')?.value;
   const inv    = document.getElementById('rp-inv')?.value;
+  const client = document.getElementById('rp-client')?.value;
   const date   = document.getElementById('rp-date')?.value;
   const amt    = parseFloat(document.getElementById('rp-amt')?.value)||0;
-  const typeEl = document.getElementById('rp-type');
-  const isRet  = typeEl&&typeEl.selectedIndex===1;
-  if(!client||!amt){gMsg(isE?'⚠ Cliente y monto son obligatorios':'⚠ Client and amount are required');return;}
+  const acct   = document.getElementById('rp-acct')?.value||'CA-002';
+  const isRet  = document.getElementById('rp-type')?.value==='ret';
+  if(!inv||!amt){gMsg(isE?'⚠ Seleccione factura y monto':'⚠ Select invoice and amount');return;}
+
+  // Update DB.invoices balance
+  if(!DB.invoices) DB.invoices=[];
+  const dbInv=DB.invoices.find(i=>i.id===inv);
+  if(dbInv){
+    dbInv.paid=(dbInv.paid||0)+amt;
+    dbInv.balance=Math.max(0,(dbInv.balance??dbInv.net)-amt);
+    if(dbInv.balance<=0){dbInv.arStatus='paid';dbInv.status='paid';}
+  }
+
+  // Update bank account balance
+  if(!DB.bankConns) DB.bankConns=[];
+  const bankAcct=DB.bankConns.find(b=>b.id===acct)||null;
+  if(bankAcct) bankAcct.bal=(bankAcct.bal||0)+amt;
+
   const ref=`PAY-${Date.now().toString().slice(-5)}`;
   DB.journal.push({
-    id:ref, date, proj:'ALL',
-    desc:`${isE?'Cobro':'Payment received'}: ${client} — ${inv}`,
-    dr:'1-01-01-001', cr: isRet?'1-01-02-002':'1-01-02-001',
-    amt, std:'both', wip:false, type:'in', cat:'AR Collection', acct:'CA-002'
+    id:ref,date,proj:'ALL',
+    desc:`${isE?'Cobro':'Payment'}: ${client} — ${inv} ${fmt(amt)}`,
+    dr:'1-01-01-001',cr:isRet?'1-01-02-002':'1-01-02-001',
+    amt,std:'both',wip:false,type:'in',cat:'AR Collection',acct,
+    invoiceRef:inv,client
   });
+
   dbSaveSync(); dbSave().catch(()=>{});
-  log((S.user||'U').toUpperCase(),`AR payment received: ${ref} — ${client} ${fmt(amt)}`,'medium');
+  log((S.user||'U').toUpperCase(),`AR payment ${ref}: ${client} — ${inv} ${fmt(amt)}`,'medium');
   closeModal();
-  gMsg(isE?`✓ ${ref}: Cobro de ${fmt(amt)} registrado. Asiento Dr Efectivo / Cr AR generado.`:
-    `✓ ${ref}: Payment of ${fmt(amt)} recorded. Dr Cash / Cr AR entry posted.`);
+  gMsg(isE
+    ?`✓ ${ref}: Cobro de ${fmt(amt)} de ${client} registrado. Factura ${inv} y cuenta bancaria actualizadas.`
+    :`✓ ${ref}: Payment of ${fmt(amt)} from ${client} recorded. Invoice ${inv} and bank balance updated.`);
   renderMod('ar');
 }
 
@@ -6876,20 +6962,27 @@ function saveAPPayment(){
   const apEntry=DB.journal.find(j=>j.apEntry&&j.id===inv);
   if(apEntry){ apEntry.paid=(apEntry.paid||0)+amt; }
 
+  // ── Update bank account balance (deduct payment) ──
+  const acctId = document.getElementById('pv-acct')?.value||'CA-002';
+  if(!DB.bankConns) DB.bankConns=[];
+  const bankAcct=DB.bankConns.find(b=>b.id===acctId);
+  if(bankAcct) bankAcct.bal=Math.max(0,(bankAcct.bal||0)-amt);
+
   const ref=`APPAY-${Date.now().toString().slice(-5)}`;
   DB.journal.push({
     id:ref, date, proj:'ALL',
     desc:`${isE?'Pago AP':'AP Payment'}: ${vendor} — ${inv} — ${fmt(amt)}`,
     dr: isRet?'2-01-02-002':'2-01-01-002',
     cr:'1-01-01-001',
-    amt, std:'both', wip:false, type:'out', cat:'Subcontractors', acct:'CA-002',
+    amt, std:'both', wip:false, type:'out', cat:'Subcontractors', acct:acctId,
     apPayRef:inv
   });
   dbSaveSync(); dbSave().catch(()=>{});
   log((S.user||'U').toUpperCase(),`AP payment: ${ref} — ${vendor} ${fmt(amt)} on ${inv}`,'medium');
   closeModal();
-  gMsg(isE?`✓ ${ref}: Pago de ${fmt(amt)} a ${vendor} registrado. Saldo de ${inv} actualizado.`:
-    `✓ ${ref}: Payment of ${fmt(amt)} to ${vendor} posted. Balance of ${inv} updated.`);
+  gMsg(isE
+    ?`✓ ${ref}: Pago de ${fmt(amt)} a ${vendor} registrado. Saldo de ${inv} y cuenta bancaria actualizados.`
+    :`✓ ${ref}: Payment of ${fmt(amt)} to ${vendor} posted. Invoice ${inv} balance and bank balance updated.`);
   renderMod('ap');
 }
 
@@ -7143,20 +7236,20 @@ function saveCashEntry(type){
   const drAcct = isIn?'1-01-01-001':'5-99-01-001';
   const crAcct = isIn?'4-01-01-001':'1-01-01-001';
 
+  // ── Update bank account balance ──
+  if(!DB.bankConns) DB.bankConns=[];
+  const bankAcct=DB.bankConns.find(b=>b.id===acct);
+  if(bankAcct) bankAcct.bal=Math.max(0,(bankAcct.bal||0)+(isIn?amt:-amt));
+
   // Post to DB.journal
-  DB.journal.push({
-    id: ref, date, desc,
-    proj, dr:drAcct, cr:crAcct,
-    amt, std:'both', wip:false,
-    cat, acct, type
-  });
+  DB.journal.push({id:ref,date,desc,proj,dr:drAcct,cr:crAcct,amt,std:'both',wip:false,cat,acct,type});
 
   dbSaveSync(); dbSave().catch(()=>{});
-  log((S.user||'U').toUpperCase(), `Cash ${isIn?'receipt':'disbursement'}: ${ref} — ${desc} ${fmt(amt)}`, 'low');
+  log((S.user||'U').toUpperCase(),`Cash ${isIn?'receipt':'disbursement'}: ${ref} — ${desc} ${fmt(amt)}`,'low');
   closeModal();
   gMsg(isE
-    ? `✓ ${ref} registrado. ${fmt(amt)} ${isIn?'ingreso':'egreso'} → Mayor General actualizado.`
-    : `✓ ${ref} posted. ${fmt(amt)} ${isIn?'receipt':'disbursement'} → GL updated.`);
+    ?`✓ ${ref} registrado. ${fmt(amt)} ${isIn?'ingreso':'egreso'} → Caja y Mayor General actualizados.`
+    :`✓ ${ref} posted. ${fmt(amt)} ${isIn?'receipt':'disbursement'} → Cash book and GL updated.`);
   renderMod('cashbook');
 }
 
@@ -7939,48 +8032,58 @@ function modalNewPO(){
   const isE=es();
   if(!DB.purchaseOrders) DB.purchaseOrders=[];
   const allNums=[...[1,2,3,4,5],...DB.purchaseOrders.map(p=>parseInt(p.id?.replace('OC-','')||0))];
-  const nextId=`OC-${String(Math.max(...allNums)+1).padStart(3,'0')}`;
+  const nextPoId=`OC-${String(Math.max(...allNums)+1).padStart(3,'0')}`;
+
+  // Known vendors from DB.subs + previous POs
+  const knownVendors=[
+    ...DB.subs.map(s=>s.name),
+    ...(DB.purchaseOrders||[]).map(p=>p.vendor),
+    'Home Depot','Grainger Industrial','Sunbelt Rentals','Rebar Direct','Steel Supply Corp'
+  ].filter((v,i,a)=>v&&a.indexOf(v)===i);
+
   return`
 <h3 style="font-family:var(--font-display)">${isE?'Nueva Orden de Compra':'New Purchase Order'}</h3>
 <div style="background:var(--navy);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px">
   <span style="font-size:10px;color:rgba(255,255,255,.5)">${isE?'NÚMERO OC':'PO NUMBER'}</span>
-  <span style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--gold)">${nextId}</span>
+  <span style="font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--gold)">${nextPoId}</span>
 </div>
 <div class="mf">
   <div class="mf-row">
     <div class="mf-field"><label>${isE?'Proveedor':'Vendor'} *</label>
-      <input type="text" id="po-vendor" placeholder="${isE?'Nombre del proveedor':'Vendor name'}"></div>
-    <div class="mf-field"><label>${isE?'Categoría':'Category'}</label>
-      <select id="po-cat">
+      <input type="text" id="po-vendor" list="po-vendor-list" placeholder="${isE?'Nombre del proveedor':'Vendor name'}">
+      <datalist id="po-vendor-list">${knownVendors.map(v=>`<option value="${v}">`).join('')}</datalist></div>
+    <div class="mf-field"><label>${isE?'Tipo de Compra':'Purchase Type'}</label>
+      <select id="po-cat" onchange="onPOCatChange()">
         <option value="Materials">${isE?'Materiales':'Materials'}</option>
         <option value="Equipment">${isE?'Equipo/Renta':'Equipment/Rental'}</option>
+        <option value="Fixed Asset">${isE?'Activo Fijo':'Fixed Asset'}</option>
         <option value="Services">${isE?'Servicios':'Services'}</option>
         <option value="Safety">${isE?'Seguridad':'Safety'}</option>
-        <option value="Tools">${isE?'Herramientas':'Tools'}</option>
         <option value="Other">${isE?'Otros':'Other'}</option>
       </select></div>
   </div>
+
+  <!-- Context hint for Fixed Asset and Materials -->
+  <div id="po-cat-hint" style="display:none;font-size:11px;border-radius:var(--radius);padding:8px 12px;margin-bottom:4px"></div>
+
   <div class="mf-field full"><label>${isE?'Descripción':'Description'} *</label>
-    <input type="text" id="po-desc" placeholder="${isE?'Ej: Cemento Portland 1000 sacos para PRJ-001':'e.g. Portland Cement 1000 bags for PRJ-001'}"></div>
+    <input type="text" id="po-desc" placeholder="${isE?'Ej: Cemento Portland 1000 sacos':'e.g. Portland Cement 1000 bags'}"></div>
   <div class="mf-row">
     <div class="mf-field"><label>${isE?'Proyecto':'Project'}</label>
       <select id="po-proj">
         <option value="ALL">ALL — General</option>
         ${PROJECTS.map(p=>`<option value="${p.id}">${p.id} — ${p.name.split(' ').slice(0,2).join(' ')}</option>`).join('')}
       </select></div>
-    <div class="mf-field"><label>${isE?'Fecha requerida':'Required Date'}</label>
+    <div class="mf-field"><label>${isE?'Fecha Requerida':'Required Date'}</label>
       <input type="date" id="po-req" value="${new Date(Date.now()+7*24*3600*1000).toISOString().slice(0,10)}"></div>
   </div>
   <div class="mf-row">
-    <div class="mf-field"><label>${isE?'Monto Total OC ($)':'PO Total Amount ($)'} *</label>
+    <div class="mf-field"><label>${isE?'Monto Total OC ($)':'PO Total ($)'} *</label>
       <input type="number" id="po-total" placeholder="0.00" min="0" step="0.01"></div>
     <div class="mf-field"><label>${isE?'Condición de Pago':'Payment Terms'}</label>
       <select id="po-terms">
-        <option value="Net 30">Net 30</option>
-        <option value="Net 15">Net 15</option>
-        <option value="Net 60">Net 60</option>
-        <option value="Immediate">Immediate / Contado</option>
-        <option value="COD">COD</option>
+        <option value="Net 30">Net 30</option><option value="Net 15">Net 15</option>
+        <option value="Net 60">Net 60</option><option value="Immediate">Contado</option>
       </select></div>
   </div>
   <div class="mf-field full"><label>${isE?'Notas / Especificaciones':'Notes / Specifications'}</label>
@@ -7990,7 +8093,22 @@ function modalNewPO(){
   <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
   <button class="btn btn-ghost" onclick="savePO('draft')">${isE?'💾 Borrador':'💾 Draft'}</button>
   <button class="btn btn-gold" onclick="savePO('approved')">${isE?'✓ Emitir OC':'✓ Issue PO'}</button>
-</div>`;}
+</div>
+<script>
+function onPOCatChange(){
+  const cat=document.getElementById('po-cat')?.value;
+  const hint=document.getElementById('po-cat-hint');
+  const isE=${JSON.stringify(es())};
+  const msgs={
+    'Fixed Asset':  {bg:'var(--gold-pale)',bc:'var(--gold)',  txt:isE?'⚑ Activo Fijo: al recepcionar, se creará automáticamente en el Módulo de Activos Fijos. Incluya número de serie y fecha de puesta en operación en la descripción.':'⚑ Fixed Asset: upon receipt, will be auto-created in Fixed Assets module. Include serial number and in-service date in description.'},
+    'Materials':    {bg:'var(--info-light)',bc:'var(--info)', txt:isE?'📦 Materiales: al recepcionar, se actualizará automáticamente el Módulo de Inventarios con la cantidad y costo unitario.':'📦 Materials: upon receipt, Inventory module will be auto-updated with quantity and unit cost.'},
+    'Equipment':    {bg:'var(--stone-pale)',bc:'var(--stone)',txt:isE?'🏗 Equipo/Renta: no actualiza inventario permanente. Se registra como gasto de período.':'🏗 Equipment/Rental: does not update permanent inventory. Recorded as period expense.'},
+  };
+  if(msgs[cat]){hint.style.display='block';hint.style.background=msgs[cat].bg;hint.style.borderLeft='3px solid '+msgs[cat].bc;hint.textContent=msgs[cat].txt;}
+  else hint.style.display='none';
+}
+setTimeout(onPOCatChange,80);
+<\/script>`;}
 
 function savePO(status){
   const isE=es();
@@ -8115,23 +8233,93 @@ function modalLinkPOInvoice(poId, vendor, received){
 
 function saveLinkPOInvoice(poId, vendor){
   const isE=es();
-  const ref  =document.getElementById('lpi-ref')?.value.trim();
-  const date =document.getElementById('lpi-date')?.value;
-  const amt  =parseFloat(document.getElementById('lpi-amt')?.value)||0;
-  const due  =document.getElementById('lpi-due')?.value;
-  if(!ref||!amt){gMsg(isE?'Referencia y monto son obligatorios':'Reference and amount are required');return;}
+  const ref  = document.getElementById('lpi-ref')?.value.trim();
+  const date = document.getElementById('lpi-date')?.value;
+  const amt  = parseFloat(document.getElementById('lpi-amt')?.value)||0;
+  const due  = document.getElementById('lpi-due')?.value;
+  if(!ref||!amt){gMsg(isE?'⚠ Referencia y monto son obligatorios':'⚠ Reference and amount are required');return;}
+
   if(!DB.purchaseOrders) DB.purchaseOrders=[];
-  const po=DB.purchaseOrders.find(p=>p.id===poId);
-  if(po){po.invoiceRef=ref;po.invoiced=amt;po.status='closed';}
+  const po = DB.purchaseOrders.find(p=>p.id===poId);
+  const poTotal = po?.total||0;
+
+  // ── VALIDATION: invoice amount must be ≤ PO total ──
+  if(poTotal>0 && amt>poTotal){
+    const excess=fmt(amt-poTotal);
+    const alertMsg=isE
+      ?`⚠ ALERTA: El monto de la factura (${fmt(amt)}) excede el total de la OC ${poId} (${fmt(poTotal)}) en ${excess}.\n\nOpciones:\n1. Reduzca el monto de la factura a ${fmt(poTotal)} o menos.\n2. Solicite la modificación de la OC antes de vincular la factura.\n\n¿Desea modificar el monto de la factura a ${fmt(poTotal)}?`
+      :`⚠ ALERT: Invoice amount (${fmt(amt)}) exceeds PO ${poId} total (${fmt(poTotal)}) by ${excess}.\n\nOptions:\n1. Reduce invoice amount to ${fmt(poTotal)} or less.\n2. Request PO amendment before linking invoice.\n\nDo you want to adjust invoice amount to ${fmt(poTotal)}?`;
+    if(!confirm(alertMsg)){
+      gMsg(isE
+        ?`Modifique la OC ${poId} en el módulo de Compras antes de vincular esta factura.`
+        :`Please amend PO ${poId} in the Purchases module before linking this invoice.`);
+      return;
+    }
+    // User confirmed: cap at PO total
+    const amtFld=document.getElementById('lpi-amt');
+    if(amtFld){amtFld.value=poTotal;}
+  }
+  const finalAmt = Math.min(amt, poTotal>0?poTotal:amt);
+
+  if(po){
+    po.invoiceRef=ref; po.invoiced=finalAmt; po.status='closed';
+    const cat=po.category||'';
+
+    // ── Auto-update INVENTORY if Materials/Safety/Tools ──
+    if(['Materials','Safety','Tools'].includes(cat)){
+      if(!DB.inventory) DB.inventory=[];
+      const invId=`INV-PO-${poId.replace('OC-','')}`;
+      if(!DB.inventory.find(i=>i.id===invId)){
+        DB.inventory.push({
+          id:invId, name_en:po.desc_en||po.desc_es||'PO Item',
+          name_es:po.desc_es||po.desc_en||'Artículo OC',
+          cat:cat==='Materials'?'mat':cat==='Safety'?'safety':'tools',
+          unit:'ea', qty:po.received>0?1:0,
+          cost:finalAmt, min:1, max:100,
+          location:'Warehouse', proj:po.proj||'ALL',
+          status:'ok', created:date, poRef:poId, vendor
+        });
+      }
+    }
+
+    // ── Auto-update FIXED ASSETS if Fixed Asset type ──
+    if(cat==='Fixed Asset'){
+      if(!DB.assets) DB.assets=[];
+      const assetId=`AST-PO-${poId.replace('OC-','')}`;
+      if(!DB.assets.find(a=>a.id===assetId)){
+        const life=5; const slDepr=Math.round(finalAmt/life);
+        DB.assets.push({
+          id:assetId, desc:po.desc_en||po.desc_es||`Fixed Asset — ${poId}`,
+          cat:'Fixed Asset', cost:finalAmt, book:'SL', macrs:'5yr', life,
+          purchaseDate:date, inServiceDate:date,
+          invoiceRef:ref, vendor,
+          proj:po.proj||'ALL', slDepr, macrsYr1:Math.round(finalAmt*0.2),
+          accumulated:0, status:'active', addedBy:S.user
+        });
+      }
+    }
+  }
+
   // Create AP entry in journal
-  DB.journal.push({id:ref,date,desc:`AP ${isE?'vinculada a':'linked to'} OC ${poId} — ${vendor}`,
-    proj:po?.proj||'ALL',dr:'1-04-01-001',cr:'2-01-01-002',amt,std:'both',wip:false,
-    apEntry:true,vendor,poRef:poId,due,balance:amt,paid:0});
+  DB.journal.push({
+    id:ref, date,
+    desc:`AP ${isE?'vinculada a':'linked to'} OC ${poId} — ${vendor}`,
+    proj:po?.proj||'ALL', dr:'1-04-01-001', cr:'2-01-01-002',
+    amt:finalAmt, std:'both', wip:false,
+    apEntry:true, vendor, poRef:poId, due, balance:finalAmt, paid:0
+  });
+
   dbSaveSync(); dbSave().catch(()=>{});
-  log((S.user||'U').toUpperCase(),`PO invoice linked: ${ref} — ${vendor} ${fmt(amt)} due ${due}`,'medium');
+  log((S.user||'U').toUpperCase(),`PO invoice linked: ${ref} — ${vendor} ${fmt(finalAmt)} (OC ${poId})`,'medium');
   closeModal();
-  gMsg(isE?`✓ Factura ${ref} vinculada a OC ${poId}. Entrada AP creada por ${fmt(amt)}.`:
-    `✓ Invoice ${ref} linked to PO ${poId}. AP entry created for ${fmt(amt)}.`);
+
+  let extra='';
+  if(po?.category==='Fixed Asset') extra=isE?' — Activo Fijo creado en módulo AF':' — Fixed Asset created in FA module';
+  if(['Materials','Safety','Tools'].includes(po?.category||'')) extra=isE?' — Inventario actualizado':' — Inventory updated';
+
+  gMsg(isE
+    ?`✓ Factura ${ref} vinculada a OC ${poId}. AP creada por ${fmt(finalAmt)}.${extra}`
+    :`✓ Invoice ${ref} linked to PO ${poId}. AP entry created for ${fmt(finalAmt)}.${extra}`);
   renderMod('purchases');
 }
 
