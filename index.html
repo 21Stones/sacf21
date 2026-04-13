@@ -533,69 +533,177 @@ By signing, I affirm: (1) Strict confidentiality of all client financial data ac
 // ══════════════════════════════════════════════════════════════
 // STATE & IN-MEMORY DATABASE — 21 Stones ERP
 // ══════════════════════════════════════════════════════════════
-const S={lang:'en',role:null,user:null,mod:'dashboard',client:'Skyline Builders Inc.',log:[]};
+const S={lang:'en',role:null,user:null,mod:'dashboard',client:'',clientId:'',log:[]};
 
-// ── LIVE DATA STORES (persisted via window.storage when available) ──
-const DB = {
+// ── FIRM-LEVEL DATA (shared across all clients — the accounting firm's data) ──
+let DB = {
   clients: [
-    { id:'CLT-001', name:'Skyline Builders Inc.',    ein:'47-1234567', type:'LLC',   sector:'Construction & Contracting', std:'Dual — GAAP + IFRS', prev:'QuickBooks', addr:'1200 Brickell Ave, Miami FL 33131',    fy:'December 31', coa:'Construction Industry (AIA)', status:'active', created:'2024-01-15' },
-    { id:'CLT-002', name:'Oceanic Dev. Group',       ein:'82-7654321', type:'LLC',   sector:'Real Estate Development',    std:'US GAAP',            prev:'Sage 300',    addr:'500 Biscayne Blvd, Miami FL 33132',  fy:'December 31', coa:'Real Estate Developer',          status:'active', created:'2024-03-20' },
-    { id:'CLT-003', name:'Rivera & Associates',      ein:'61-9876543', type:'S-Corp',sector:'Professional Services',      std:'US GAAP',            prev:'Excel',       addr:'1450 NW 107th Ave, Doral FL 33172', fy:'December 31', coa:'General Business',               status:'active', created:'2024-06-01' },
-    { id:'CLT-004', name:'NovaTech Solutions',       ein:'33-4567890', type:'C-Corp',sector:'Technology',                 std:'US GAAP',            prev:'None',        addr:'2525 Ponce de Leon, Coral Gables FL', fy:'December 31', coa:'General Business',              status:'active', created:'2025-01-10' },
+    { id:'CLT-001', name:'Skyline Builders Inc.',  ein:'47-1234567', type:'LLC',    sector:'Construction & Contracting', std:'Dual — GAAP + IFRS', prev:'QuickBooks', addr:'1200 Brickell Ave, Miami FL 33131',    fy:'December 31', coa:'Construction Industry (AIA)', status:'active', created:'2024-01-15' },
+    { id:'CLT-002', name:'Oceanic Dev. Group',     ein:'82-7654321', type:'LLC',    sector:'Real Estate Development',    std:'US GAAP',            prev:'Sage 300',    addr:'500 Biscayne Blvd, Miami FL 33132',  fy:'December 31', coa:'Real Estate Developer',       status:'active', created:'2024-03-20' },
+    { id:'CLT-003', name:'Rivera & Associates',    ein:'61-9876543', type:'S-Corp', sector:'Professional Services',      std:'US GAAP',            prev:'Excel',       addr:'1450 NW 107th Ave, Doral FL 33172', fy:'December 31', coa:'General Business',            status:'active', created:'2024-06-01' },
+    { id:'CLT-004', name:'NovaTech Solutions',     ein:'33-4567890', type:'C-Corp', sector:'Technology',                 std:'US GAAP',            prev:'None',        addr:'2525 Ponce de Leon, Coral Gables FL', fy:'December 31', coa:'General Business',           status:'active', created:'2025-01-10' },
   ],
   users: [
-    { id:'USR-001', first:'Maria',   last:'Santos',  email:'m.santos@21stones.com',   role:'A', clients:['ALL'],              nda:'N/A',         status:'active', empId:'21S-001', created:'2023-01-01' },
-    { id:'USR-002', first:'James',   last:'Kim',     email:'j.kim@21stones.com',       role:'B', clients:['CLT-001','CLT-002'],nda:'2026-03-28', status:'active', empId:'21S-002', created:'2023-06-15' },
-    { id:'USR-003', first:'Diana',   last:'Reyes',   email:'d.reyes@21stones.com',     role:'C', clients:['CLT-001'],          nda:'2026-03-25', status:'active', empId:'21S-003', created:'2024-02-01' },
-    { id:'USR-004', first:'Tom',     last:'Walsh',   email:'t.walsh@21stones.com',     role:'B', clients:['CLT-003'],          nda:'2026-03-01', status:'active', empId:'21S-004', created:'2024-04-10' },
-    { id:'USR-005', first:'Ana',     last:'Pérez',   email:'a.perez@21stones.com',     role:'C', clients:['CLT-002'],          nda:'2026-03-29', status:'active', empId:'21S-005', created:'2024-11-20' },
+    { id:'USR-001', first:'Maria',  last:'Santos', email:'m.santos@21stones.com',  role:'A', clients:['ALL'],               nda:'N/A',        status:'active', empId:'21S-001', created:'2023-01-01' },
+    { id:'USR-002', first:'James',  last:'Kim',    email:'j.kim@21stones.com',      role:'B', clients:['CLT-001','CLT-002'], nda:'2026-03-28', status:'active', empId:'21S-002', created:'2023-06-15' },
+    { id:'USR-003', first:'Diana',  last:'Reyes',  email:'d.reyes@21stones.com',    role:'C', clients:['CLT-001'],           nda:'2026-03-25', status:'active', empId:'21S-003', created:'2024-02-01' },
+    { id:'USR-004', first:'Tom',    last:'Walsh',  email:'t.walsh@21stones.com',    role:'B', clients:['CLT-003'],           nda:'2026-03-01', status:'active', empId:'21S-004', created:'2024-04-10' },
+    { id:'USR-005', first:'Ana',    last:'Pérez',  email:'a.perez@21stones.com',    role:'C', clients:['CLT-002'],           nda:'2026-03-29', status:'active', empId:'21S-005', created:'2024-11-20' },
   ],
-  subs: [
-    { id:'SUB-001', name:'Elite MEP Group',     ein:'12-3456789', pid:'PRJ-001', w9:'filed',   coiExp:'2026-12-31', ret:10, contract:284500, paid:262050, lw:'Generated', blocked:false },
-    { id:'SUB-002', name:'Rodriguez Concrete',  ein:'',           pid:'PRJ-002', w9:'missing', coiExp:'2026-06-30', ret:10, contract:182000, paid:0,      lw:'Blocked',   blocked:true,  reason:'W-9 MISSING' },
-    { id:'SUB-003', name:'SteelPro Inc.',       ein:'98-7654321', pid:'PRJ-002', w9:'filed',   coiExp:'2026-04-02', ret:10, contract:317000, paid:285300, lw:'Pending',   blocked:true,  reason:'COI EXPIRES SOON' },
-    { id:'SUB-004', name:'Apex Framing LLC',    ein:'55-4433221', pid:'PRJ-003', w9:'filed',   coiExp:'2026-08-31', ret:10, contract:89000,  paid:80100,  lw:'Generated', blocked:false },
-    { id:'SUB-005', name:'SkyHigh Glass',       ein:'44-3322110', pid:'PRJ-001', w9:'filed',   coiExp:'2027-03-31', ret:5,  contract:420000, paid:0,      lw:'Pending',   blocked:false },
-  ],
-  journal: [
-    { id:'JE-0341',  date:'2026-03-29', desc:'Revenue recognition Riverside Plaza', proj:'PRJ-001', dr:'1-01-02-001', cr:'4-01-01-001', amt:547320, std:'gaap', wip:false },
-    { id:'JE-0342',  date:'2026-03-29', desc:'WIP→COGS reclassification Q1',        proj:'PRJ-001', dr:'5-01-03-001', cr:'1-01-03-001', amt:372480, std:'both', wip:true  },
-    { id:'JE-0340',  date:'2026-03-28', desc:'Q1 depreciation SL',                  proj:'ALL',     dr:'6-03-01-001', cr:'1-02-01-004', amt:62400,  std:'both', wip:false },
-    { id:'JE-0339',  date:'2026-03-27', desc:'AP Elite MEP Group inv #0412',         proj:'PRJ-001', dr:'1-01-03-001', cr:'2-01-01-002', amt:84500,  std:'both', wip:true  },
-    { id:'JE-0338',  date:'2026-03-26', desc:'Payroll accrual March',                proj:'ALL',     dr:'5-01-02-001', cr:'2-01-03-001', amt:97230,  std:'both', wip:true  },
-  ],
-  cos:           [],   // change orders
-  assets:        [],   // fixed assets
-  inventory:     [],   // inventory items
-  bankConns:     [],   // bank connections
-  invoices:      [],   // sales invoices
-  purchaseOrders:[],   // purchase orders (OC)
 };
+
+// ── CLIENT DATA BASE (CDB) — isolated per client ──────────────────────────────
+// This is the active client's data space. Completely replaced when switching clients.
+// Key: each field starts EMPTY for new clients. Demo data only loads for the
+// 4 seeded clients (CLT-001..CLT-004).
+let CDB = newClientDB();
+
+function newClientDB(){
+  return {
+    journal:        [],  // general ledger entries
+    invoices:       [],  // sales invoices (AR)
+    purchaseOrders: [],  // purchase orders
+    subs:           [],  // subcontractors
+    assets:         [],  // fixed assets
+    inventory:      [],  // inventory items
+    bankConns:      [],  // bank connections
+    cos:            [],  // change orders
+    projects:       [],  // projects
+  };
+}
+
+// Demo data sets for the 4 seeded clients (only loaded when that client is active)
+const DEMO_DATA = {
+  'CLT-001': {  // Skyline Builders Inc. — Construction
+    subs: [
+      { id:'SUB-001', name:'Elite MEP Group',    ein:'12-3456789', pid:'PRJ-001', w9:'filed',   coiExp:'2026-12-31', ret:10, contract:284500, paid:262050, lw:'Generated', blocked:false },
+      { id:'SUB-002', name:'Rodriguez Concrete', ein:'',           pid:'PRJ-002', w9:'missing', coiExp:'2026-06-30', ret:10, contract:182000, paid:0,      lw:'Blocked',   blocked:true, reason:'W-9 MISSING' },
+      { id:'SUB-003', name:'SteelPro Inc.',      ein:'98-7654321', pid:'PRJ-002', w9:'filed',   coiExp:'2026-04-02', ret:10, contract:317000, paid:285300, lw:'Pending',   blocked:true, reason:'COI EXPIRES SOON' },
+      { id:'SUB-004', name:'Apex Framing LLC',   ein:'55-4433221', pid:'PRJ-003', w9:'filed',   coiExp:'2026-08-31', ret:10, contract:89000,  paid:80100,  lw:'Generated', blocked:false },
+      { id:'SUB-005', name:'SkyHigh Glass',      ein:'44-3322110', pid:'PRJ-001', w9:'filed',   coiExp:'2027-03-31', ret:5,  contract:420000, paid:0,      lw:'Pending',   blocked:false },
+    ],
+    journal: [
+      { id:'JE-0341', date:'2026-03-29', desc:'Revenue recognition Riverside Plaza', proj:'PRJ-001', dr:'1-01-02-001', cr:'4-01-01-001', amt:547320, std:'gaap', wip:false },
+      { id:'JE-0342', date:'2026-03-29', desc:'WIP→COGS reclassification Q1',        proj:'PRJ-001', dr:'5-01-03-001', cr:'1-01-03-001', amt:372480, std:'both', wip:true  },
+      { id:'JE-0340', date:'2026-03-28', desc:'Q1 depreciation SL',                  proj:'ALL',     dr:'6-03-01-001', cr:'1-02-01-004', amt:62400,  std:'both', wip:false },
+      { id:'JE-0339', date:'2026-03-27', desc:'AP Elite MEP Group inv #0412',         proj:'PRJ-001', dr:'1-01-03-001', cr:'2-01-01-002', amt:84500,  std:'both', wip:true  },
+      { id:'JE-0338', date:'2026-03-26', desc:'Payroll accrual March',                proj:'ALL',     dr:'5-01-02-001', cr:'2-01-03-001', amt:97230,  std:'both', wip:true  },
+    ],
+    invoices: [
+      { id:'INV-001', date:'2026-03-29', due:'2026-04-28', client:'Summit Properties LLC', proj:'PRJ-001', desc:'AIA G702 Invoice #5 — Riverside Plaza',   gross:547320, ret:54732, net:492588, status:'sent',    retPct:10, paid:0,      balance:492588, arStatus:'open'   },
+      { id:'INV-002', date:'2026-03-20', due:'2026-03-31', client:'Oceanic Dev. Group',    proj:'PRJ-002', desc:'AIA G702 Invoice #3 — Harbor View Tower',  gross:810000, ret:81000, net:729000, status:'overdue', retPct:10, paid:0,      balance:729000, arStatus:'overdue'},
+      { id:'INV-003', date:'2026-02-28', due:'2026-03-29', client:'City Transit Authority',proj:'PRJ-003', desc:'AIA G702 Invoice #4 — Metro Line Ext.',    gross:243000, ret:24300, net:218700, status:'paid',    retPct:10, paid:218700, balance:0,      arStatus:'paid'   },
+      { id:'INV-004', date:'2026-01-31', due:'2026-02-28', client:'Summit Properties LLC', proj:'PRJ-001', desc:'AIA G702 Invoice #4 — Riverside Plaza',    gross:420000, ret:42000, net:378000, status:'paid',    retPct:10, paid:378000, balance:0,      arStatus:'paid'   },
+    ],
+    assets: [
+      { id:'AST-001', desc:'Caterpillar 320 Excavator',  cat:'Heavy Equipment', cost:184000, book:'SL', macrs:'5yr', life:5,  purchaseDate:'2022-01-15', inServiceDate:'2022-02-01', invoiceRef:'FACT-2022-0042', vendor:'Caterpillar Financial', slDepr:36800, macrsYr1:36800, accumulated:147200, status:'active', proj:'PRJ-001' },
+      { id:'AST-002', desc:'Tower Crane — Riverside',    cat:'Heavy Equipment', cost:320000, book:'SL', macrs:'5yr', life:5,  purchaseDate:'2023-06-01', inServiceDate:'2023-06-15', invoiceRef:'FACT-2023-0188', vendor:'Liebherr Equipment',    slDepr:64000, macrsYr1:64000, accumulated:128000, status:'active', proj:'PRJ-001' },
+      { id:'AST-003', desc:'Ford F-350 Fleet (×4)',      cat:'Vehicles',        cost:168000, book:'SL', macrs:'5yr', life:5,  purchaseDate:'2023-03-10', inServiceDate:'2023-03-20', invoiceRef:'FORD-2023-0074', vendor:'Ford Motor Credit',     slDepr:33600, macrsYr1:33600, accumulated:100800, status:'active', proj:'ALL'    },
+    ],
+    bankConns: [
+      { id:'BC-001', clientId:'CLT-001', inst:'Bank of America', type:'Checking', acct:'****4821', bal:398420, status:'connected', protocol:'OFX',              lastSync:'2 min ago', currency:'USD', aba:'026009593', swift:'BOFAUS3N' },
+      { id:'BC-002', clientId:'CLT-001', inst:'Wells Fargo',     type:'Payroll',  acct:'****9201', bal:144380, status:'connected', protocol:'OFX',              lastSync:'5 min ago', currency:'USD', aba:'121000248', swift:'WFBIUS6S' },
+    ],
+    purchaseOrders: [
+      { id:'OC-001', date:'2026-03-20', vendor:'Home Depot',        desc_en:'Structural materials — PRJ-001', desc_es:'Materiales estructurales', proj:'PRJ-001', total:18500, received:18500, invoiced:18500, invoiceRef:'AP-005', status:'closed',   category:'Materials' },
+      { id:'OC-002', date:'2026-03-25', vendor:'Steel Supply Corp', desc_en:'W8x31 steel beams — PRJ-002',   desc_es:'Vigas de acero W8x31',      proj:'PRJ-002', total:42000, received:0,     invoiced:0,     invoiceRef:'',       status:'pending',  category:'Materials' },
+    ],
+    inventory: [],
+    cos: [],
+    projects: [],
+  },
+  'CLT-002': { subs:[], journal:[], invoices:[], assets:[], bankConns:[{ id:'BC-004', clientId:'CLT-002', inst:'Citibank', type:'Checking', acct:'****7712', bal:284100, status:'connected', protocol:'OFX', lastSync:'3 min ago', currency:'USD', aba:'021000089', swift:'CITIUS33' }], purchaseOrders:[], inventory:[], cos:[], projects:[] },
+  'CLT-003': { subs:[], journal:[], invoices:[], assets:[], bankConns:[{ id:'BC-006', clientId:'CLT-003', inst:'TD Bank',  type:'Checking', acct:'****5518', bal:42800,  status:'connected', protocol:'CSV', lastSync:'1h ago',    currency:'USD', aba:'026013673', swift:'NRTHUS33'}], purchaseOrders:[], inventory:[], cos:[], projects:[] },
+  'CLT-004': { subs:[], journal:[], invoices:[], assets:[], bankConns:[],                                                                                                                                                                                                              purchaseOrders:[], inventory:[], cos:[], projects:[] },
+};
+
+// ── Load CDB for the active client ──────────────────────────────────────────
+function loadClientDB(clientId) {
+  if(!clientId){ CDB=newClientDB(); return; }
+
+  // Try persisted data first
+  const stored = safeLocalGet('21stones_cdb_'+clientId);
+  if (stored) {
+    try { CDB = JSON.parse(stored); }
+    catch(e) { CDB = newClientDB(); }
+  } else if (DEMO_DATA[clientId]) {
+    // First time opening a seeded client: copy demo data and persist
+    CDB = JSON.parse(JSON.stringify(DEMO_DATA[clientId]));
+    saveClientDB(clientId);
+  } else {
+    // New client: start completely blank (no transactions, no data)
+    CDB = newClientDB();
+    saveClientDB(clientId);
+  }
+
+  // Ensure all arrays exist (guard against old saved data)
+  ['journal','invoices','purchaseOrders','subs','assets',
+   'inventory','bankConns','cos','projects'].forEach(k=>{
+    if(!Array.isArray(CDB[k])) CDB[k]=[];
+  });
+
+  // Sync PROJECTS global array to this client's projects
+  PROJECTS.length = 0;
+  (CDB.projects||[]).forEach(p=>PROJECTS.push(p));
+  // Load seeded projects for demo clients if they have none
+  if(PROJECTS.length===0 && DEMO_DATA[clientId]?.projects?.length) {
+    DEMO_DATA[clientId].projects.forEach(p=>PROJECTS.push(p));
+  }
+}
+
+function saveClientDB(clientId) {
+  if(!clientId) return;
+  // Sync PROJECTS back into CDB before saving
+  CDB.projects = [...PROJECTS];
+  const data = JSON.stringify(CDB);
+  try { localStorage.setItem('21stones_cdb_'+clientId, data); } catch(e){}
+  try { if(window.storage) window.storage.set('21stones_cdb_'+clientId, data); } catch(e){}
+}
+
+function safeLocalGet(key) {
+  try { return localStorage.getItem(key); } catch(e) { return null; }
+}
+
+// Compatibility aliases so all existing code using DB.xxx still works
+// but now reads from CDB (client-isolated) instead of global DB
+// ── Make DB a live proxy: DB.journal etc. auto-route to CDB ──────────────────
+// DB.clients and DB.users are global. All transactional fields route to CDB
+// which swaps completely when the user switches clients.
+const CLIENT_FIELDS=['journal','invoices','purchaseOrders','subs','assets',
+  'inventory','bankConns','cos','projects'];
+const _DB_GLOBAL={clients:DB.clients, users:DB.users};
+DB = new Proxy(_DB_GLOBAL, {
+  get(t, prop){
+    if(prop==='clients'||prop==='users') return t[prop];
+    if(CLIENT_FIELDS.includes(prop)){
+      if(!Array.isArray(CDB[prop])) CDB[prop]=[];
+      return CDB[prop];
+    }
+    return t[prop];
+  },
+  set(t, prop, value){
+    if(prop==='clients'||prop==='users') t[prop]=value;
+    else if(CLIENT_FIELDS.includes(prop)) CDB[prop]=value;
+    else t[prop]=value;
+    return true;
+  }
+});
+
 
 // ── STORAGE ENGINE ──────────────────────────────────────────
 // Uses window.storage (Claude artifacts) with localStorage fallback
 const STORE_KEY = '21stones_db';
 
 function dbSaveSync() {
-  // Synchronous save to localStorage (always available in browser)
+  // 1. Save global registry (clients + users)
   try {
-    const payload = JSON.stringify({
-      clients:   DB.clients,
-      users:     DB.users,
-      subs:      DB.subs,
-      cos:       DB.cos,
-      assets:    DB.assets,
-      journal:   DB.journal,
-      inventory:      DB.inventory||[],
-      bankConns:      DB.bankConns||[],
-      invoices:       DB.invoices||[],
-      purchaseOrders: DB.purchaseOrders||[],
-      lang:      S.lang,
-      projects:  PROJECTS,
-      sectors:   SECTORS,
-    });
-    localStorage.setItem(STORE_KEY, payload);
-  } catch(e) { /* storage full or unavailable */ }
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      clients: DB.clients, users: DB.users, lang: S.lang, sectors: SECTORS,
+    }));
+  } catch(e) {}
+  // 2. Save active client's CDB (per-client isolated storage)
+  const activeClient = DB.clients.find(c=>c.name===S.client);
+  if (activeClient) saveClientDB(activeClient.id);
 }
 
 async function dbSave() {
@@ -627,25 +735,19 @@ async function dbLoad() {
     const saved = JSON.parse(raw);
     if (saved.clients?.length) DB.clients = saved.clients;
     if (saved.users?.length)   DB.users   = saved.users;
-    if (saved.subs?.length)    DB.subs    = saved.subs;
-    if (saved.cos?.length)     DB.cos     = saved.cos;
-    if (saved.assets?.length)  DB.assets  = saved.assets;
-    if (saved.journal?.length)         DB.journal         = saved.journal;
-    if (saved.inventory?.length)       DB.inventory       = saved.inventory;
-    if (saved.bankConns?.length)       DB.bankConns       = saved.bankConns;
-    if (saved.invoices?.length)        DB.invoices        = saved.invoices;
-    if (saved.purchaseOrders?.length)  DB.purchaseOrders  = saved.purchaseOrders;
+    // Only restore global-level data (client registry + users)
+    // Per-client data is loaded separately via loadClientDB()
     if (saved.lang)            S.lang     = saved.lang;
     if (saved.sectors?.length) {
       // Merge saved sectors with defaults (no duplicates)
       saved.sectors.forEach(s => { if (!SECTORS.includes(s)) SECTORS.push(s); });
     }
-    // Restore user-created projects (merge with seeds, avoid duplicates)
-    if (saved.projects?.length) {
-      saved.projects.forEach(sp => {
-        if (!PROJECTS.find(p => p.id === sp.id)) PROJECTS.push(sp);
-        else Object.assign(PROJECTS.find(p => p.id === sp.id), sp);
-      });
+    // Load the active client's isolated CDB
+    const activeClient = DB.clients.find(c=>c.name===S.client) || DB.clients[0];
+    if (activeClient) {
+      S.client   = activeClient.name;
+      S.clientId = activeClient.id;
+      loadClientDB(activeClient.id);
     }
   } catch(e) {}
 }
@@ -1008,39 +1110,35 @@ function saveNewClient() {
 
   // Push to in-memory DB
   DB.clients.push(newClient);
-  S.client = nm;
 
-  // ── CRITICAL: synchronous save before any DOM change ──
+  // ── Save the GLOBAL client registry ──
   try {
-    const payload = JSON.stringify({
-      clients:  DB.clients,
-      users:    DB.users,
-      subs:     DB.subs,
-      cos:      DB.cos,
-      assets:   DB.assets,
-      journal:  DB.journal,
-      lang:     S.lang,
-      projects: PROJECTS,
-    });
-    localStorage.setItem('21stones_db', payload);
-  } catch(e) {
-    console.error('localStorage save failed:', e);
-  }
+    localStorage.setItem('21stones_db', JSON.stringify({clients:DB.clients,users:DB.users,lang:S.lang,sectors:SECTORS}));
+  } catch(e) { console.error('save failed:', e); }
 
-  // Async backup to window.storage
-  dbSave().catch(() => {});
+  // ── Initialize a completely EMPTY CDB for this new client ──
+  // New clients start with NO transactions, NO invoices, NO assets — only COA
+  CDB = newClientDB();
+  saveClientDB(newClient.id);
 
-  log((S.user || 'USER').toUpperCase(),
+  // ── Switch active client to the newly created one ──
+  S.client   = nm;
+  S.clientId = newClient.id;
+  loadClientDB(newClient.id);
+
+  dbSave().catch(()=>{});
+  log((S.user||'USER').toUpperCase(),
     `Client created: ${newClient.id} — ${nm} [${sector}] [${coaTemplate}]`, 'medium');
 
   closeModal();
   rebuildClientSelector();
 
   gMsg(isE
-    ? `✓ "${nm}" (${newClient.id}) creado · Sector: ${sector} · Plan: ${coaTemplate}`
-    : `✓ "${nm}" (${newClient.id}) created · Sector: ${sector} · COA: ${coaTemplate}`);
+    ? `✓ "${nm}" (${newClient.id}) creado · Sector: ${sector} · Plan: ${coaTemplate} · Contabilidad en blanco lista.`
+    : `✓ "${nm}" (${newClient.id}) created · Sector: ${sector} · COA: ${coaTemplate} · Blank accounting ready.`);
 
-  renderMod(S.mod);
+  renderMod('dashboard');
+  S.mod='dashboard';
 }
 function rebuildClientSelector() {
   const sel = document.getElementById('client-sel');
@@ -1648,7 +1746,20 @@ function nav(mod){
   log(S.user?.toUpperCase()||'U',`Opened module: ${mod}`,'low');
   renderMod(mod);
 }
-function switchClient(){S.client=document.getElementById('client-sel').value;log(S.user?.toUpperCase()||'U',`Client switch: ${S.client}`,'low');renderMod(S.mod)}
+function switchClient(){
+  const sel=document.getElementById('client-sel');
+  const newName=sel?.value;
+  if(!newName||newName===S.client) return;
+  // Save current client's CDB
+  const oldC=DB.clients.find(c=>c.name===S.client);
+  if(oldC) saveClientDB(oldC.id);
+  // Switch
+  S.client=newName;
+  const newC=DB.clients.find(c=>c.name===newName);
+  if(newC){ S.clientId=newC.id; loadClientDB(newC.id); }
+  log(S.user?.toUpperCase()||'U','Client switch: '+S.client,'low');
+  S.mod='dashboard'; renderMod('dashboard');
+}
 function renderMod(mod){
   const mc=document.getElementById('mc');
   const fn={
@@ -5581,22 +5692,9 @@ function rerenderGL(){
   if(!el) return;
   const isE = S.lang === 'es';
 
-  // Full journal data set — seeded + live DB.journal entries merged and sorted by date desc
-  const seedEntries = [
-    {date:'2026-03-29',ref:'JE-0341',  desc_en:'Revenue recognition — Riverside Plaza (68% C-to-C)', desc_es:'Reconocimiento ingreso — Riverside Plaza (68% C-a-C)', proj:'PRJ-001',dr_acct:'1-01-02-001',dr_name:isE?'Cuentas x Cobrar':'Accounts Receivable', dr:547320, cr_acct:'4-01-01-001',cr_name:isE?'Ingresos Construcción':'Construction Revenue', cr:547320, std:'gaap', tag:'GAAP',   wip:false},
-    {date:'2026-03-29',ref:'JE-0341A', desc_en:'IFRS 15 adjustment layer — performance obligation', desc_es:'Capa ajuste NIIF 15 — obligación de desempeño',         proj:'PRJ-001',dr_acct:'1-01-02-001',dr_name:isE?'Cuentas x Cobrar':'Accounts Receivable', dr:549100, cr_acct:'4-01-01-001',cr_name:isE?'Ingresos NIIF 15':'IFRS 15 Revenue',     cr:549100, std:'ifrs', tag:'IFRS',   wip:false},
-    {date:'2026-03-29',ref:'JE-0342',  desc_en:'WIP → COGS reclassification Q1 month-end',           desc_es:'Reclasificación WIP → COGS cierre Q1',                proj:'PRJ-001',dr_acct:'5-01-03-001',dr_name:'COGS — Subcontractors', dr:372480, cr_acct:'1-01-03-001',cr_name:isE?'WIP (Activo)':'WIP (Asset)',             cr:372480, std:'both', tag:'BOTH',  wip:true},
-    {date:'2026-03-28',ref:'JE-0340',  desc_en:'Q1 depreciation — Book/SL method all assets',        desc_es:'Depreciación Q1 — Método Libros/SL todos los activos',proj:'ALL',   dr_acct:'6-03-01-001',dr_name:isE?'Depr. — SL Libros':'Depreciation — SL Books', dr:62400,  cr_acct:'1-02-01-004',cr_name:isE?'Depr. Acum.':'Acc. Depreciation',      cr:62400,  std:'both', tag:'BOTH',  wip:false},
-    {date:'2026-03-27',ref:'JE-0339',  desc_en:'AP — Elite MEP Group invoice #0412',                 desc_es:'CP — Elite MEP Group factura #0412',                  proj:'PRJ-001',dr_acct:'1-01-03-001',dr_name:isE?'WIP (Activo)':'WIP (Asset)',             dr:84500,  cr_acct:'2-01-01-002',cr_name:isE?'CP Subcontratistas':'AP Subcontractors', cr:76050, std:'both', tag:'BOTH',  wip:true, ret:8450},
-    {date:'2026-03-27',ref:'JE-0339B', desc_en:'Retainage payable — Elite MEP 10%',                  desc_es:'Retención por pagar — Elite MEP 10%',                 proj:'PRJ-001',dr_acct:'1-01-03-001',dr_name:isE?'WIP (Activo)':'WIP (Asset)',             dr:8450,   cr_acct:'2-01-02-002',cr_name:isE?'Retención x Pagar LP':'Retainage Payable LT',cr:8450,  std:'both', tag:'BOTH',  wip:true, retEntry:true},
-    {date:'2026-03-26',ref:'JE-0338',  desc_en:'Payroll accrual — March field crews + admin',        desc_es:'Acumulación nómina — Cuadrillas Mar + admin',         proj:'ALL',   dr_acct:'5-01-02-001',dr_name:isE?'M. de Obra Directa':'Direct Labor',         dr:97230,  cr_acct:'2-01-03-001',cr_name:isE?'Nómina x Pagar':'Accrued Payroll',        cr:97230,  std:'both', tag:'BOTH',  wip:true},
-    {date:'2026-03-25',ref:'JE-0337',  desc_en:'Retainage receivable — AIA-005 Riverside billing',  desc_es:'Retención por cobrar — AIA-005 facturación Riverside', proj:'PRJ-001',dr_acct:'1-01-02-002',dr_name:isE?'Retención x Cobrar':'Retainage Receivable', dr:54732,  cr_acct:'1-01-02-001',cr_name:isE?'Cuentas x Cobrar':'Accounts Receivable', cr:54732,  std:'both', tag:'BOTH',  wip:false},
-    {date:'2026-03-24',ref:'JE-0336',  desc_en:'MACRS tax depreciation memo entry (ASC 740)',        desc_es:'Memo depreciación MACRS fiscal (ASC 740)',             proj:'ALL',   dr_acct:'7-01-01-002',dr_name:isE?'ISR Diferido (Tax)':'Deferred Tax Exp.',       dr:14210,  cr_acct:'2-02-01-002',cr_name:isE?'Pasivo ISR Diferido':'DTL',               cr:14210,  std:'gaap', tag:'GAAP',  wip:false},
-    {date:'2026-03-22',ref:'JE-0335',  desc_en:'IAS 12 deferred tax — IFRS adjustment layer',       desc_es:'IAS 12 impuesto diferido — capa ajuste NIIF',          proj:'ALL',   dr_acct:'7-01-01-003',dr_name:isE?'ISR Diferido NIIF':'Deferred Tax IFRS',         dr:8400,   cr_acct:'2-02-01-002',cr_name:'DTL (IFRS)',                                   cr:8400,   std:'ifrs', tag:'IFRS',  wip:false},
-  ];
-
-  // Convert DB.journal live entries into same shape and merge
-  const liveEntries = DB.journal.map(j=>({
+  // All journal entries exclusively from this client's CDB (via DB proxy → CDB.journal)
+  // No hardcoded seed entries — data is per-client and loaded on client switch
+  const allEntries = (DB.journal||[]).map(j=>({
     date:    j.date||'',
     ref:     j.id||'',
     desc_en: j.desc||'',
@@ -5613,10 +5711,7 @@ function rerenderGL(){
     wip:     j.wip||false,
     ret:     j.ret||0,
     isLive:  true,
-  })).filter(j=>!seedEntries.find(s=>s.ref===j.ref)); // deduplicate
-
-  const allEntries = [...liveEntries, ...seedEntries]
-    .sort((a,b)=>b.date.localeCompare(a.date));
+  })).sort((a,b)=>b.date.localeCompare(a.date));
 
   const entries = allEntries;
 
@@ -5631,69 +5726,56 @@ function rerenderGL(){
   });
 
   if(glView === 'journal'){
+    const emptyGL = allEntries.length === 0;
     el.innerHTML = `
     <div class="card" style="padding:0;overflow:hidden">
       <div style="padding:10px 14px;background:var(--stone-pale);border-bottom:1px solid rgba(0,0,0,.06);display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:12px;font-weight:600;color:var(--navy)">${isE?'Diario General — Q1-Q2 2026':'General Journal — Q1-Q2 2026'}</span>
-        <span style="font-size:11px;color:var(--stone)">${filtered.length} ${isE?'asientos':'entries'} · ${liveEntries.length>0?`<span style="color:var(--success)">${liveEntries.length} ${isE?'nuevos':'new'}</span> · `:''}${isE?'Modo':'Mode'}: <strong>${glStd==='both'?isE?'Paralelo':'Parallel':glStd.toUpperCase()}</strong></span>
+        <span style="font-size:12px;font-weight:600;color:var(--navy)">${isE?'Diario General':'General Journal'} — ${S.client}</span>
+        <span style="font-size:11px;color:var(--stone)">${filtered.length} ${isE?'asientos':'entries'} · ${isE?'Modo':'Mode'}: <strong>${glStd==='both'?isE?'Paralelo':'Parallel':glStd.toUpperCase()}</strong></span>
       </div>
-      <div style="overflow-x:auto">
-      <table class="dt" style="min-width:1000px">
+      ${emptyGL?`<div class="alert a-info" style="margin:16px">
+        ${isE?'No hay asientos de diario para este cliente. Use el botón "+ Asiento" para crear el primero, o registre transacciones desde Ventas, Compras o Caja.':'No journal entries for this client yet. Use the "+ Entry" button above, or record transactions from Sales, Purchases, or Cash.'}
+      </div>`:`
+      <div style="overflow-x:auto"><table class="dt" style="min-width:900px">
         <thead><tr>
-          <th>${isE?'Fecha':'Date'}</th>
-          <th>Ref</th>
-          <th style="min-width:220px">${isE?'Descripción':'Description'}</th>
+          <th>${isE?'Fecha':'Date'}</th><th>Ref</th>
+          <th style="min-width:200px">${isE?'Descripción':'Description'}</th>
           <th>${isE?'Proyecto':'Project'}</th>
-          <th>${isE?'Cta. Débito':'Dr Account'}</th>
+          <th>${isE?'Cta. Débito':'Dr Acct'}</th>
           <th class="num">${isE?'Débito':'Debit'}</th>
-          <th>${isE?'Cta. Crédito':'Cr Account'}</th>
+          <th>${isE?'Cta. Crédito':'Cr Acct'}</th>
           <th class="num">${isE?'Crédito':'Credit'}</th>
-          <th>Standard_Tag</th>
-          <th>WIP</th>
-          <th>${isE?'Retención':'Retainage'}</th>
+          <th>Std</th><th>WIP</th><th></th>
         </tr></thead>
         <tbody>
         ${filtered.map(e=>`
-        <tr ${e.isLive?'style="background:rgba(26,122,74,.04);border-left:3px solid var(--success)"':e.retEntry?'style="background:var(--warning-light)"':e.wip?'style="background:rgba(27,79,138,.03)"':''}>
+        <tr style="${e.wip?'background:rgba(27,79,138,.03)':''}">
           <td class="mono" style="font-size:10px">${e.date}</td>
           <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 5px;border-radius:3px">${e.ref}</code></td>
-          <td style="font-size:11.5px;min-width:220px">${isE?e.desc_es:e.desc_en}</td>
-          <td><span class="badge b-gold" style="font-size:9px">${e.proj}</span></td>
-          <td>
-            <code style="font-size:9px;background:rgba(27,79,138,.08);color:var(--info);padding:1px 5px;border-radius:3px">${e.dr_acct}</code>
-            <div style="font-size:10px;color:var(--stone);margin-top:2px">${e.dr_name}</div>
-          </td>
+          <td style="font-size:11px">${isE?e.desc_es:e.desc_en}</td>
+          <td><span class="badge b-neu" style="font-size:9px">${e.proj}</span></td>
+          <td><code style="font-size:9px;background:rgba(27,79,138,.08);color:var(--info);padding:1px 4px;border-radius:3px">${e.dr_acct}</code></td>
           <td class="num mono green bold">${fmt(e.dr)}</td>
-          <td>
-            <code style="font-size:9px;background:rgba(192,57,43,.06);color:var(--danger);padding:1px 5px;border-radius:3px">${e.cr_acct}</code>
-            <div style="font-size:10px;color:var(--stone);margin-top:2px">${e.cr_name}</div>
-          </td>
+          <td><code style="font-size:9px;background:rgba(192,57,43,.06);color:var(--danger);padding:1px 4px;border-radius:3px">${e.cr_acct}</code></td>
           <td class="num mono red bold">${fmt(e.cr)}</td>
           <td><span class="badge ${e.tag==='IFRS'?'b-ok':e.tag==='GAAP'?'b-info':'b-neu'}" style="font-size:9px">${e.tag}</span></td>
-          <td>${e.wip?'<span class="badge b-warn" style="font-size:9px">WIP</span>':'<span style="font-size:10px;color:var(--stone-light)">—</span>'}</td>
-          <td class="num mono gold" style="font-size:11px">${e.ret?fmt(e.ret):'—'}</td>
+          <td>${e.wip?'<span class="badge b-warn" style="font-size:9px">WIP</span>':'—'}</td>
+          <td style="display:flex;gap:4px">
+            <button class="btn btn-sm btn-ghost" onclick="openEditJournal('${e.ref}')" title="${isE?'Editar':'Edit'}">✏️</button>
+            <button class="btn btn-sm btn-ghost" onclick="deleteJournalEntry('${e.ref}')" title="${isE?'Eliminar':'Delete'}">🗑</button>
+          </td>
         </tr>`).join('')}
         </tbody>
-        <tfoot>
-          <tr style="background:var(--navy);color:#fff;font-weight:700">
-            <td colspan="5">${isE?'TOTALES DEL PERÍODO':'PERIOD TOTALS'}</td>
-            <td class="num" style="font-family:var(--font-mono);color:var(--success-light)">${fmt(filtered.reduce((s,e)=>s+e.dr,0))}</td>
-            <td></td>
-            <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(filtered.reduce((s,e)=>s+e.cr,0))}</td>
-            <td colspan="3"><span style="font-size:11px;color:${Math.abs(filtered.reduce((s,e)=>s+e.dr,0)-filtered.reduce((s,e)=>s+e.cr,0))<1?'var(--success-light)':'var(--danger)'}">
-              ${Math.abs(filtered.reduce((s,e)=>s+e.dr,0)-filtered.reduce((s,e)=>s+e.cr,0))<1?(isE?'✓ BALANCEADO':'✓ BALANCED'):(isE?'✗ DESBALANCEADO':'✗ UNBALANCED')}</span></td>
-          </tr>
-        </tfoot>
-      </table>
-      </div>
-    </div>
-    <div class="alert a-info mt2" style="font-size:11px">
-      ${glStd==='both'
-        ? `⓪ ${isE?'Modo Paralelo: Los asientos GAAP y su capa de ajuste IFRS se muestran juntos. Los marcados GAAP-only (ej. JE-0341 MACRS) no aparecen en el libro IFRS. Los marcados IFRS-only (ej. JE-0341A IAS 12) no aparecen en el libro GAAP.':'Parallel Mode: GAAP entries and their IFRS adjustment layers shown together. GAAP-only entries (e.g. MACRS) excluded from IFRS book. IFRS-only entries (e.g. IAS 12) excluded from GAAP book.'}`
-        : glStd==='ifrs'
-        ? `🌐 ${isE?'Libro IFRS activo. Visible: IFRS-only + BOTH. Excluidos: GAAP-only (LIFO, Goodwill, MACRS). Ajustes IAS 12/15/16/19 incluidos.':'IFRS ledger active. Visible: IFRS-only + BOTH. Excluded: GAAP-only (LIFO, Goodwill, MACRS). IAS 12/15/16/19 adjustments included.'}`
-        : `🇺🇸 ${isE?'Libro GAAP activo. Visible: GAAP-only + BOTH. Excluidos: ajustes IFRS (revaluación, IFRS 16, IAS 12 separado).':'GAAP ledger active. Visible: GAAP-only + BOTH. Excluded: IFRS-only adjustments (revaluation, IFRS 16, IAS 12 separate).'}`}
+        <tfoot><tr style="background:var(--navy);color:#fff;font-weight:700">
+          <td colspan="5">${isE?'TOTALES':'TOTALS'}</td>
+          <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(filtered.reduce((s,e)=>s+e.dr,0))}</td>
+          <td></td>
+          <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(filtered.reduce((s,e)=>s+e.cr,0))}</td>
+          <td colspan="3"><span style="font-size:11px;color:${Math.abs(filtered.reduce((s,e)=>s+e.dr,0)-filtered.reduce((s,e)=>s+e.cr,0))<1?'var(--success-light)':'var(--danger)'}">${Math.abs(filtered.reduce((s,e)=>s+e.dr,0)-filtered.reduce((s,e)=>s+e.cr,0))<1?(isE?'✓ BALANCEADO':'✓ BALANCED'):(isE?'✗ DESBALANCEADO':'✗ UNBALANCED')}</span></td>
+        </tr></tfoot>
+      </table></div>`}
     </div>`;
+
 
   } else if(glView === 'trial'){
     // Trial balance computed from COA_DATA balances
@@ -5800,13 +5882,19 @@ function rerenderGL(){
     </div>`;
 
   } else if(glView === 'aged_ap'){
-    const apRows = [
-      {vendor:'Elite MEP Group',inv:'#0412',proj:'PRJ-001',due:'2026-04-12',cur:76050,d30:0,d60:0,d91:0,ret:8450,blocked:false},
-      {vendor:'Rodriguez Concrete',inv:'#RC-201',proj:'PRJ-002',due:'2026-03-15',cur:0,d30:68400,d60:0,d91:0,ret:7600,blocked:true},
-      {vendor:'SteelPro Inc.',inv:'#SP-087',proj:'PRJ-002',due:'2026-03-28',cur:0,d30:0,d60:285300,d91:0,ret:31700,blocked:true},
-      {vendor:'Apex Framing LLC',inv:'#AF-033',proj:'PRJ-003',due:'2026-04-20',cur:80100,d30:0,d60:0,d91:0,ret:8900,blocked:false},
-      {vendor:'Home Depot — Materials',inv:'#HD-4821',proj:'PRJ-001',due:'2026-04-05',cur:3842,d30:0,d60:0,d91:0,ret:0,blocked:false},
-    ];
+    const apRows = (DB.journal||[]).filter(j=>j.apEntry===true).map(j=>{
+      const bal=Math.max(0,(j.amt||0)-(j.paid||0));
+      const age=j.due?(new Date()-new Date(j.due))/864e5:0;
+      return {
+        vendor:j.vendor||'—', inv:j.id, proj:j.proj||'ALL', due:j.due||'—',
+        cur: bal>0&&age<=0?bal:0,
+        d30: bal>0&&age>0&&age<=30?bal:0,
+        d60: bal>0&&age>30&&age<=60?bal:0,
+        d90: bal>0&&age>60&&age<=90?bal:0,
+        d91: bal>0&&age>90?bal:0,
+        ret:0, blocked:false,
+      };
+    });
     el.innerHTML = `
     <div class="card">
       <div class="card-header">
@@ -5894,22 +5982,16 @@ ${[['Nivel 1 — Exacto','42','$1,847,230','ok','94%'],['Nivel 2 — Fuzzy ±2d'
 
 function rAssets(){
   const isE=es();
-  const seedAssets = [
-    {id:'AST-001',desc:'Caterpillar 320 Excavator',    cat:'Heavy Equipment',cost:184000,book:'SL',macrs:'5yr',life:5,  purchaseDate:'2022-01-15',inServiceDate:'2022-02-01',invoiceRef:'FACT-2022-0042',vendor:'Caterpillar Financial',slDepr:36800,macrsYr1:36800,accumulated:147200,status:'active',proj:'PRJ-001'},
-    {id:'AST-002',desc:'Tower Crane — Riverside Plaza', cat:'Heavy Equipment',cost:320000,book:'SL',macrs:'5yr',life:5,  purchaseDate:'2023-06-01',inServiceDate:'2023-06-15',invoiceRef:'FACT-2023-0188',vendor:'Liebherr Equipment Corp',slDepr:64000,macrsYr1:64000,accumulated:128000,status:'active',proj:'PRJ-001'},
-    {id:'AST-003',desc:'Ford F-350 Fleet (×4)',         cat:'Vehicles',       cost:168000,book:'SL',macrs:'5yr',life:5,  purchaseDate:'2023-03-10',inServiceDate:'2023-03-20',invoiceRef:'FORD-2023-0074',vendor:'Ford Motor Credit',    slDepr:33600,macrsYr1:33600,accumulated:100800,status:'active',proj:'ALL'},
-    {id:'AST-004',desc:'Portable Generator 250kW',      cat:'Machinery',      cost:42000, book:'SL',macrs:'7yr',life:7,  purchaseDate:'2024-09-01',inServiceDate:'2024-09-10',invoiceRef:'GEN-2024-0031',vendor:'Generac Industrial',   slDepr:6000, macrsYr1:6000, accumulated:6000, status:'active',proj:'ALL'},
-    {id:'AST-005',desc:'Office Buildout HQ',             cat:'Leasehold',      cost:95000, book:'SL',macrs:'15yr',life:10,purchaseDate:'2022-01-01',inServiceDate:'2022-03-01',invoiceRef:'CONST-2022-001',vendor:'Interior Contractors LLC',slDepr:9500,macrsYr1:4750,accumulated:38000,status:'active',proj:'ALL'},
-  ];
-  const allAssets = seedAssets.concat(DB.assets.filter(a=>!seedAssets.find(s=>s.id===a.id)));
+  // Read exclusively from this client's CDB.assets
+  const allAssets = (DB.assets||[]);
   const totalCost  = allAssets.reduce((s,a)=>s+a.cost,0);
-  const totalAccum = allAssets.reduce((s,a)=>s+a.accumulated,0);
+  const totalAccum = allAssets.reduce((s,a)=>s+(a.accumulated||0),0);
 
   return`
 <div class="page-header">
   <div>
     <div class="page-title">${isE?'Activos Fijos':'Fixed Assets'}</div>
-    <div class="page-subtitle">MACRS (${isE?'Fiscal':'Tax'}) + SL (${isE?'Libros':'Books'}) · ${isE?'Factura de compra · Fecha de puesta en operación · ISR Diferido ASC 740':'Purchase invoice · In-service date · Deferred Tax ASC 740'}</div>
+    <div class="page-subtitle">${isE?'Solo activos de este cliente · Factura de compra · Fecha de puesta en operación · MACRS + SL · ISR Diferido ASC 740':'This client\'s assets only · Purchase invoice · In-service date · MACRS + SL · Deferred Tax ASC 740'}</div>
   </div>
   <div class="page-actions">
     <button class="btn btn-navy btn-sm" onclick="openModal(modalAsset())">${isE?'+ Nuevo Activo':'+ Add Asset'}</button>
@@ -5917,36 +5999,38 @@ function rAssets(){
 </div>
 
 <div class="g3" style="margin-bottom:0">
-  ${[
-    [isE?'Costo Total':'Total Cost',               fmt(totalCost),           'navy'],
-    [isE?'Depreciación Acumulada':'Accum. Depreciation', fmt(totalAccum),   'stone'],
-    [isE?'Valor Neto en Libros':'Net Book Value',  fmt(totalCost-totalAccum),'success'],
+  ${[[isE?'Costo Total':'Total Cost',fmt(totalCost),'navy'],
+     [isE?'Depreciación Acum.':'Accum. Depreciation',fmt(totalAccum),'stone'],
+     [isE?'Valor Neto en Libros':'Net Book Value',fmt(totalCost-totalAccum),'success'],
   ].map(([l,v,c])=>`<div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div>
     <div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:20px">${v}</div></div>`).join('')}
 </div>
 
+${allAssets.length===0?`<div class="card"><div class="alert a-info">
+  ${isE?'No hay activos fijos registrados para este cliente. Haga clic en "+ Nuevo Activo" para comenzar.':'No fixed assets registered for this client. Click "+ Add Asset" to get started.'}
+</div></div>`:`
 <div class="card">
   <div style="overflow-x:auto"><table class="dt">
     <thead><tr>
       <th>ID</th>
       <th style="min-width:180px">${isE?'Activo':'Asset'}</th>
       <th>${isE?'Categoría':'Category'}</th>
-      <th>${isE?'Factura Compra':'Purchase Invoice'}</th>
+      <th>${isE?'Factura Compra':'Invoice'}</th>
       <th>${isE?'Proveedor':'Vendor'}</th>
-      <th>${isE?'F. Compra':'Purchase Date'}</th>
+      <th>${isE?'F. Compra':'Purchase'}</th>
       <th>${isE?'F. Operación':'In-Service'}</th>
       <th class="num">${isE?'Costo':'Cost'}</th>
       <th class="num">${isE?'Depr. Acum.':'Accum. Dep.'}</th>
       <th class="num">${isE?'Valor Libro':'Book Value'}</th>
       <th class="num">MACRS Yr1</th>
-      <th class="num">${isE?'Dif. Temp.':'Timing Diff'}</th>
       <th class="num">DTL 21%</th>
-      <th>Status</th>
+      <th>${isE?'Estado':'Status'}</th>
+      <th></th>
     </tr></thead>
     <tbody>
     ${allAssets.map(a=>{
-      const bv   = a.cost - a.accumulated;
-      const diff = (a.macrsYr1||0) - (a.slDepr||0);
+      const bv   = a.cost-(a.accumulated||0);
+      const diff = (a.macrsYr1||0)-(a.slDepr||0);
       const dtl  = Math.round(Math.abs(diff)*0.21);
       return`<tr>
         <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${a.id}</code></td>
@@ -5957,12 +6041,15 @@ function rAssets(){
         <td class="mono" style="font-size:11px">${(a.purchaseDate||a.date||'—').slice(0,10)}</td>
         <td class="mono" style="font-size:11px;color:${a.inServiceDate&&a.inServiceDate!==(a.purchaseDate||a.date)?'var(--gold)':'var(--stone)'}">${(a.inServiceDate||a.purchaseDate||a.date||'—').slice(0,10)}</td>
         <td class="num mono">${fmt(a.cost)}</td>
-        <td class="num mono stone">${fmt(a.accumulated)}</td>
+        <td class="num mono stone">${fmt(a.accumulated||0)}</td>
         <td class="num mono bold">${fmt(bv)}</td>
         <td class="num mono gold">${fmt(a.macrsYr1||0)}</td>
-        <td class="num mono ${diff>0?'red':diff<0?'green':''} bold">${diff>=0?'+':''}${fmt(diff)}</td>
         <td class="num mono ${diff!==0?'danger':''}">${diff!==0?fmt(dtl):'—'}</td>
         <td><span class="badge b-ok" style="font-size:9px">${a.status||'active'}</span></td>
+        <td style="display:flex;gap:4px">
+          <button class="btn btn-sm btn-ghost" onclick="openModal(modalEditAsset('${a.id}'))" title="${isE?'Editar':'Edit'}">✏️</button>
+          <button class="btn btn-sm btn-ghost" onclick="deleteAsset('${a.id}')" title="${isE?'Eliminar':'Delete'}">🗑</button>
+        </td>
       </tr>`;
     }).join('')}
     </tbody>
@@ -5977,14 +6064,11 @@ function rAssets(){
     </tfoot>
   </table></div>
   <div class="alert a-info mt2" style="font-size:11px">
-    ⓘ ${isE
-      ?'F. Compra = fecha de la factura del proveedor. F. Operación = fecha en que el activo entró en uso (inicio de depreciación). La columna dorada indica cuando ambas fechas difieren.'
-      :'Purchase Date = vendor invoice date. In-Service Date = date the asset entered use (depreciation start). Gold column indicates when both dates differ.'
-    }
+    ⓘ ${isE?'F. Compra = fecha de la factura. F. Operación = inicio de depreciación. La columna DTL 21% muestra el Impuesto Sobre la Renta Diferido (ASC 740/IAS 12).':'Purchase = invoice date. In-Service = depreciation start. DTL 21% = Deferred Tax Liability (ASC 740/IAS 12).'}
   </div>
-</div>`}
+</div>`}`;
+}
 
-// ══════════════════════════════════════════════════════
 function rSecurity(){
   if(S.role!=='A')return`<div class="alert a-danger">Access denied. Level A only.</div>`;
   const isE=es();
@@ -6344,15 +6428,9 @@ function rSales(){
   const isE=es();
   const cons=isCons(); // retainage only for construction sectors
 
-  // Merge seeded invoices + DB.invoices
-  const seeded=[
-    {id:'INV-001',date:'2026-03-29',client:'Summit Properties LLC',proj:'PRJ-001',desc:isE?'AIA G702 Factura #5 — Riverside Plaza':'AIA G702 Invoice #5 — Riverside Plaza',gross:547320,ret:54732,status:'sent',   due:'2026-04-28'},
-    {id:'INV-002',date:'2026-03-20',client:'Oceanic Dev. Group',   proj:'PRJ-002',desc:isE?'AIA G702 Factura #3 — Harbor View Tower':'AIA G702 Invoice #3 — Harbor View Tower',gross:810000,ret:81000,status:'overdue',due:'2026-03-31'},
-    {id:'INV-003',date:'2026-03-15',client:'City Transit Authority',proj:'PRJ-003',desc:isE?'AIA G702 Factura #4 — Metro Line Ext.':'AIA G702 Invoice #4 — Metro Line Ext.',gross:243000,ret:24300,status:'paid',   due:'2026-04-14'},
-    {id:'INV-004',date:'2026-02-28',client:'Summit Properties LLC',proj:'PRJ-001',desc:isE?'AIA G702 Factura #4 — Riverside Plaza':'AIA G702 Invoice #4 — Riverside Plaza',gross:420000,ret:42000,status:'paid',   due:'2026-03-29'},
-    {id:'INV-005',date:'2026-03-28',client:'Oceanic Dev. Group',   proj:'PRJ-002',desc:isE?'Orden de Cambio #2 — Harbor View':'CO #2 — Harbor View Tower',                  gross:47500, ret:4750, status:'draft',  due:'2026-04-27'},
-  ];
-  const invoices=[...seeded,...(DB.invoices||[]).filter(i=>!seeded.find(s=>s.id===i.id))];
+  // Read invoices from active client's CDB only (no global seeded data)
+  const invoices=(DB.invoices||[]);
+
 
   // For non-construction: treat retainage as 0
   const effectiveRet  = inv => cons ? (inv.ret||0) : 0;
@@ -6404,6 +6482,7 @@ ${totOverdue>0?`<div class="alert a-danger">⚠ ${isE?`${fmt(totOverdue)} en fac
       <th class="num">${isE?'Neto Cobrable':'Net Receivable'}</th>
       <th>${isE?'Vencimiento':'Due Date'}</th>
       <th>${isE?'Estado':'Status'}</th>
+      <th></th>
     </tr></thead>
     <tbody>
     ${invoices.map(inv=>`<tr ${inv.status==='overdue'?'style="background:var(--danger-light)"':inv.status==='draft'?'style="background:rgba(0,0,0,.02)"':''}>
@@ -6417,6 +6496,10 @@ ${totOverdue>0?`<div class="alert a-danger">⚠ ${isE?`${fmt(totOverdue)} en fac
       <td class="num mono bold ${inv.status==='overdue'?'red':'green'}">${fmt(effectiveNet(inv))}</td>
       <td class="mono" style="font-size:11px;color:${inv.status==='overdue'?'var(--danger)':'var(--stone)'}">${inv.due}</td>
       <td><span class="badge ${statusBadge(inv.status)}" style="font-size:10px">${statusLabel(inv.status)}</span></td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-sm btn-ghost" onclick="openModal(modalEditInvoice('${inv.id}'))" title="${isE?'Editar':'Edit'}">✏️</button>
+        <button class="btn btn-sm btn-ghost" onclick="deleteInvoice('${inv.id}')" title="${isE?'Eliminar':'Delete'}">🗑</button>
+      </td>
     </tr>`).join('')}
     </tbody>
     <tfoot>
@@ -6557,62 +6640,57 @@ function rAR(){
   const isE=es();
   const cons=isCons();
 
-  // Seeded AR rows (hard-coded history)
-  const seeded=[
-    {id:'INV-001',client:'Summit Properties LLC', proj:'PRJ-001',date:'2026-03-29',due:'2026-04-28',gross:547320,ret:54732,net:492588,paid:0,   balance:492588,arStatus:'open',   d30:0,d60:0,d90:0},
-    {id:'INV-002',client:'Oceanic Dev. Group',    proj:'PRJ-002',date:'2026-03-20',due:'2026-03-31',gross:810000,ret:81000,net:729000,paid:0,   balance:729000,arStatus:'overdue',d30:729000,d60:0,d90:0},
-    {id:'INV-003',client:'City Transit Auth.',    proj:'PRJ-003',date:'2026-02-15',due:'2026-03-15',gross:243000,ret:24300,net:218700,paid:218700,balance:0,    arStatus:'paid',  d30:0,d60:0,d90:0},
-    {id:'INV-004',client:'Summit Properties LLC', proj:'PRJ-001',date:'2026-01-31',due:'2026-02-28',gross:420000,ret:42000,net:378000,paid:378000,balance:0,   arStatus:'paid',  d30:0,d60:0,d90:0},
-  ];
-
-  // Live invoices from DB.invoices (user-created, only 'sent' status)
-  const liveAR=(DB.invoices||[]).filter(i=>!seeded.find(s=>s.id===i.id)&&i.status==='sent')
-    .map(i=>({
+  // All AR comes exclusively from this client's CDB (DB.invoices = CDB.invoices via proxy)
+  const allAR=(DB.invoices||[]).map(i=>{
+    const bal=i.balance??i.net??0;
+    const age=(new Date()-new Date(i.due))/864e5;
+    const arSt=bal<=0?'paid':new Date(i.due)<new Date()?'overdue':'open';
+    return {
       id:i.id, client:i.client, proj:i.proj||'ALL',
-      date:i.date, due:i.due, gross:i.gross, ret:i.ret||0, net:i.net,
-      paid:i.paid||0, balance:i.balance??i.net,
-      arStatus:((i.balance??i.net)<=0)?'paid':new Date(i.due)<new Date()?'overdue':'open',
-      d30:((i.balance??i.net)>0&&new Date(i.due)<new Date()&&(new Date()-new Date(i.due))<31*864e5)?(i.balance??i.net):0,
-      d60:((i.balance??i.net)>0&&(new Date()-new Date(i.due))>=31*864e5&&(new Date()-new Date(i.due))<61*864e5)?(i.balance??i.net):0,
-      d90:((i.balance??i.net)>0&&(new Date()-new Date(i.due))>=61*864e5)?(i.balance??i.net):0,
-      isLive:true,
-    }));
+      date:i.date, due:i.due,
+      gross:i.gross, ret:cons?(i.ret||0):0, net:i.net,
+      paid:i.paid||0, balance:bal, arStatus:arSt,
+      d30:arSt!=='paid'&&age>0&&age<=30?bal:0,
+      d60:arSt!=='paid'&&age>30&&age<=60?bal:0,
+      d90:arSt!=='paid'&&age>60?bal:0,
+      desc:i.desc||i.id,
+    };
+  });
 
-  const allAR=[...seeded,...liveAR];
   const openAR=allAR.filter(r=>r.arStatus!=='paid');
   const totCur =allAR.filter(r=>r.arStatus==='open').reduce((s,r)=>s+r.balance,0);
   const tot30  =allAR.reduce((s,r)=>s+r.d30,0);
   const tot60  =allAR.reduce((s,r)=>s+r.d60,0);
   const tot90  =allAR.reduce((s,r)=>s+r.d90,0);
-  const totRet =cons?allAR.reduce((s,r)=>s+(r.ret||0),0):0;
+  const totRet =cons?allAR.reduce((s,r)=>s+r.ret,0):0;
   const totAll =totCur+tot30+tot60+tot90+(cons?totRet:0);
   const totPaid=allAR.reduce((s,r)=>s+r.paid,0);
 
-  // Collection history
-  const actions=[
-    {date:'2026-04-01',client:'Oceanic Dev. Group',   action:isE?'Email recordatorio enviado — INV-002 vencida':'Reminder email — INV-002 overdue',type:'reminder'},
-    {date:'2026-03-28',client:'City Transit Auth.',    action:isE?'Cobro recibido INV-003 — $218,700':'Payment received INV-003 — $218,700',type:'payment'},
-    {date:'2026-03-25',client:'Summit Properties LLC', action:isE?'Cobro recibido INV-004 — $378,000':'Payment received INV-004 — $378,000',type:'payment'},
-    ...(DB.journal||[]).filter(j=>j.cat==='AR Collection'&&j.type==='in')
-      .map(j=>({date:j.date,client:j.desc?.split('—')[1]?.trim()||'',action:isE?`Cobro registrado: ${fmt(j.amt)}`:`Payment recorded: ${fmt(j.amt)}`,type:'payment'})),
-  ];
+  // Payment history from CDB journal
+  const collHistory=(DB.journal||[]).filter(j=>j.cat==='AR Collection'&&j.type==='in')
+    .map(j=>({date:j.date,client:j.client||j.desc,
+      action:isE?`Cobro registrado: ${fmt(j.amt)}`:`Payment recorded: ${fmt(j.amt)}`,type:'payment'}));
 
   return`
 <div class="page-header">
   <div><div class="page-title">${isE?'Cuentas por Cobrar':'Accounts Receivable'}</div>
-  <div class="page-subtitle">${cons
-    ?(isE?'Antigüedad · Retenciones segregadas · Cobros actualizados en tiempo real':'Aging · Retainage segregated · Real-time payment tracking')
-    :(isE?'Antigüedad de cartera · Saldo por factura · Cobros en tiempo real':'Aging report · Balance per invoice · Real-time collections')}</div></div>
+  <div class="page-subtitle">${isE?'Saldo por factura · Antigüedad · Tiempo real':'Balance per invoice · Aging · Real-time'}</div></div>
   <div class="page-actions">
     <button class="btn btn-ghost btn-sm" onclick="nav('sales')">${isE?'Ver Facturas':'Invoices'}</button>
     <button class="btn btn-navy btn-sm" onclick="openModal(modalRegisterPayment())">${isE?'+ Registrar Cobro':'+ Record Payment'}</button>
   </div>
 </div>
 
+${allAR.length===0?`<div class="alert a-info" style="margin-top:20px;text-align:center;padding:40px">
+  <div style="font-size:48px;margin-bottom:12px">📥</div>
+  <div style="font-size:16px;font-weight:600;color:var(--navy);margin-bottom:8px">${isE?'Sin facturas por cobrar':'No receivable invoices'}</div>
+  <div style="font-size:13px;color:var(--stone);margin-bottom:20px">${isE?'Emita una factura desde el módulo de Ventas para comenzar.':'Issue an invoice from the Sales module to get started.'}</div>
+  <button class="btn btn-navy" onclick="nav(\'sales\')">${isE?'+ Nueva Factura':'+ New Invoice'}</button>
+</div>`:`
 <div class="kpi-grid">
-  ${kpi(isE?'Total AR Pendiente':'Total AR Outstanding',fmt(totAll),isE?`${openAR.length} facturas abiertas`:`${openAR.length} open invoices`,'info','')}
-  ${kpi(isE?'Cobrado YTD':'Collected YTD',fmt(totPaid),isE?'Pagos recibidos':'Payments received','success','up')}
-  ${kpi(isE?'Vencido (>30d)':'Overdue (>30d)',fmt(tot30+tot60+tot90),isE?'Requiere gestión':'Requires action','danger',tot30+tot60+tot90>0?'dn':'')}
+  ${kpi(isE?'Total AR Pendiente':'Total AR Outstanding',fmt(totAll),`${openAR.length} ${isE?'facturas abiertas':'open invoices'}`,'info','')}
+  ${kpi(isE?'Cobrado':'Collected',fmt(totPaid),isE?'Pagos recibidos':'Payments received','success','up')}
+  ${kpi(isE?'Vencido':'Overdue',fmt(tot30+tot60+tot90),isE?'Requiere gestión':'Requires action','danger',tot30+tot60+tot90>0?'dn':'')}
   ${cons?kpi(isE?'Retención LP':'Retainage LT',fmt(totRet),isE?'No corriente':'Non-current','warning',''):
     kpi(isE?'Al corriente':'Current',fmt(totCur),isE?'0-30 días':'0-30 days','success','')}
 </div>
@@ -6620,93 +6698,75 @@ function rAR(){
 <div class="card">
   <div class="card-header">
     <div><div class="card-title">${isE?'Registro AR — Saldo por Factura':'AR Register — Balance per Invoice'}</div>
-    <div class="card-sub">${isE?'Saldo = Net − Pagado · Facturas nuevas aparecen automáticamente al emitir':'Balance = Net − Paid · New invoices appear automatically on issue'}</div></div>
-    <span class="badge b-no">${fmt(tot30+tot60+tot90)} ${isE?'vencido':'overdue'}</span>
+    <div class="card-sub">${isE?'Saldo = Net − Pagado · Se actualiza en tiempo real con cada cobro':'Balance = Net − Paid · Updates in real-time with each payment'}</div></div>
   </div>
   <div style="overflow-x:auto"><table class="dt"><thead>
-    <tr style="background:rgba(0,0,0,.02)">
-      <th colspan="5"></th>
-      <th colspan="3" style="text-align:center;font-size:10px;color:var(--danger);letter-spacing:1px;border-left:2px solid rgba(0,0,0,.08)">${isE?'DÍAS VENCIDO':'DAYS PAST DUE'}</th>
-      ${cons?`<th style="text-align:center;font-size:10px;color:var(--warning);border-left:2px solid rgba(0,0,0,.08)">${isE?'RETENCION':'RETAINAGE'}</th>`:''}
-      <th colspan="3"></th>
-    </tr>
     <tr>
       <th>${isE?'Factura':'Invoice'}</th>
       <th>${isE?'Cliente':'Client'}</th>
+      <th>${isE?'Descripción':'Description'}</th>
       <th>${isE?'Fecha':'Date'}</th>
       <th>${isE?'Vencimiento':'Due'}</th>
       <th class="num">${isE?'Monto Neto':'Net Amount'}</th>
-      <th class="num" style="border-left:2px solid rgba(0,0,0,.08)">1-30d</th>
-      <th class="num">31-60d</th>
-      <th class="num">61-90d</th>
-      ${cons?`<th class="num" style="border-left:2px solid rgba(0,0,0,.08)">${isE?'Ret. LP':'Ret. LT'}</th>`:''}
+      ${cons?`<th class="num">${isE?'Ret.LP':'Ret.LT'}</th>`:''}
       <th class="num" style="color:var(--success)">${isE?'Pagado':'Paid'}</th>
       <th class="num" style="color:var(--danger);font-weight:700">${isE?'SALDO':'BALANCE'}</th>
       <th>${isE?'Estado':'Status'}</th>
+      <th>${isE?'Acciones':'Actions'}</th>
     </tr>
   </thead><tbody>
+  ${allAR.length===0?`<tr><td colspan="10" style="text-align:center;color:var(--stone);padding:30px">${isE?'Sin facturas registradas para este cliente':'No invoices recorded for this client'}</td></tr>`:''}
   ${allAR.map(r=>{
-    const ov=r.arStatus==='overdue';
-    const paid=r.arStatus==='paid';
-    return`<tr ${r.isLive?'style="border-left:3px solid var(--success)"':ov?'style="background:rgba(192,57,43,.04)"':paid?'style="opacity:.7"':''}>
+    const ov=r.arStatus==='overdue'; const paid=r.arStatus==='paid';
+    return`<tr ${ov?'style="background:rgba(192,57,43,.04)"':paid?'style="opacity:.75"':''}>
       <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 6px;border-radius:3px">${r.id}</code></td>
       <td style="font-weight:500;font-size:12.5px">${r.client}</td>
+      <td style="font-size:11px;color:var(--stone)">${r.desc||'—'}</td>
       <td class="mono" style="font-size:11px">${r.date}</td>
       <td class="mono" style="font-size:11px;color:${ov?'var(--danger)':'var(--stone)'}">${r.due}${ov?' ⚠':''}</td>
       <td class="num mono">${fmt(r.net)}</td>
-      <td class="num mono ${r.d30?'warning':''}" style="border-left:2px solid rgba(0,0,0,.06)">${r.d30?fmt(r.d30):'—'}</td>
-      <td class="num mono ${r.d60?'danger':''}">${r.d60?fmt(r.d60):'—'}</td>
-      <td class="num mono ${r.d90?'danger bold':''}">${r.d90?fmt(r.d90):'—'}</td>
-      ${cons?`<td class="num mono gold" style="border-left:2px solid rgba(0,0,0,.06)">${(r.ret||0)?fmt(r.ret):'—'}</td>`:''}
+      ${cons?`<td class="num mono gold">${r.ret?fmt(r.ret):'—'}</td>`:''}
       <td class="num mono green">${r.paid?fmt(r.paid):'—'}</td>
       <td class="num bold" style="font-size:${r.balance>0?14:12}px;color:${paid?'var(--success)':ov?'var(--danger)':'var(--warning)'}">${paid?'✓':fmt(r.balance)}</td>
-      <td>
-        ${paid?`<span class="badge b-ok" style="font-size:10px">✓ ${isE?'Pagada':'Paid'}</span>`
-          :ov?`<span class="badge b-no" style="font-size:10px">⚠ ${isE?'Vencida':'Overdue'}</span>`
-          :`<span class="badge b-info" style="font-size:10px">${isE?'Pendiente':'Pending'}</span>`}
-        ${!paid?`<button class="btn btn-sm btn-ghost" style="margin-left:4px" onclick="openModal(modalRegisterPayment('${r.id}','${r.client}',${r.balance||r.net}))" title="${isE?'Cobrar':'Collect'}">💰</button>`:''}
+      <td>${paid?`<span class="badge b-ok" style="font-size:10px">✓ ${isE?'Pagada':'Paid'}</span>`:ov?`<span class="badge b-no" style="font-size:10px">⚠ ${isE?'Vencida':'Overdue'}</span>`:`<span class="badge b-info" style="font-size:10px">${isE?'Pendiente':'Pending'}</span>`}</td>
+      <td style="display:flex;gap:4px">
+        ${!paid?`<button class="btn btn-sm btn-ghost" onclick="openModal(modalRegisterPayment('${r.id}','${r.client}',${r.balance}))" title="${isE?'Cobrar':'Collect'}">💰</button>`:''}
+        <button class="btn btn-sm btn-ghost" onclick="openModal(modalEditInvoice('${r.id}'))" title="${isE?'Editar':'Edit'}">✏️</button>
+        <button class="btn btn-sm btn-ghost" onclick="deleteInvoice('${r.id}')" title="${isE?'Eliminar':'Delete'}" style="color:var(--danger)">🗑</button>
       </td>
     </tr>`;
   }).join('')}
   </tbody><tfoot>
     <tr style="background:var(--navy);color:#fff;font-weight:700">
-      <td colspan="4">TOTAL</td>
+      <td colspan="${cons?5:4}">TOTAL</td>
       <td class="num" style="font-family:var(--font-mono);color:rgba(255,255,255,.7)">${fmt(allAR.reduce((s,r)=>s+r.net,0))}</td>
-      <td class="num" style="font-family:var(--font-mono);color:var(--warning-light);border-left:2px solid rgba(255,255,255,.1)">${fmt(tot30)}</td>
-      <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(tot60)}</td>
-      <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(tot90)}</td>
       ${cons?`<td class="num" style="font-family:var(--font-mono);color:var(--gold-light)">${fmt(totRet)}</td>`:''}
       <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(totPaid)}</td>
       <td class="num" style="font-family:var(--font-mono);color:var(--warning-light);font-size:15px">${fmt(totAll)}</td>
-      <td></td>
+      <td colspan="2"></td>
     </tr>
   </tfoot></table></div>
 </div>
 
-<div class="card">
-  <div class="card-header"><div class="card-title">${isE?'Historial de Cobros':'Collections History'}</div></div>
-  ${actions.slice(0,6).map(a=>`
+${collHistory.length>0?`<div class="card">
+  <div class="card-header"><div class="card-title">${isE?'Historial de Cobros':'Payment History'}</div></div>
+  ${collHistory.slice(-8).reverse().map(a=>`
   <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid rgba(0,0,0,.04)">
-    <div style="width:28px;height:28px;border-radius:6px;background:${a.type==='payment'?'var(--success-light)':a.type==='call'?'var(--info-light)':'var(--warning-light)'};display:flex;align-items:center;justify-content:center;font-size:13px">${a.type==='payment'?'💰':a.type==='call'?'📞':'📧'}</div>
+    <div style="width:28px;height:28px;border-radius:6px;background:var(--success-light);display:flex;align-items:center;justify-content:center;font-size:13px">💰</div>
     <div style="flex:1"><div style="font-size:12.5px;font-weight:500">${a.client}</div><div style="font-size:11px;color:var(--stone)">${a.action}</div></div>
     <span class="mono" style="font-size:10px;color:var(--stone)">${a.date}</span>
   </div>`).join('')}
-  <div style="margin-top:10px;text-align:right">
-    <button class="btn btn-ghost btn-sm" onclick="openModal(modalRegisterPayment())">${isE?'+ Registrar Cobro':'+ Record Payment'}</button>
-  </div>
-</div>`;
+</div>`:''}
+`}`;
 }
 
 function modalRegisterPayment(invId='', clientName='', balance=0){
   const isE=es();
-  // Build list of all open invoices (seeded + DB.invoices)
-  const seededOpen=[
-    {id:'INV-001',client:'Summit Properties LLC', balance:492588},
-    {id:'INV-002',client:'Oceanic Dev. Group',    balance:729000},
-  ];
+  // Build list of all open invoices from CDB only
+  const seededOpen=[];
   const liveOpen=(DB.invoices||[]).filter(i=>i.status==='sent'&&(i.balance??i.net)>0)
     .map(i=>({id:i.id,client:i.client,balance:i.balance??i.net}));
-  const allOpen=[...seededOpen,...liveOpen.filter(l=>!seededOpen.find(s=>s.id===l.id))];
+  const allOpen=[...liveOpen];
 
   return`
 <h3 style="font-family:var(--font-display)">${isE?'Registrar Cobro de Cliente':'Record Customer Payment'}</h3>
@@ -6764,6 +6824,7 @@ function onRPInvChange(){
 if('${invId}'){const sel=document.getElementById('rp-inv');sel.value='${invId}';onRPInvChange();}
 <\/script>`;}
 
+// ══════════════════════════════════════════════════════
 function saveARPayment(){
   const isE=es();
   const inv    = document.getElementById('rp-inv')?.value;
@@ -6813,17 +6874,24 @@ function rAP(){
   const isE=es();
   const cons=isCons();
 
-  const seeded=[
-    {vendor:'Elite MEP Group',    type:'sub',  inv:'AP-001',proj:'PRJ-001',date:'2026-03-27',due:'2026-04-26',gross:84500, ret:8450,  paid:0,     poRef:'',      w9:'filed',  blocked:false,status:'pending'},
-    {vendor:'Rodriguez Concrete', type:'sub',  inv:'AP-002',proj:'PRJ-002',date:'2026-03-15',due:'2026-04-14',gross:68400, ret:6840,  paid:0,     poRef:'',      w9:'missing',blocked:true, status:'blocked',reason:'W-9 MISSING'},
-    {vendor:'SteelPro Inc.',      type:'sub',  inv:'AP-003',proj:'PRJ-002',date:'2026-03-20',due:'2026-04-19',gross:285300,ret:28530, paid:0,     poRef:'',      w9:'filed',  blocked:true, status:'blocked',reason:'COI EXPIRED'},
-    {vendor:'Apex Framing LLC',   type:'sub',  inv:'AP-004',proj:'PRJ-003',date:'2026-03-22',due:'2026-04-21',gross:80100, ret:8010,  paid:72090, poRef:'OC-001',w9:'filed',  blocked:false,status:'approved'},
-    {vendor:'Home Depot',         type:'vendor',inv:'AP-005',proj:'PRJ-001',date:'2026-03-30',due:'2026-04-29',gross:3842,  ret:0,    paid:0,     poRef:'OC-001',w9:'n/a',   blocked:false,status:'pending'},
-    {vendor:'SkyHigh Glass',      type:'sub',  inv:'AP-006',proj:'PRJ-001',date:'2026-03-28',due:'2026-04-27',gross:42000, ret:2100,  paid:15000, poRef:'',      w9:'filed',  blocked:false,status:'pending'},
+  // Build AP from CDB.purchaseOrders (linked invoices) + CDB.journal AP entries
+  const apRows=[
+    ...(DB.journal||[]).filter(j=>j.apEntry===true).map(j=>({
+      vendor:j.vendor||'—', type:'vendor', inv:j.id,
+      proj:j.proj||'ALL', date:j.date, due:j.due||'—',
+      gross:j.amt||0, ret:0, paid:j.paid||0, poRef:j.poRef||'',
+      w9:'n/a', blocked:false,
+      status:(j.paid||0)>=(j.amt||0)?'paid':'pending',
+    })),
+    ...(DB.subs||[]).filter(s=>s._apEntry).map(s=>({
+      vendor:s.name, type:'sub', inv:s._apInv||'',
+      proj:s.pid||'ALL', date:s._apDate||'—', due:s._apDue||'—',
+      gross:s._apGross||0, ret:isCons()?(s._apRet||0):0,
+      paid:s._apPaid||0, poRef:'', w9:s.w9||'n/a', blocked:s.blocked||false,
+      reason:s.reason||'', status:s.blocked?'blocked':'pending',
+    })),
   ];
-  const liveAP=DB.journal.filter(j=>j.apEntry===true).filter(j=>!seeded.find(s=>s.inv===j.id))
-    .map(j=>({vendor:j.vendor||'—',type:'vendor',inv:j.id,proj:j.proj||'ALL',date:j.date,due:j.due||'—',gross:j.amt||0,ret:0,paid:j.paid||0,poRef:j.poRef||'',w9:'n/a',blocked:false,status:(j.paid||0)>=(j.amt||0)?'paid':'pending',isLive:true}));
-  const apRows=[...seeded,...liveAP];
+
   const retRows=r=>cons?r.ret:0;
   const rowBalance=r=>Math.max(0,(r.gross-retRows(r))-r.paid);
   const totPending=apRows.filter(r=>!r.blocked&&r.status!=='paid').reduce((s,r)=>s+rowBalance(r),0);
@@ -6992,60 +7060,46 @@ function saveAPPayment(){
 function rCashbook(){
   const isE=es();
 
-  // Account balances — adjusted by live journal entries
-  const CB_ACCOUNTS = [
-    { id:'CA-001', name: isE?'Caja Chica — Oficina HQ':'Petty Cash — HQ Office', baseBalance:1847, bank: isE?'Efectivo':'Cash', currency:'USD' },
-    { id:'CA-002', name: 'BofA ****4821',          baseBalance:398420, bank:'Bank of America',  currency:'USD' },
-    { id:'CA-003', name: 'Wells Fargo ****9201',   baseBalance:144380, bank:'Wells Fargo',       currency:'USD' },
-  ];
+  // Account balances from CDB.bankConns (client-specific)
+  const cdbBanks = (DB.bankConns||[]);
+  const CB_ACCOUNTS = cdbBanks.length > 0
+    ? cdbBanks.map(b=>({ id:b.id, name:`${b.inst} ${b.acct}`, baseBalance:b.bal||0, bank:b.inst, currency:b.currency||'USD' }))
+    : [{ id:'CA-001', name:isE?'Cuenta Principal':'Main Account', baseBalance:0, bank:'—', currency:'USD' }];
 
-  // Seeded transactions
-  const seeded = [
-    { date:'2026-04-04', ref:'CBK-0041', desc_en:'Client payment — Summit Properties INV-004', desc_es:'Cobro cliente — Summit Properties INV-004', acct:'CA-002', type:'in',  amount:378000, cat:'AR Collection',    proj:'PRJ-001' },
-    { date:'2026-04-03', ref:'CBK-0040', desc_en:'Payroll disbursement — April field crews',   desc_es:'Pago nómina — Cuadrillas campo Abril',     acct:'CA-003', type:'out', amount:97230,  cat:'Payroll',          proj:'ALL'     },
-    { date:'2026-04-02', ref:'CBK-0039', desc_en:'Vendor payment — Home Depot materials',      desc_es:'Pago proveedor — Home Depot materiales',   acct:'CA-002', type:'out', amount:3842,   cat:'Materials',        proj:'PRJ-001' },
-    { date:'2026-04-01', ref:'CBK-0038', desc_en:'Insurance premium — Q2 2026',                desc_es:'Prima de seguro — Q2 2026',                acct:'CA-002', type:'out', amount:8400,   cat:'Insurance',        proj:'ALL'     },
-    { date:'2026-03-31', ref:'CBK-0037', desc_en:'Client payment — City Transit AIA-004',      desc_es:'Cobro cliente — City Transit AIA-004',     acct:'CA-002', type:'in',  amount:218700, cat:'AR Collection',    proj:'PRJ-003' },
-    { date:'2026-03-30', ref:'CBK-0036', desc_en:'Apex Framing LLC — progress payment',        desc_es:'Apex Framing LLC — pago de avance',        acct:'CA-003', type:'out', amount:72090,  cat:'Subcontractors',   proj:'PRJ-003' },
-    { date:'2026-03-29', ref:'CBK-0035', desc_en:'Office supplies — petty cash',               desc_es:'Útiles de oficina — caja chica',           acct:'CA-001', type:'out', amount:284,    cat:'Office Expenses',  proj:'ALL'     },
-    { date:'2026-03-28', ref:'CBK-0034', desc_en:'SkyHigh Glass — partial payment',            desc_es:'SkyHigh Glass — pago parcial',             acct:'CA-002', type:'out', amount:15000,  cat:'Subcontractors',   proj:'PRJ-001' },
-    { date:'2026-03-27', ref:'CBK-0033', desc_en:'Elite MEP Group — invoice AP-001',           desc_es:'Elite MEP Group — factura AP-001',         acct:'CA-002', type:'out', amount:76050,  cat:'Subcontractors',   proj:'PRJ-001' },
-    { date:'2026-03-26', ref:'CBK-0032', desc_en:'Fuel & equipment — site vehicles',           desc_es:'Combustible y equipos — vehículos obra',   acct:'CA-001', type:'out', amount:630,    cat:'Equipment',        proj:'PRJ-002' },
-    { date:'2026-03-25', ref:'CBK-0031', desc_en:'Retainage released — Metro Line final',      desc_es:'Retención liberada — Metro Line final',    acct:'CA-003', type:'in',  amount:27000,  cat:'Retainage Release',proj:'PRJ-003' },
-    { date:'2026-03-24', ref:'CBK-0030', desc_en:'Interest income — BofA savings',             desc_es:'Intereses ganados — BofA ahorros',         acct:'CA-002', type:'in',  amount:1240,   cat:'Interest Income',  proj:'ALL'     },
-  ];
-
-  // Merge live DB.journal cash entries (CBK-* refs or type field)
-  const liveJournal = DB.journal
-    .filter(j => j.type==='in' || j.type==='out' || (j.id && j.id.startsWith('CBK')) || (j.id && j.id.startsWith('IMP')))
-    .filter(j => !seeded.find(s => s.ref === j.id))
+  // All cash transactions from CDB.journal (in/out types)
+  const allJournal = (DB.journal||[])
+    .filter(j => j.type==='in' || j.type==='out')
     .map(j => ({
       date:    j.date||'',
       ref:     j.id||'',
       desc_en: j.desc||'',
       desc_es: j.desc||'',
-      acct:    j.acct||'CA-002',
-      type:    j.type||(j.dr==='1-01-01-001'?'in':'out'),
+      acct:    j.acct||CB_ACCOUNTS[0]?.id||'CA-001',
+      type:    j.type,
       amount:  j.amt||0,
       cat:     j.cat||'Other',
       proj:    j.proj||'ALL',
-      isLive:  true,
     }));
 
-  // All transactions sorted by date desc
-  const txns = [...liveJournal, ...seeded].sort((a,b)=>b.date.localeCompare(a.date));
-
-  // Compute running totals
+  const txns = [...allJournal].sort((a,b)=>b.date.localeCompare(a.date));
   const totalIn  = txns.filter(t=>t.type==='in').reduce((s,t)=>s+t.amount,0);
   const totalOut = txns.filter(t=>t.type==='out').reduce((s,t)=>s+t.amount,0);
   const netFlow  = totalIn - totalOut;
 
   // Adjust account balances by live entries
   CB_ACCOUNTS.forEach(a => {
-    const liveAdj = liveJournal.filter(t=>t.acct===a.id).reduce((s,t)=>t.type==='in'?s+t.amount:s-t.amount,0);
-    a.balance = a.baseBalance + liveAdj;
+    const adj = allJournal.filter(t=>t.acct===a.id).reduce((s,t)=>t.type==='in'?s+t.amount:s-t.amount, 0);
+    a.balance = a.baseBalance;
   });
   const totalCash = CB_ACCOUNTS.reduce((s,a)=>s+a.balance,0);
+
+  // Running balance
+  let running = totalCash;
+  const txnsWithBalance = txns.map(t=>{
+    const b = running;
+    running += t.type==='out' ? t.amount : -t.amount;
+    return {...t, balance:b};
+  });
 
   // Category summary
   const catSums = {};
@@ -7054,120 +7108,103 @@ function rCashbook(){
     catSums[t.cat][t.type]+=t.amount;
   });
 
-  // Compute running balance per row (simplified — from totalCash down)
-  let running = totalCash;
-  const txnsWithBalance = txns.map(t=>{
-    const b = running;
-    running += t.type==='out' ? t.amount : -t.amount;
-    return {...t, balance:b};
-  });
+  const emptyState = txns.length===0;
 
   return `
 <div class="page-header">
   <div>
-    <div class="page-title">${isE?'Libro de Ingresos y Egresos de Caja':'Cash Receipts & Disbursements Journal'}</div>
-    <div class="page-subtitle">${isE?'Control de efectivo · Todas las cuentas · Asientos automáticos · Importación bancaria directa':'Cash control · All accounts · Auto journal entries · Direct bank import'}</div>
+    <div class="page-title">${isE?'Libro de Ingresos y Egresos de Caja':'Cash Receipts & Disbursements'}</div>
+    <div class="page-subtitle">${isE?'Movimientos de efectivo · Todas las cuentas · Solo datos de este cliente':'Cash movements · All accounts · This client only'}</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-ghost btn-sm" onclick="nav('bankconn')">🔗 ${isE?'Conectar Banco':'Connect Bank'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="nav('bankconn')">🔗 ${isE?'Cuentas Bancarias':'Bank Accounts'}</button>
     <button class="btn btn-ghost btn-sm" onclick="openModal(modalCashEntry('in'))">+ ${isE?'Ingreso':'Receipt'}</button>
     <button class="btn btn-navy btn-sm" onclick="openModal(modalCashEntry('out'))">- ${isE?'Egreso':'Disbursement'}</button>
   </div>
 </div>
 
 <!-- ACCOUNT BALANCE CARDS -->
-<div style="display:grid;grid-template-columns:repeat(${CB_ACCOUNTS.length+1},1fr);gap:10px;margin-bottom:0">
+<div style="display:grid;grid-template-columns:repeat(${Math.min(CB_ACCOUNTS.length+1,5)},1fr);gap:10px;margin-bottom:0">
   ${CB_ACCOUNTS.map((a,idx)=>`
   <div class="kpi-card" style="border-top:3px solid var(--${idx===0?'gold':idx===1?'info':'success'})">
-    <div class="kpi-accent" style="display:none"></div>
-    <div style="font-size:10px;color:var(--stone);font-weight:600;margin-bottom:2px;letter-spacing:.5px">${a.bank.toUpperCase()}</div>
+    <div style="font-size:10px;color:var(--stone);font-weight:600;margin-bottom:2px">${a.bank.toUpperCase()}</div>
     <div class="kpi-label">${a.name}</div>
     <div class="kpi-value" style="font-size:19px">${fmt(a.balance)}</div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
-      <span class="kpi-sub">${a.currency} · ${isE?'Disponible':'Available'}</span>
-      <button class="btn btn-sm btn-ghost" style="padding:2px 8px;font-size:10px" onclick="openModal(modalCashImport())">${isE?'↓ Import':'↓ Import'}</button>
-    </div>
+    <div class="kpi-sub">${a.currency}</div>
   </div>`).join('')}
   <div class="kpi-card" style="border-top:3px solid var(--navy);background:var(--navy)">
-    <div class="kpi-accent" style="display:none"></div>
-    <div style="font-size:10px;color:rgba(255,255,255,.5);font-weight:600;letter-spacing:.5px">${isE?'POSICIÓN TOTAL':'TOTAL POSITION'}</div>
+    <div style="font-size:10px;color:rgba(255,255,255,.5);font-weight:600">${isE?'POSICIÓN TOTAL':'TOTAL POSITION'}</div>
     <div style="font-size:22px;font-weight:700;color:var(--gold);font-family:var(--font-display);margin:4px 0">${fmt(totalCash)}</div>
     <div style="font-size:11px;color:rgba(255,255,255,.4)">${isE?'Todas las cuentas':'All accounts'}</div>
   </div>
 </div>
 
-<!-- PERIOD FLOW KPIs -->
 <div class="g3">
-  ${[[isE?'Total Ingresos':'Total Receipts', fmt(totalIn), 'success', `${txns.filter(t=>t.type==='in').length} ${isE?'movimientos':'movements'}`],
-     [isE?'Total Egresos':'Total Disbursements', fmt(totalOut), 'danger', `${txns.filter(t=>t.type==='out').length} ${isE?'pagos':'payments'}`],
-     [isE?'Flujo Neto':'Net Flow', fmt(Math.abs(netFlow)), netFlow>=0?'success':'danger', netFlow>=0?(isE?'▲ Superávit':'▲ Surplus'):(isE?'▼ Déficit':'▼ Deficit')]
+  ${[[isE?'Total Ingresos':'Total Receipts',fmt(totalIn),'success',txns.filter(t=>t.type==='in').length+' mov.'],
+     [isE?'Total Egresos':'Total Disbursements',fmt(totalOut),'danger',txns.filter(t=>t.type==='out').length+' pag.'],
+     [isE?'Flujo Neto':'Net Flow',fmt(Math.abs(netFlow)),netFlow>=0?'success':'danger',netFlow>=0?(isE?'▲ Superávit':'▲ Surplus'):(isE?'▼ Déficit':'▼ Deficit')]
   ].map(([l,v,c,s])=>`<div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div>
     <div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:20px">${v}</div>
     <div class="kpi-sub">${s}</div></div>`).join('')}
 </div>
 
-<!-- MAIN CASHBOOK TABLE -->
 <div class="card">
   <div class="card-header">
     <div>
-      <div class="card-title">${isE?'Diario de Caja — Movimientos':'Cash Journal — Movements'}</div>
-      <div class="card-sub">${txns.length} ${isE?'movimientos':'movements'} · ${liveJournal.length>0?`<span style="color:var(--success)">${liveJournal.length} ${isE?'nuevos':'new'}</span> · `:''} ${isE?'Ordenados por fecha desc':'Sorted by date desc'}</div>
+      <div class="card-title">${isE?'Diario de Caja':'Cash Journal'}</div>
+      <div class="card-sub">${txns.length} ${isE?'movimientos de este cliente':'movements for this client'}</div>
     </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-ghost btn-sm" onclick="openModal(modalCashImport())">↓ ${isE?'Importar Extracto':'Import Statement'}</button>
-      <button class="btn btn-ghost btn-sm" onclick="nav('bankconn')">🔗 ${isE?'Conexión Directa':'Direct Feed'}</button>
-    </div>
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalCashImport())">${isE?'↓ Importar Extracto':'↓ Import Statement'}</button>
   </div>
+  ${emptyState ? `<div class="alert a-info">${isE?'No hay movimientos de caja para este cliente. Use los botones de arriba para registrar ingresos o egresos.':'No cash movements for this client. Use the buttons above to record receipts or disbursements.'}</div>` : `
   <div style="overflow-x:auto"><table class="dt">
     <thead><tr>
-      <th>${isE?'Fecha':'Date'}</th>
-      <th>Ref</th>
-      <th style="min-width:220px">${isE?'Descripción':'Description'}</th>
-      <th>${isE?'Cuenta':'Account'}</th>
-      <th>${isE?'Categoría':'Category'}</th>
-      <th>${isE?'Proyecto':'Project'}</th>
+      <th>${isE?'Fecha':'Date'}</th><th>Ref</th>
+      <th style="min-width:200px">${isE?'Descripción':'Description'}</th>
+      <th>${isE?'Cuenta':'Account'}</th><th>${isE?'Cat.':'Cat.'}</th>
       <th class="num" style="color:var(--success)">▲ ${isE?'Ingreso':'Receipt'}</th>
       <th class="num" style="color:var(--danger)">▼ ${isE?'Egreso':'Disbursement'}</th>
       <th class="num">${isE?'Saldo':'Balance'}</th>
+      <th></th>
     </tr></thead>
     <tbody>
     ${txnsWithBalance.map(t=>`
-    <tr ${t.isLive?'style="border-left:3px solid var(--success)"':''}>
+    <tr>
       <td class="mono" style="font-size:11px">${t.date}</td>
       <td><code style="font-size:9px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${t.ref}</code></td>
       <td style="font-size:12.5px">${isE?t.desc_es:t.desc_en}</td>
-      <td style="font-size:10px;color:var(--stone)">${t.acct||'CA-002'}</td>
+      <td style="font-size:10px;color:var(--stone)">${t.acct}</td>
       <td><span class="badge b-neu" style="font-size:9px">${t.cat}</span></td>
-      <td><span class="badge b-neu" style="font-size:9px">${t.proj}</span></td>
       <td class="num mono bold green">${t.type==='in'?fmt(t.amount):'—'}</td>
       <td class="num mono bold red">${t.type==='out'?fmt(t.amount):'—'}</td>
       <td class="num mono bold">${fmt(t.balance)}</td>
+      <td><button class="btn btn-sm btn-ghost" onclick="deleteJournalEntry('${t.ref}')" title="${isE?'Eliminar':'Delete'}">🗑</button></td>
     </tr>`).join('')}
     </tbody>
     <tfoot>
       <tr style="background:var(--navy);color:#fff;font-weight:700">
-        <td colspan="6">TOTAL PERÍODO</td>
+        <td colspan="5">TOTAL</td>
         <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">+${fmt(totalIn)}</td>
         <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">-${fmt(totalOut)}</td>
         <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(totalCash)}</td>
+        <td></td>
       </tr>
     </tfoot>
-  </table></div>
+  </table></div>`}
 </div>
 
-<!-- CATEGORY SUMMARY -->
-<div class="card">
+${Object.keys(catSums).length>0?`<div class="card">
   <div class="card-header"><div class="card-title">${isE?'Resumen por Categoría':'Category Summary'}</div></div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
   ${Object.entries(catSums).map(([cat,v])=>`
     <div style="background:var(--stone-pale);border-radius:var(--radius);padding:10px 12px">
-      <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:6px">${cat}</div>
-      ${v.in ?`<div style="font-size:12px;color:var(--success)">▲ ${fmt(v.in)}</div>`:''}
+      <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:4px">${cat}</div>
+      ${v.in?`<div style="font-size:12px;color:var(--success)">▲ ${fmt(v.in)}</div>`:''}
       ${v.out?`<div style="font-size:12px;color:var(--danger)">▼ ${fmt(v.out)}</div>`:''}
     </div>`).join('')}
   </div>
-</div>`}
-
+</div>`:''}`;
+}
 
 function modalCashEntry(type){
   const isE=es();
@@ -7341,35 +7378,18 @@ function rBankConn(){
   }catch(e){}
 
   // Seeded connections per client
-  const seededByClient = {
-    'CLT-001':{ clientName:'Skyline Builders Inc.', banks:[
-      { id:'BC-001', inst:'Bank of America',     type:'Checking', acct:'****4821', bal:398420, status:'connected', protocol:'OFX',         lastSync:isE?'hace 2 min':'2 min ago',   currency:'USD', aba:'026009593', swift:'BOFAUS3N' },
-      { id:'BC-002', inst:'Wells Fargo',          type:'Payroll',  acct:'****9201', bal:144380, status:'connected', protocol:'OFX',         lastSync:isE?'hace 5 min':'5 min ago',   currency:'USD', aba:'121000248', swift:'WFBIUS6S' },
-      { id:'BC-003', inst:'Chase Business',       type:'Credit Line',acct:'****3345',bal:800000,status:'warning',   protocol:'Open Banking API',lastSync:isE?'hace 12 min':'12 min ago',currency:'USD',aba:'021000021', swift:'CHASUS33' },
-    ]},
-    'CLT-002':{ clientName:'Oceanic Dev. Group', banks:[
-      { id:'BC-004', inst:'Citibank',             type:'Checking', acct:'****7712', bal:284100, status:'connected', protocol:'OFX',         lastSync:isE?'hace 3 min':'3 min ago',   currency:'USD', aba:'021000089', swift:'CITIUS33' },
-      { id:'BC-005', inst:'Banco Santander',      type:'Savings',  acct:'****2204', bal:95000,  status:'connected', protocol:'SWIFT MT940', lastSync:isE?'hace 1h':'1h ago',         currency:'USD', aba:'',          swift:'BSCHESMMXXX' },
-    ]},
-    'CLT-003':{ clientName:'Rivera & Associates', banks:[
-      { id:'BC-006', inst:'TD Bank',              type:'Checking', acct:'****5518', bal:42800,  status:'connected', protocol:'CSV / Excel', lastSync:isE?'hace 1h':'1h ago',         currency:'USD', aba:'026013673', swift:'NRTHUS33' },
-    ]},
-    'CLT-004':{ clientName:'NovaTech Solutions', banks:[
-      { id:'BC-007', inst:'Silicon Valley Bank',  type:'Checking', acct:'****9920', bal:188400, status:'error',     protocol:'Open Banking API',lastSync:isE?'Error hace 3h':'Error 3h ago',currency:'USD',aba:'121140399',swift:'SVBKUS6S' },
-    ]},
-  };
+  // Active client's bank connections from CDB only (DB.bankConns = CDB.bankConns via proxy)
+  const activeClient = DB.clients.find(c=>c.name===S.client);
+  const clientBanks  = (DB.bankConns||[]);
 
-  // Build connections: seeded + all user-created clients + user-added bank conns
-  const connections = DB.clients.filter(c=>c.status==='active').map(c=>{
-    const seed  = seededByClient[c.id];
-    const seededBanks = seed?.banks||[];
-    const userBanks = DB.bankConns.filter(b=>b.clientId===c.id);
-    return { clientId:c.id, clientName:c.name, banks:[...seededBanks, ...userBanks] };
-  });
+  // Show just this client's data as a single connection group
+  const connections = activeClient
+    ? [{ clientId: activeClient.id, clientName: activeClient.name, banks: clientBanks }]
+    : [];
 
-  const totalConnected = connections.reduce((s,c)=>s+c.banks.filter(b=>b.status==='connected').length,0);
-  const totalWarning   = connections.reduce((s,c)=>s+c.banks.filter(b=>b.status==='warning'||b.status==='error').length,0);
-  const totalBalance   = connections.reduce((s,c)=>s+c.banks.filter(b=>b.status==='connected').reduce((a,b)=>a+(b.bal||0),0),0);
+  const totalConnected = clientBanks.filter(b=>b.status==='connected').length;
+  const totalWarning   = clientBanks.filter(b=>b.status==='warning'||b.status==='error').length;
+  const totalBalance   = clientBanks.filter(b=>b.status==='connected').reduce((s,b)=>s+(b.bal||0),0);
 
   // Protocol color
   const protoColor = p=>p.includes('API')||p==='api'?'info':p.includes('OFX')||p==='ofx'?'ok':p.includes('SWIFT')||p==='swift'?'gold':'neu';
@@ -7565,68 +7585,51 @@ function saveBankConn(){
 // ══════════════════════════════════════════════════════
 function rInventory(){
   const isE=es();
+  // Exclusively from this client's CDB.inventory
   if(!DB.inventory) DB.inventory=[];
+  const items = (DB.inventory||[]);
+  const totalItems = items.length;
+  const totalValue = items.reduce((s,i)=>s+(i.qty||0)*(i.cost||0),0);
+  const lowItems   = items.filter(i=>(i.qty||0)<=(i.min||0)&&i.qty>0).length;
+  const outItems   = items.filter(i=>(i.qty||0)===0).length;
 
-  // Seeded items (always present)
-  const seededItems = [
-    { id:'INV-001', name_en:'Portland Cement Type I/II — 94lb bags', name_es:'Cemento Portland Tipo I/II — sacos 94lb', cat:'mat', unit:'bag',  qty:850,  min:200, max:2000, cost:12.80,  location:'Warehouse A', proj:'PRJ-001', status:'ok'  },
-    { id:'INV-002', name_en:'#4 Rebar — 20ft sticks',               name_es:'Varilla #4 — barras 20ft',                cat:'mat', unit:'ea',   qty:1240, min:500, max:5000, cost:8.40,   location:'Yard B',      proj:'PRJ-001', status:'ok'  },
-    { id:'INV-003', name_en:'Concrete Form Plywood — 3/4"',          name_es:'Triplay de Cimbra — 3/4"',               cat:'mat', unit:'sheet', qty:85,   min:100, max:500,  cost:48.00,  location:'Warehouse A', proj:'PRJ-002', status:'low' },
-    { id:'INV-004', name_en:'Structural Steel W8x31 — 20ft',        name_es:'Acero Estructural W8x31 — 20ft',         cat:'mat', unit:'ea',   qty:0,    min:20,  max:200,  cost:285.00, location:'Yard C',      proj:'PRJ-002', status:'out' },
-    { id:'INV-005', name_en:'Hydraulic Pump Oil — 5gal',            name_es:'Aceite Bomba Hidráulica — 5gal',         cat:'equip',unit:'gal',  qty:28,   min:10,  max:100,  cost:42.00,  location:'Shop',        proj:'ALL',     status:'ok'  },
-    { id:'INV-006', name_en:'Safety Harness — Full Body',            name_es:'Arnés de Seguridad — Cuerpo Completo',  cat:'safety',unit:'ea', qty:22,   min:15,  max:60,   cost:85.00,  location:'Tool Room',   proj:'ALL',     status:'ok'  },
-    { id:'INV-007', name_en:'PVC Conduit 1" — 10ft',                name_es:'Tubería PVC 1" — 3m',                    cat:'elec', unit:'ea',   qty:340,  min:100, max:1000, cost:4.20,   location:'Warehouse B', proj:'PRJ-001', status:'ok'  },
-    { id:'INV-008', name_en:'Wire 12AWG THHN — 250ft rolls',        name_es:'Cable 12AWG THHN — rollos 75m',         cat:'elec', unit:'roll', qty:18,   min:20,  max:100,  cost:62.00,  location:'Warehouse B', proj:'PRJ-001', status:'low' },
-  ];
-  // Merge: seeded + user-added from DB.inventory (no duplicates)
-  const items = [...seededItems, ...DB.inventory.filter(i=>!seededItems.find(s=>s.id===i.id))];
-
-  const catColors = {mat:'info',equip:'gold',safety:'success',elec:'warning',tools:'neu'};
-  const catLabels = {mat:isE?'Materiales':'Materials',equip:isE?'Equipo':'Equipment',safety:isE?'Seguridad':'Safety',elec:isE?'Eléctrico':'Electrical',tools:isE?'Herramientas':'Tools'};
-  const totalValue = items.reduce((s,i)=>s+i.qty*i.cost,0);
-  const lowItems   = items.filter(i=>i.status==='low'||i.status==='out').length;
-  const outItems   = items.filter(i=>i.status==='out').length;
-  const catTotals  = {};
-  items.forEach(i=>{if(!catTotals[i.cat])catTotals[i.cat]=0; catTotals[i.cat]+=i.qty*i.cost;});
+  const catFilter = (cat, qty) => {
+    const st = qty===0?'out':qty<=(cat?.min||0)?'low':'ok';
+    return st;
+  };
 
   return`
 <div class="page-header">
   <div>
     <div class="page-title">${isE?'Control de Inventarios':'Inventory Control'}</div>
-    <div class="page-subtitle">${isE?'Materiales de construcción · Stock mínimo/máximo · Costeo FIFO / Promedio Ponderado · Vinculado a proyectos':'Construction materials · Min/max stock · FIFO / Weighted Average costing · Project-linked'}</div>
+    <div class="page-subtitle">${isE?'Solo inventario de este cliente · FIFO / Promedio Ponderado · Mínimos y máximos':'This client\'s inventory only · FIFO / Weighted Average · Min/max alerts'}</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-ghost btn-sm" onclick="openModal(modalInventoryMove())">${isE?'↔ Mover Stock':'↔ Move Stock'}</button>
-    <button class="btn btn-navy btn-sm" onclick="openModal(modalNewInventoryItem())">${isE?'+ Nuevo Artículo':'+ New Item'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalInventoryMove())">${isE?'↔ Transferir':'↔ Transfer'}</button>
+    <button class="btn btn-ghost btn-sm" onclick="openModal(modalInventoryImport())">${isE?'↓ Importar':'↓ Import'}</button>
+    <button class="btn btn-navy btn-sm" onclick="openModal(modalNewInventory())">${isE?'+ Nuevo Artículo':'+ New Item'}</button>
   </div>
 </div>
 
-<!-- KPIs -->
 <div class="kpi-grid">
-  ${kpi(isE?'Valor Total Inventario':'Total Inventory Value', fmt(totalValue), isE?`${items.length} artículos`:`${items.length} items`,'gold','')}
-  ${kpi(isE?'Artículos bajo Mínimo':'Items Below Minimum', lowItems+'', lowItems>0?(isE?'Requiere reabasto':'Reorder needed'):(isE?'Stock OK':'Stock OK'),lowItems>0?'danger':'success','')}
-  ${kpi(isE?'Agotados':'Out of Stock', outItems+'', outItems>0?(isE?'Sin existencia':'Zero on hand'):(isE?'Ninguno':'None'),outItems>0?'danger':'success','')}
-  ${kpi(isE?'Categorías':'Categories', Object.keys(catTotals).length+'', isE?'Tipos de artículo':'Item types','info','')}
+  ${kpi(isE?'Total Artículos':'Total Items',totalItems+'',isE?'En inventario':'In inventory','info','')}
+  ${kpi(isE?'Valor de Inventario':'Inventory Value',fmt(totalValue),isE?'Al costo':'At cost','navy','')}
+  ${kpi(isE?'Stock Mínimo':'Low Stock',lowItems+'',isE?'Por debajo del mínimo':'Below minimum',lowItems>0?'warning':'success','')}
+  ${kpi(isE?'Sin Stock':'Out of Stock',outItems+'',isE?'Agotados':'Depleted',outItems>0?'danger':'success','')}
 </div>
 
-${lowItems>0?`<div class="alert a-danger">⚠ ${lowItems} ${isE?'artículo(s) con stock bajo o agotado. Genere órdenes de compra.':'item(s) low or out of stock. Generate purchase orders.'}</div>`:''}
-
-<!-- INVENTORY TABLE -->
+${items.length===0?`<div class="card"><div class="alert a-info">
+  ${isE?'No hay artículos en inventario para este cliente. Use "+ Nuevo Artículo" para agregar, o "↓ Importar" para cargar desde CSV/Excel.':'No inventory items for this client. Use "+ New Item" to add, or "↓ Import" to load from CSV/Excel.'}
+</div></div>`:`
 <div class="card">
-  <div class="card-header">
-    <div class="card-title">${isE?'Registro de Inventario':'Inventory Register'}</div>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-ghost btn-sm" onclick="openModal(modalInventoryImport())">${isE?'↓ Importar':'↓ Import'}</button>
-      <button class="btn btn-ghost btn-sm">↓ PDF</button>
-    </div>
-  </div>
   <div style="overflow-x:auto"><table class="dt">
     <thead><tr>
       <th>ID</th>
-      <th style="min-width:220px">${isE?'Artículo':'Item'}</th>
+      <th style="min-width:160px">${isE?'Descripción':'Description'}</th>
       <th>${isE?'Categoría':'Category'}</th>
-      <th class="num">${isE?'Existencia':'On Hand'}</th>
-      <th class="num">${isE?'Mín / Máx':'Min / Max'}</th>
+      <th class="num">${isE?'Stock':'Stock'}</th>
+      <th class="num">Min</th><th class="num">Max</th>
+      <th>${isE?'Unidad':'Unit'}</th>
       <th class="num">${isE?'Costo Unit.':'Unit Cost'}</th>
       <th class="num">${isE?'Valor Total':'Total Value'}</th>
       <th>${isE?'Ubicación':'Location'}</th>
@@ -7635,60 +7638,40 @@ ${lowItems>0?`<div class="alert a-danger">⚠ ${lowItems} ${isE?'artículo(s) co
       <th></th>
     </tr></thead>
     <tbody>
-    ${items.map(i=>`<tr ${i.status==='out'?'style="background:var(--danger-light)"':i.status==='low'?'style="background:var(--warning-light)"':''}>
-      <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${i.id}</code></td>
-      <td style="font-size:12.5px;font-weight:500">${isE?i.name_es:i.name_en}</td>
-      <td><span class="badge b-${catColors[i.cat]}" style="font-size:9px">${catLabels[i.cat]}</span></td>
-      <td class="num mono bold ${i.status==='out'?'red':i.status==='low'?'warning':'green'}">${i.qty} ${i.unit}</td>
-      <td class="num mono" style="font-size:11px;color:var(--stone)">${i.min} / ${i.max}</td>
-      <td class="num mono">${fmt(i.cost)}</td>
-      <td class="num mono bold">${fmt(i.qty*i.cost)}</td>
-      <td style="font-size:11px;color:var(--stone)">${i.location}</td>
-      <td><span class="badge b-neu" style="font-size:9px">${i.proj}</span></td>
-      <td>
-        ${i.status==='out'
-          ?`<span class="badge b-no" style="font-size:10px">🚨 ${isE?'Agotado':'Out of Stock'}</span>`
-          :i.status==='low'
-          ?`<span class="badge b-warn" style="font-size:10px">⚠ ${isE?'Stock Bajo':'Low Stock'}</span>`
-          :`<span class="badge b-ok" style="font-size:10px">${isE?'OK':'OK'}</span>`}
-      </td>
-      <td>
-        <button class="btn btn-sm btn-ghost" onclick="openModal(modalInventoryAdjust('${i.id}','${isE?i.name_es:i.name_en}',${i.qty}))">${isE?'Ajustar':'Adjust'}</button>
-      </td>
-    </tr>`).join('')}
+    ${items.map(i=>{
+      const val=(i.qty||0)*(i.cost||0);
+      const st=i.qty===0?'out':i.qty<=(i.min||0)?'low':'ok';
+      return`<tr ${st==='out'?'style="background:var(--danger-light)"':st==='low'?'style="background:rgba(230,160,40,.08)"':''}>
+        <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${i.id}</code></td>
+        <td style="font-weight:500;font-size:12.5px">${isE?i.name_es||i.name_en:i.name_en||i.name_es}</td>
+        <td><span class="badge b-info" style="font-size:9px">${i.cat||'—'}</span></td>
+        <td class="num mono bold ${st==='out'?'red':st==='low'?'warning':'green'}">${i.qty??0}</td>
+        <td class="num mono stone">${i.min??'—'}</td>
+        <td class="num mono stone">${i.max??'—'}</td>
+        <td style="font-size:11px">${i.unit||'ea'}</td>
+        <td class="num mono">${fmt(i.cost||0)}</td>
+        <td class="num mono bold">${fmt(val)}</td>
+        <td style="font-size:11px;color:var(--stone)">${i.location||'—'}</td>
+        <td><span class="badge b-neu" style="font-size:9px">${i.proj||'ALL'}</span></td>
+        <td><span class="badge b-${st==='ok'?'ok':st==='low'?'warn':'no'}" style="font-size:9px">
+          ${st==='ok'?(isE?'OK':'OK'):st==='low'?(isE?'Bajo':'Low'):(isE?'Agotado':'Out')}
+        </span></td>
+        <td style="display:flex;gap:4px">
+          <button class="btn btn-sm btn-ghost" onclick="openModal(modalInventoryAdjust('${i.id}',${i.qty||0}))" title="${isE?'Ajustar':'Adjust'}">⚖️</button>
+          <button class="btn btn-sm btn-ghost" onclick="deleteInventoryItem('${i.id}')" title="${isE?'Eliminar':'Delete'}">🗑</button>
+        </td>
+      </tr>`;
+    }).join('')}
     </tbody>
     <tfoot>
       <tr style="background:var(--navy);color:#fff;font-weight:700">
-        <td colspan="6">TOTAL INVENTARIO</td>
+        <td colspan="8">TOTAL VALOR INVENTARIO</td>
         <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(totalValue)}</td>
         <td colspan="4"></td>
       </tr>
     </tfoot>
   </table></div>
-  <div class="alert a-info mt2" style="font-size:11px">
-    ⓘ ${isE?'Método de costeo: Promedio Ponderado (compatible GAAP ASC 330 e IFRS IAS 2). Los costos de inventario se transfieren automáticamente a WIP cuando se asignan a un proyecto.':'Costing method: Weighted Average (compliant GAAP ASC 330 & IFRS IAS 2). Inventory costs automatically transferred to WIP when assigned to a project.'}
-  </div>
-</div>
-
-<!-- REORDER ALERTS -->
-${lowItems>0?`<div class="card">
-  <div class="card-header"><div class="card-title">${isE?'Alertas de Reabasto — Órdenes de Compra Sugeridas':'Reorder Alerts — Suggested Purchase Orders'}</div></div>
-  ${items.filter(i=>i.status!=='ok').map(i=>{
-    const reorderQty=i.max-i.qty; const reorderValue=reorderQty*i.cost;
-    return`<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(0,0,0,.05)">
-      <div style="width:34px;height:34px;border-radius:8px;background:${i.status==='out'?'var(--danger-light)':'var(--warning-light)'};display:flex;align-items:center;justify-content:center;font-size:16px">${i.status==='out'?'🚨':'⚠'}</div>
-      <div style="flex:1">
-        <div style="font-size:12.5px;font-weight:600;color:var(--navy)">${isE?i.name_es:i.name_en}</div>
-        <div style="font-size:11px;color:var(--stone)">${isE?'Existencia actual':'Current stock'}: <strong style="color:${i.status==='out'?'var(--danger)':'var(--warning)'}">${i.qty} ${i.unit}</strong> · ${isE?'Mínimo':'Minimum'}: ${i.min} · ${isE?'Reabastecer':'Reorder'}: <strong>${reorderQty} ${i.unit}</strong></div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--navy)">${fmt(reorderValue)}</div>
-        <div style="font-size:10px;color:var(--stone)">${isE?'Costo estimado':'Est. cost'}</div>
-      </div>
-      <button class="btn btn-sm btn-navy" onclick="gMsg(es()?'Orden de compra generada para ${i.id}':'Purchase order generated for ${i.id}')">${isE?'Generar OC':'Generate PO'}</button>
-    </div>`;
-  }).join('')}
-</div>`:''}`;
+</div>`}`;
 }
 
 function modalNewInventoryItem(){
@@ -7917,15 +7900,8 @@ function rPurchases(){
   const isE=es();
   if(!DB.purchaseOrders) DB.purchaseOrders=[];
 
-  // Seeded POs
-  const seeded=[
-    {id:'OC-001',date:'2026-03-20',vendor:'Home Depot',          desc_en:'Structural materials — PRJ-001',desc_es:'Materiales estructurales — PRJ-001', proj:'PRJ-001',total:18500,received:18500,invoiced:18500,invoiceRef:'AP-005',status:'closed',   category:'Materials'},
-    {id:'OC-002',date:'2026-03-25',vendor:'Steel Supply Corp',   desc_en:'W8x31 steel beams — PRJ-002',  desc_es:'Vigas de acero W8x31 — PRJ-002',   proj:'PRJ-002',total:42000,received:0,    invoiced:0,    invoiceRef:'',       status:'pending',  category:'Materials'},
-    {id:'OC-003',date:'2026-03-28',vendor:'Grainger Industrial', desc_en:'Safety equipment Q2',         desc_es:'Equipo de seguridad Q2',             proj:'ALL',    total:5840, received:5840, invoiced:0,    invoiceRef:'',       status:'received', category:'Safety'},
-    {id:'OC-004',date:'2026-04-01',vendor:'Sunbelt Rentals',     desc_en:'Crane rental — April',        desc_es:'Renta de grúa — Abril',              proj:'PRJ-001',total:12000,received:0,    invoiced:0,    invoiceRef:'',       status:'approved', category:'Equipment'},
-    {id:'OC-005',date:'2026-04-02',vendor:'Rebar Direct',        desc_en:'#5 Rebar 500 pcs',            desc_es:'Varilla #5 500 barras',               proj:'PRJ-003',total:9200, received:0,    invoiced:0,    invoiceRef:'',       status:'draft',    category:'Materials'},
-  ];
-  const allPOs=[...seeded,...DB.purchaseOrders.filter(p=>!seeded.find(s=>s.id===p.id))];
+  // All POs from this client's CDB only
+  const allPOs=(DB.purchaseOrders||[]);
 
   const totOrdered  =allPOs.reduce((s,p)=>s+p.total,0);
   const totReceived =allPOs.reduce((s,p)=>s+p.received,0);
@@ -7933,20 +7909,14 @@ function rPurchases(){
   const totPending  =totOrdered-totInvoiced;
   const pendingPOs  =allPOs.filter(p=>p.status!=='closed').length;
 
-  const statusColor = s=>s==='closed'?'b-ok':s==='received'?'b-info':s==='approved'?'b-warn':s==='pending'?'b-neu':'b-stone';
-  const statusLabel = s=>({
-    closed:   isE?'Cerrada':'Closed',
-    received: isE?'Recibida':'Received',
-    approved: isE?'Aprobada':'Approved',
-    pending:  isE?'Pendiente':'Pending',
-    draft:    isE?'Borrador':'Draft',
-  }[s]||s);
+  const statusColor=s=>s==='closed'?'b-ok':s==='received'?'b-info':s==='approved'?'b-warn':s==='pending'?'b-neu':'b-stone';
+  const statusLabel=s=>({closed:isE?'Cerrada':'Closed',received:isE?'Recibida':'Received',approved:isE?'Aprobada':'Approved',pending:isE?'Pendiente':'Pending',draft:isE?'Borrador':'Draft'}[s]||s);
 
   return`
 <div class="page-header">
   <div>
     <div class="page-title">${isE?'Compras y Órdenes de Compra':'Purchases & Purchase Orders'}</div>
-    <div class="page-subtitle">${isE?'OC → Recepción → Factura de Proveedor → AP · Seguimiento completo del ciclo de compra':'PO → Receipt → Vendor Invoice → AP · Full purchase cycle tracking'}</div>
+    <div class="page-subtitle">${isE?'OC → Recepción → Factura Proveedor → AP · Solo datos de este cliente':'PO → Receipt → Vendor Invoice → AP · This client only'}</div>
   </div>
   <div class="page-actions">
     <button class="btn btn-ghost btn-sm" onclick="nav('ap')">${isE?'Ver AP':'View AP'}</button>
@@ -7955,44 +7925,43 @@ function rPurchases(){
 </div>
 
 <div class="kpi-grid">
-  ${kpi(isE?'Total Órdenes Emitidas':'Total POs Issued', fmt(totOrdered), `${allPOs.length} ${isE?'órdenes':'orders'}`,'navy','')}
-  ${kpi(isE?'Recibido':'Received', fmt(totReceived), `${allPOs.filter(p=>p.received>0).length} ${isE?'con recepción':'with receipt'}`,'success','')}
-  ${kpi(isE?'Facturado por Proveedor':'Vendor-Invoiced', fmt(totInvoiced), isE?'Con factura recibida':'With invoice received','info','')}
-  ${kpi(isE?'Pendiente de Facturar':'Pending Invoice', fmt(totPending), `${pendingPOs} ${isE?'OCs abiertas':'open POs'}`, totPending>0?'warning':'success','')}
+  ${kpi(isE?'Total OC Emitidas':'Total POs',fmt(totOrdered),allPOs.length+' '+isE?'órdenes':'orders','navy','')}
+  ${kpi(isE?'Recibido':'Received',fmt(totReceived),allPOs.filter(p=>p.received>0).length+' '+(isE?'con recepción':'with receipt'),'success','')}
+  ${kpi(isE?'Facturado':'Invoiced',fmt(totInvoiced),isE?'Con factura recibida':'With invoice received','info','')}
+  ${kpi(isE?'Pendiente de Facturar':'Pending Invoice',fmt(totPending),pendingPOs+' '+(isE?'OCs abiertas':'open POs'),totPending>0?'warning':'success','')}
 </div>
 
-<!-- PURCHASE ORDER REGISTER -->
+${allPOs.length===0?`<div class="card"><div class="alert a-info">
+  ${isE?'No hay órdenes de compra para este cliente. Use "+ Nueva OC" para crear la primera.':'No purchase orders for this client. Use "+ New PO" to create the first one.'}
+</div></div>`:`
 <div class="card">
   <div class="card-header">
     <div>
       <div class="card-title">${isE?'Registro de Órdenes de Compra':'Purchase Order Register'}</div>
-      <div class="card-sub">${isE?'Ciclo: OC Emitida → Aprobada → Recibida → Facturada → Pagada (AP)':'Cycle: PO Issued → Approved → Received → Invoiced → Paid (AP)'}</div>
+      <div class="card-sub">${isE?'Ciclo: OC → Aprobada → Recibida → Facturada → Pagada (AP)':'Cycle: PO → Approved → Received → Invoiced → Paid (AP)'}</div>
     </div>
   </div>
   <div style="overflow-x:auto"><table class="dt">
     <thead><tr>
-      <th>OC #</th>
-      <th>${isE?'Fecha':'Date'}</th>
-      <th>${isE?'Proveedor':'Vendor'}</th>
+      <th>OC #</th><th>${isE?'Fecha':'Date'}</th><th>${isE?'Proveedor':'Vendor'}</th>
       <th style="min-width:160px">${isE?'Descripción':'Description'}</th>
-      <th>${isE?'Proyecto':'Project'}</th>
-      <th>${isE?'Categoría':'Category'}</th>
+      <th>${isE?'Proyecto':'Project'}</th><th>${isE?'Tipo':'Type'}</th>
       <th class="num">${isE?'Total OC':'PO Total'}</th>
       <th class="num">${isE?'Recibido':'Received'}</th>
       <th class="num">${isE?'Facturado':'Invoiced'}</th>
       <th class="num">${isE?'Pendiente':'Pending'}</th>
-      <th>${isE?'Factura Prov.':'Vendor Inv.'}</th>
+      <th>${isE?'Factura':'Invoice'}</th>
       <th>${isE?'Estado':'Status'}</th>
       <th>${isE?'Acciones':'Actions'}</th>
     </tr></thead>
     <tbody>
     ${allPOs.map(po=>{
-      const pend=po.total-po.invoiced;
+      const pend=po.total-(po.invoiced||0);
       return`<tr ${po.status==='draft'?'style="background:rgba(0,0,0,.02)"':po.status==='received'?'style="background:var(--info-light)"':''}>
         <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:2px 7px;border-radius:4px">${po.id}</code></td>
         <td class="mono" style="font-size:11px">${po.date}</td>
         <td style="font-weight:500;font-size:12.5px">${po.vendor}</td>
-        <td style="font-size:12px">${isE?po.desc_es:po.desc_en}</td>
+        <td style="font-size:12px">${isE?po.desc_es||po.desc_en:po.desc_en||po.desc_es}</td>
         <td><span class="badge b-neu" style="font-size:9px">${po.proj}</span></td>
         <td><span class="badge b-info" style="font-size:9px">${po.category}</span></td>
         <td class="num mono bold">${fmt(po.total)}</td>
@@ -8003,9 +7972,9 @@ function rPurchases(){
         <td><span class="badge ${statusColor(po.status)}" style="font-size:10px">${statusLabel(po.status)}</span></td>
         <td>
           <div style="display:flex;gap:4px">
-            ${po.status!=='received'&&po.status!=='closed'?`<button class="btn btn-sm btn-ghost" onclick="openModal(modalReceivePO('${po.id}','${po.vendor}',${po.total},${po.received}))" title="${isE?'Registrar Recepción':'Register Receipt'}">📦</button>`:''}
-            ${po.received>0&&!po.invoiceRef?`<button class="btn btn-sm btn-ghost" onclick="openModal(modalLinkPOInvoice('${po.id}','${po.vendor}',${po.received}))" title="${isE?'Vincular Factura':'Link Invoice'}">🧾</button>`:''}
-            ${po.invoiceRef?`<button class="btn btn-sm btn-ghost" onclick="nav('ap')" title="${isE?'Ver en AP':'View in AP'}">📤</button>`:''}
+            ${po.status!=='received'&&po.status!=='closed'?`<button class="btn btn-sm btn-ghost" onclick="openModal(modalReceivePO('${po.id}','${po.vendor}',${po.total},${po.received||0}))" title="${isE?'Recibir':'Receive'}">📦</button>`:''}
+            ${(po.received||0)>0&&!po.invoiceRef?`<button class="btn btn-sm btn-ghost" onclick="openModal(modalLinkPOInvoice('${po.id}','${po.vendor}',${po.received||0}))" title="${isE?'Factura':'Invoice'}">🧾</button>`:''}
+            <button class="btn btn-sm btn-ghost" onclick="deletePO('${po.id}')" title="${isE?'Eliminar':'Delete'}">🗑</button>
           </div>
         </td>
       </tr>`;
@@ -8023,9 +7992,9 @@ function rPurchases(){
     </tfoot>
   </table></div>
   <div class="alert a-info mt2" style="font-size:11px">
-    ⓘ ${isE?'Flujo de compra: OC Emitida → (📦) Registrar recepción de bienes/servicios → (🧾) Vincular factura del proveedor → se crea automáticamente en AP (Cuentas por Pagar).':'Purchase flow: PO Issued → (📦) Register goods/services receipt → (🧾) Link vendor invoice → automatically created in AP (Accounts Payable).'}
+    ⓘ ${isE?'📦 = Registrar recepción · 🧾 = Vincular factura del proveedor (crea AP) · 🗑 = Eliminar OC':'📦 = Register receipt · 🧾 = Link vendor invoice (creates AP entry) · 🗑 = Delete PO'}
   </div>
-</div>`;
+</div>`}`;
 }
 
 function modalNewPO(){
@@ -9094,6 +9063,240 @@ function saveNewPassword() {
   log(S.user.toUpperCase(), 'Password changed successfully', 'medium');
   closeModal();
   gMsg(isE?'✓ Contraseña actualizada correctamente':'✓ Password updated successfully');
+}
+
+
+// ══════════════════════════════════════════════════════
+// CRUD — Delete & Edit (per-client CDB only)
+// ══════════════════════════════════════════════════════
+
+function deleteJournalEntry(id){
+  const isE=es();
+  if(!confirm(isE?`Eliminar asiento "${id}"? No se puede deshacer.`:`Delete entry "${id}"? Cannot be undone.`)) return;
+  if(!DB.journal) return;
+  const idx=DB.journal.findIndex(j=>j.id===id);
+  if(idx===-1){gMsg(isE?'No encontrado':'Not found');return;}
+  DB.journal.splice(idx,1);
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),'Journal deleted: '+id,'high');
+  gMsg(isE?'Asiento '+id+' eliminado.':'Entry '+id+' deleted.');
+  renderMod(S.mod);
+}
+
+function openEditJournal(id){
+  const isE=es();
+  const e=(DB.journal||[]).find(j=>j.id===id);
+  if(!e){gMsg('Not found');return;}
+  openModal(`<h3>${isE?'Editar Asiento':'Edit Journal Entry'} — <code>${id}</code></h3>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Fecha':'Date'}</label><input type="date" id="ej-date" value="${e.date||''}"></div>
+    <div class="mf-field"><label>${isE?'Proyecto':'Project'}</label><input type="text" id="ej-proj" value="${e.proj||'ALL'}"></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Descripcion':'Description'}</label><input type="text" id="ej-desc" value="${(e.desc||'').replace(/"/g,'&quot;')}"></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Cta Debito':'Debit Acct'}</label><input type="text" id="ej-dr" value="${e.dr||''}"></div>
+    <div class="mf-field"><label>${isE?'Cta Credito':'Credit Acct'}</label><input type="text" id="ej-cr" value="${e.cr||''}"></div>
+  </div>
+  <div class="mf-field"><label>${isE?'Monto':'Amount'}</label><input type="number" id="ej-amt" value="${e.amt||0}" min="0" step="0.01"></div>
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-danger-sm" style="background:var(--danger);color:#fff;border:none;padding:7px 14px;border-radius:var(--radius);cursor:pointer;font-size:12px;margin-right:4px" onclick="deleteJournalEntry('${id}');closeModal()">${isE?'Eliminar':'Delete'}</button>
+  <button class="btn btn-navy" onclick="saveEditJournal('${id}')">${isE?'Guardar':'Save'}</button>
+</div>`);
+}
+
+function saveEditJournal(id){
+  const isE=es();
+  const e=(DB.journal||[]).find(j=>j.id===id);
+  if(!e){gMsg('Not found');return;}
+  e.date=document.getElementById('ej-date')?.value||e.date;
+  e.proj=document.getElementById('ej-proj')?.value||e.proj;
+  e.desc=document.getElementById('ej-desc')?.value.trim()||e.desc;
+  e.dr  =document.getElementById('ej-dr')?.value.trim()||e.dr;
+  e.cr  =document.getElementById('ej-cr')?.value.trim()||e.cr;
+  e.amt =parseFloat(document.getElementById('ej-amt')?.value)||e.amt;
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),'Journal edited: '+id,'medium');
+  closeModal();
+  gMsg(isE?'Asiento '+id+' actualizado.':'Entry '+id+' updated.');
+  renderMod(S.mod);
+}
+
+function deleteInvoice(id){
+  const isE=es();
+  if(!confirm(isE?'Eliminar factura '+id+'?':'Delete invoice '+id+'?')) return;
+  if(!DB.invoices) return;
+  const idx=DB.invoices.findIndex(i=>i.id===id);
+  if(idx===-1){gMsg('Not found');return;}
+  if(DB.journal){
+    [id,'JE-'+id,'JE-'+id+'-RET'].forEach(ref=>{
+      const ji=DB.journal.findIndex(j=>j.id===ref||j.invoiceRef===ref);
+      if(ji!==-1) DB.journal.splice(ji,1);
+    });
+  }
+  DB.invoices.splice(idx,1);
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),'Invoice deleted: '+id,'high');
+  gMsg(isE?'Factura '+id+' eliminada.':'Invoice '+id+' deleted.');
+  renderMod(S.mod);
+}
+
+function openEditInvoice(id){
+  const isE=es();
+  const inv=(DB.invoices||[]).find(i=>i.id===id);
+  if(!inv){gMsg('Not found');return;}
+  openModal(`<h3>${isE?'Editar Factura':'Edit Invoice'} — <code>${id}</code></h3>
+<div class="mf">
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Fecha':'Date'}</label><input type="date" id="einv-date" value="${inv.date||''}"></div>
+    <div class="mf-field"><label>${isE?'Vencimiento':'Due'}</label><input type="date" id="einv-due" value="${inv.due||''}"></div>
+  </div>
+  <div class="mf-field full"><label>${isE?'Descripcion':'Description'}</label><input type="text" id="einv-desc" value="${(inv.desc||'').replace(/"/g,'&quot;')}"></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Monto Bruto':'Gross Amount'} ($)</label><input type="number" id="einv-gross" value="${inv.gross||0}" min="0" step="0.01"></div>
+    <div class="mf-field"><label>${isE?'Estado':'Status'}</label>
+      <select id="einv-status">
+        <option value="draft" ${inv.status==='draft'?'selected':''}>Draft</option>
+        <option value="sent"  ${inv.status==='sent'?'selected':''}>Sent</option>
+        <option value="paid"  ${inv.status==='paid'?'selected':''}>Paid</option>
+        <option value="overdue" ${inv.status==='overdue'?'selected':''}>Overdue</option>
+      </select></div>
+  </div>
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-danger-sm" style="background:var(--danger);color:#fff;border:none;padding:7px 14px;border-radius:var(--radius);cursor:pointer;font-size:12px;margin-right:4px" onclick="deleteInvoice('${id}');closeModal()">${isE?'Eliminar':'Delete'}</button>
+  <button class="btn btn-navy" onclick="saveEditInvoice('${id}')">${isE?'Guardar':'Save'}</button>
+</div>`);
+}
+
+function saveEditInvoice(id){
+  const isE=es();
+  const inv=(DB.invoices||[]).find(i=>i.id===id);
+  if(!inv){gMsg('Not found');return;}
+  const g=parseFloat(document.getElementById('einv-gross')?.value)||inv.gross;
+  inv.date  =document.getElementById('einv-date')?.value||inv.date;
+  inv.due   =document.getElementById('einv-due')?.value||inv.due;
+  inv.desc  =document.getElementById('einv-desc')?.value.trim()||inv.desc;
+  inv.gross =g; inv.net=g-(inv.ret||0);
+  inv.balance=Math.max(0,inv.net-(inv.paid||0));
+  inv.status=document.getElementById('einv-status')?.value||inv.status;
+  inv.arStatus=inv.balance<=0?'paid':new Date(inv.due)<new Date()?'overdue':'open';
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),'Invoice edited: '+id,'medium');
+  closeModal();
+  gMsg(isE?'Factura '+id+' actualizada.':'Invoice '+id+' updated.');
+  renderMod(S.mod);
+}
+
+function deleteAsset(id){
+  const isE=es();
+  if(!confirm(isE?'Eliminar activo '+id+'?':'Delete asset '+id+'?')) return;
+  if(!DB.assets) return;
+  const idx=DB.assets.findIndex(a=>a.id===id);
+  if(idx===-1){gMsg('Not found');return;}
+  DB.assets.splice(idx,1);
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),'Asset deleted: '+id,'high');
+  gMsg(isE?'Activo '+id+' eliminado.':'Asset '+id+' deleted.');
+  renderMod('assets');
+}
+
+function modalEditAsset(id){
+  const isE=es();
+  const a=(DB.assets||[]).find(x=>x.id===id);
+  if(!a) return '';
+  return `<h3 style="font-family:var(--font-display)">${isE?'Editar Activo':'Edit Asset'} — <code>${id}</code></h3>
+<div class="mf">
+  <div class="mf-field full"><label>${isE?'Descripcion':'Description'}</label><input type="text" id="ea-desc" value="${(a.desc||'').replace(/"/g,'&quot;')}"></div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Factura Compra':'Invoice'}</label><input type="text" id="ea-inv" value="${a.invoiceRef||''}"></div>
+    <div class="mf-field"><label>${isE?'Proveedor':'Vendor'}</label><input type="text" id="ea-vendor" value="${a.vendor||''}"></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'F. Compra':'Purchase Date'}</label><input type="date" id="ea-date" value="${a.purchaseDate||a.date||''}"></div>
+    <div class="mf-field"><label>${isE?'F. Operacion':'In-Service'}</label><input type="date" id="ea-svc" value="${a.inServiceDate||''}"></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Costo ($)':'Cost ($)'}</label><input type="number" id="ea-cost" value="${a.cost||0}" min="0"></div>
+    <div class="mf-field"><label>${isE?'Depr. Acum. ($)':'Accum. Dep. ($)'}</label><input type="number" id="ea-accum" value="${a.accumulated||0}" min="0"></div>
+  </div>
+  <div class="mf-row">
+    <div class="mf-field"><label>${isE?'Vida Util (anos)':'Useful Life (yrs)'}</label><input type="number" id="ea-life" value="${a.life||5}" min="1" max="50"></div>
+    <div class="mf-field"><label>${isE?'Estado':'Status'}</label>
+      <select id="ea-status">
+        <option value="active" ${a.status==='active'?'selected':''}>${isE?'Activo':'Active'}</option>
+        <option value="disposed" ${a.status==='disposed'?'selected':''}>${isE?'Dado de baja':'Disposed'}</option>
+        <option value="sold" ${a.status==='sold'?'selected':''}>${isE?'Vendido':'Sold'}</option>
+      </select></div>
+  </div>
+</div>
+<div class="modal-actions">
+  <button class="btn btn-ghost" onclick="closeModal()">${isE?'Cancelar':'Cancel'}</button>
+  <button class="btn btn-danger-sm" style="background:var(--danger);color:#fff;border:none;padding:7px 14px;border-radius:var(--radius);cursor:pointer;font-size:12px;margin-right:4px" onclick="deleteAsset('${id}');closeModal()">${isE?'Eliminar':'Delete'}</button>
+  <button class="btn btn-navy" onclick="saveEditAsset('${id}')">${isE?'Guardar':'Save'}</button>
+</div>`;}
+
+function saveEditAsset(id){
+  const isE=es();
+  const a=(DB.assets||[]).find(x=>x.id===id);
+  if(!a){gMsg('Not found');return;}
+  a.desc        =document.getElementById('ea-desc')?.value.trim()||a.desc;
+  a.invoiceRef  =document.getElementById('ea-inv')?.value.trim()||a.invoiceRef;
+  a.vendor      =document.getElementById('ea-vendor')?.value.trim()||a.vendor;
+  a.purchaseDate=document.getElementById('ea-date')?.value||a.purchaseDate;
+  a.inServiceDate=document.getElementById('ea-svc')?.value||a.inServiceDate;
+  const c=parseFloat(document.getElementById('ea-cost')?.value)||a.cost;
+  const l=parseInt(document.getElementById('ea-life')?.value)||a.life;
+  a.cost=c; a.life=l; a.slDepr=Math.round(c/l);
+  a.accumulated=parseFloat(document.getElementById('ea-accum')?.value)||a.accumulated;
+  a.status=document.getElementById('ea-status')?.value||a.status;
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),'Asset edited: '+id,'medium');
+  closeModal();
+  gMsg(isE?'Activo '+id+' actualizado.':'Asset '+id+' updated.');
+  renderMod('assets');
+}
+
+function deleteInventoryItem(id){
+  const isE=es();
+  if(!confirm(isE?'Eliminar articulo '+id+'?':'Delete item '+id+'?')) return;
+  if(!DB.inventory) return;
+  const idx=DB.inventory.findIndex(i=>i.id===id);
+  if(idx===-1){gMsg('Not found');return;}
+  DB.inventory.splice(idx,1);
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),'Inventory item deleted: '+id,'high');
+  gMsg(isE?'Articulo '+id+' eliminado.':'Item '+id+' deleted.');
+  renderMod('inventory');
+}
+
+function deletePO(id){
+  const isE=es();
+  if(!confirm(isE?'Eliminar OC '+id+'? Las facturas vinculadas permanecen en AP.':'Delete PO '+id+'? Linked invoices remain in AP.')) return;
+  if(!DB.purchaseOrders) return;
+  const idx=DB.purchaseOrders.findIndex(p=>p.id===id);
+  if(idx===-1){gMsg('Not found');return;}
+  DB.purchaseOrders.splice(idx,1);
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),'PO deleted: '+id,'high');
+  gMsg(isE?'OC '+id+' eliminada.':'PO '+id+' deleted.');
+  renderMod('purchases');
+}
+
+function deleteAPEntry(id){
+  const isE=es();
+  if(!confirm(isE?'Eliminar entrada AP '+id+'?':'Delete AP entry '+id+'?')) return;
+  if(!DB.journal) return;
+  const idx=DB.journal.findIndex(j=>j.id===id&&j.apEntry===true);
+  if(idx===-1){gMsg('Not found');return;}
+  DB.journal.splice(idx,1);
+  dbSaveSync(); dbSave().catch(()=>{});
+  log((S.user||'U').toUpperCase(),'AP entry deleted: '+id,'high');
+  gMsg(isE?'Entrada AP '+id+' eliminada.':'AP entry '+id+' deleted.');
+  renderMod('ap');
 }
 
 async function signOutAll() {
