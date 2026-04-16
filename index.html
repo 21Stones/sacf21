@@ -1688,7 +1688,11 @@ function completeOB(){
     const coaType=getSectorCOAType(sec);
     const nc={id:nextId('CLT',DB.clients),name:nm,ein,type,sector:sec,std,prev,addr,fy,coa,coaType,status:'active',created:new Date().toISOString().slice(0,10)};
     DB.clients.push(nc);
-    try{localStorage.setItem('21stones_db',JSON.stringify({clients:DB.clients,users:DB.users,subs:DB.subs,cos:DB.cos,assets:DB.assets,journal:DB.journal,lang:S.lang,projects:PROJECTS}));}catch(e){}
+    // Save only global registry — per-client data is stored separately
+    try{localStorage.setItem('21stones_db',JSON.stringify({clients:DB.clients,users:DB.users,lang:S.lang,sectors:SECTORS}));}catch(e){}
+    // Initialize blank CDB for the new client
+    CDB = newClientDB();
+    saveClientDB(nc.id);
     dbSave().catch(()=>{});
     log((S.user||'SYS').toUpperCase(),'Client created: '+nm+' ('+nc.id+')','medium');
   }
@@ -1809,15 +1813,18 @@ function rDash(){
   const allT = PROJECTS.map(p=>projectTotals(p));
   const totalRevRec = allT.reduce((s,t)=>s+t.revRecognized,0);
   const totalGP     = allT.reduce((s,t)=>s+t.grossProfit,0);
-  const totalWIP    = allT.reduce((s,t)=>s+t.totalActual,0);
   const alertCount  = allT.reduce((s,t)=>s+t.alerts.length,0);
-  const blockedSubs = DB.subs.filter(s=>s.blocked).length;
+  const blockedSubs = (DB.subs||[]).filter(s=>s.blocked).length;
   const activeClients = DB.clients.filter(c=>c.status==='active');
 
-  // AR/AP totals (sample from seeded data)
-  const totalAR = 884600 + (DB.journal.filter(j=>j.dr==='1-01-02-001').reduce((s,j)=>s+j.amt,0));
-  const totalAP = 602600;
-  const overdueAR = 810000;
+  // AR/AP totals — computed from live CDB data only
+  const invs = (DB.invoices||[]);
+  const totalAR    = invs.filter(i=>i.status!=='paid'&&i.status!=='draft').reduce((s,i)=>s+(i.balance??i.net??0),0);
+  const overdueAR  = invs.filter(i=>i.arStatus==='overdue').reduce((s,i)=>s+(i.balance??0),0);
+  const totalAP    = (DB.journal||[]).filter(j=>j.apEntry===true).reduce((s,j)=>s+Math.max(0,(j.amt||0)-(j.paid||0)),0);
+  const totalAssets= (DB.assets||[]).reduce((s,a)=>s+a.cost,0);
+  const totalCash  = (DB.bankConns||[]).reduce((s,b)=>s+(b.bal||0),0);
+  const totalInv   = (DB.inventory||[]).reduce((s,i)=>s+(i.qty||0)*(i.cost||0),0);
 
   return `
 <div class="page-header">
@@ -1835,10 +1842,10 @@ function rDash(){
 
 <!-- KPI STRIP -->
 <div class="kpi-grid">
-  ${kpi(isE?'Ingresos Reconocidos':'Revenue Recognized', fmt(totalRevRec), isE?`${PROJECTS.length} proyectos activos`:`${PROJECTS.length} active projects`,'gold','up')}
-  ${kpi(isE?'Utilidad Bruta':'Gross Profit', fmt(totalGP), totalRevRec>0?((totalGP/totalRevRec)*100).toFixed(1)+'% '+isE?'margen':'margin':'—','success',totalGP>0?'up':'dn')}
-  ${kpi(isE?'Cuentas por Cobrar':'Accounts Receivable', fmt(totalAR), overdueAR>0?(isE?`$${(overdueAR/1000).toFixed(0)}K vencido`:`$${(overdueAR/1000).toFixed(0)}K overdue`):'All current','warning','')}
-  ${kpi(isE?'Cuentas por Pagar':'Accounts Payable', fmt(totalAP), blockedSubs>0?(isE?`${blockedSubs} pagos bloqueados`:`${blockedSubs} blocked`):'All enabled','info','')}
+  ${kpi(isE?'Efectivo / Bancos':'Cash & Banks', fmt(totalCash), (DB.bankConns||[]).length+' '+(isE?'cuentas':'accounts'),'success','up')}
+  ${kpi(isE?'Cuentas por Cobrar':'Accounts Receivable', fmt(totalAR), overdueAR>0?(isE?`${fmt(overdueAR)} vencido`:`${fmt(overdueAR)} overdue`):(isE?'Al corriente':'All current'),'warning',overdueAR>0?'dn':'')}
+  ${kpi(isE?'Cuentas por Pagar':'Accounts Payable', fmt(totalAP), blockedSubs>0?(isE?`${blockedSubs} bloqueados`:`${blockedSubs} blocked`):(isE?'Sin bloqueos':'No blocks'),'info','')}
+  ${kpi(isE?'Activos Fijos':'Fixed Assets', fmt(totalAssets), (DB.assets||[]).length+' '+(isE?'activos':'assets'),'navy','')}
 </div>
 
 ${alertCount>0?`<div class="alert a-warn" style="display:flex;align-items:center;gap:12px;margin-bottom:0">
@@ -2684,360 +2691,188 @@ function approveAll(){log(S.user?.toUpperCase()||'U','Bulk approved all AI-class
 // ══════════════════════════════════════════════════════
 // MODULE: BALANCE SHEET
 // ══════════════════════════════════════════════════════
-function rBS(){const isE=es();
-const rows=[
-  {type:'section',label:isE?'ACTIVOS CIRCULANTES':'CURRENT ASSETS'},
-  {label:isE?'Efectivo y Equivalentes':'Cash & Equivalents',gaap:542800,ifrs:542800},
-  {label:isE?'Cuentas por Cobrar':'Accounts Receivable',gaap:1240500,ifrs:1240500},
-  {label:isE?'Retenciones por Cobrar':'Retainage Receivable',gaap:81250,ifrs:81250},
-  {label:isE?'WIP — Costos Sobre Facturación':'WIP — Costs Over Billings',gaap:147320,ifrs:147320},
-  {label:isE?'Inventario de Materiales':'Materials Inventory',gaap:94700,ifrs:94700},
-  {label:isE?'Gastos Prepagados':'Prepaid Expenses',gaap:28400,ifrs:28400},
-  {type:'subtotal',label:isE?'Total Activos Circulantes':'Total Current Assets',gaap:2134970,ifrs:2134970},
-  {type:'section',label:isE?'ACTIVOS FIJOS':'FIXED ASSETS'},
-  {label:isE?'Maquinaria y Equipo':'Machinery & Equipment',gaap:882000,ifrs:882000},
-  {label:isE?'Depr. Acumulada':'Less: Accumulated Depreciation',gaap:-187600,ifrs:-187600},
-  {label:isE?'Mejoras Arrendadas':'Leasehold Improvements',gaap:95000,ifrs:95000},
-  {label:'Goodwill (GAAP only)',gaap:320000,ifrs:0,note:'IAS 38'},
-  {label:'IFRS 16 — Right-of-Use Assets',gaap:0,ifrs:125000,note:'IFRS 16'},
-  {type:'subtotal',label:isE?'Total Activos Fijos':'Total Fixed Assets',gaap:1109400,ifrs:914400},
-  {label:isE?'Costos de Proyecto en Progreso':'Project Costs in Progress',gaap:3120000,ifrs:3120000},
-  {type:'total',label:isE?'TOTAL ACTIVOS':'TOTAL ASSETS',gaap:8430200,ifrs:8180200},
-  {type:'section',label:isE?'PASIVOS CIRCULANTES':'CURRENT LIABILITIES'},
-  {label:isE?'Cuentas por Pagar':'Accounts Payable',gaap:602600,ifrs:602600},
-  {label:isE?'Retenciones por Pagar':'Retainage Payable',gaap:81250,ifrs:81250},
-  {label:isE?'Costos Sobre Facturación':'Billings Over Costs',gaap:224000,ifrs:224000},
-  {label:isE?'Nómina por Pagar':'Accrued Payroll',gaap:97230,ifrs:97230},
-  {label:isE?'Impuestos por Pagar':'Taxes Payable',gaap:62400,ifrs:62400},
-  {type:'subtotal',label:isE?'Total Pasivo Circulante':'Total Current Liabilities',gaap:1067480,ifrs:1067480},
-  {type:'section',label:isE?'PASIVOS LARGO PLAZO':'LONG-TERM LIABILITIES'},
-  {label:isE?'Deuda a Largo Plazo':'Long-term Debt',gaap:1200000,ifrs:1200000},
-  {label:'Deferred Tax Liability (MACRS)',gaap:48700,ifrs:48700},
-  {label:'IFRS 16 — Lease Liability',gaap:0,ifrs:94620,note:'IFRS 16'},
-  {type:'subtotal',label:isE?'Total Pasivo Largo Plazo':'Total Long-term Liabilities',gaap:1248700,ifrs:1343320},
-  {type:'total',label:isE?'TOTAL PASIVOS':'TOTAL LIABILITIES',gaap:2316180,ifrs:2410800},
-  {type:'section',label:isE?'PATRIMONIO':'EQUITY'},
-  {label:isE?'Capital Aportado':'Paid-in Capital',gaap:1800000,ifrs:1800000},
-  {label:isE?'Utilidades Retenidas':'Retained Earnings',gaap:2135590,ifrs:2135590},
-  {label:isE?'Distribuciones':'Distributions / Draws',gaap:-120000,ifrs:-120000},
-  {label:isE?'Utilidad del Período':'Current Period Net Income',gaap:284510,ifrs:284510},
-  {label:isE?'OCI — IFRS (Pensiones, Moneda)':'OCI — IFRS (Pension, FX)',gaap:0,ifrs:-310900,note:'IAS 19/21'},
-  {type:'total',label:isE?'TOTAL PATRIMONIO':'TOTAL EQUITY',gaap:4300100,ifrs:3969400},
-  {type:'total',label:isE?'TOTAL PASIVO + PATRIMONIO':'TOTAL LIABILITIES + EQUITY',gaap:6616280,ifrs:6380200},
-];
-return`
+// ── LIVE FINANCIAL STATEMENT ENGINE ─────────────────────────────────────────
+// Aggregates CDB.journal / CDB.invoices / CDB.assets / CDB.bankConns
+// Called by rBS, rPL, rCF to get computed values for this client only.
+function fsCompute(){
+  const jnl=(DB.journal||[]);
+  const invs=(DB.invoices||[]);
+  const asets=(DB.assets||[]);
+  const banks=(DB.bankConns||[]);
+  const inv=(DB.inventory||[]);
+  const sum=(prefix,side)=>jnl.filter(j=>j[side]&&String(j[side]).startsWith(prefix)).reduce((s,j)=>s+(j.amt||0),0);
+  const cash    =Math.max(0, banks.reduce((s,b)=>s+(b.bal||0),0)||Math.max(0,sum('1-01-01','dr')-sum('1-01-01','cr')));
+  const ar      =Math.max(0, invs.filter(i=>i.status!=='paid'&&i.status!=='draft').reduce((s,i)=>s+(i.balance??i.net??0),0));
+  const arRet   =Math.max(0, sum('1-01-02-002','dr')-sum('1-01-02-002','cr'));
+  const wip     =Math.max(0, sum('1-01-03-001','dr')-sum('1-01-03-001','cr'));
+  const invVal  =Math.max(0, inv.reduce((s,i)=>s+(i.qty||0)*(i.cost||0),0));
+  const prepaid =Math.max(0, sum('1-01-04','dr')-sum('1-01-04','cr'));
+  const ppe     =Math.max(0, asets.reduce((s,a)=>s+a.cost,0));
+  const accumDep=Math.max(0, asets.reduce((s,a)=>s+(a.accumulated||0),0));
+  const ppeNet  =Math.max(0, ppe-accumDep);
+  const totCurrA=cash+ar+arRet+wip+invVal+prepaid;
+  const totAssets=totCurrA+ppeNet;
+  const ap      =Math.max(0, jnl.filter(j=>j.apEntry).reduce((s,j)=>s+Math.max(0,(j.amt||0)-(j.paid||0)),0));
+  const retPayLT=Math.max(0, sum('2-01-02-002','cr')-sum('2-01-02-002','dr'));
+  const accrued =Math.max(0, sum('2-01-03','cr')-sum('2-01-03','dr'));
+  const totCurrL=ap+accrued;
+  const totLiab =totCurrL+retPayLT;
+  const equity  =Math.max(0, totAssets-totLiab);
+  const revenue =Math.max(0, sum('4-01','cr')-sum('4-01','dr'));
+  const cogs    =Math.max(0, sum('5-01','dr')-sum('5-01','cr'));
+  const opex    =Math.max(0, (sum('6-01','dr')-sum('6-01','cr'))+(sum('6-02','dr')-sum('6-02','cr'))+(sum('6-03','dr')-sum('6-03','cr')));
+  const taxExp  =Math.max(0, sum('7-01','dr')-sum('7-01','cr'));
+  const grossP  =revenue-cogs;
+  const ebit    =grossP-opex;
+  const netInc  =ebit-taxExp;
+  return {cash,ar,arRet,wip,invVal,prepaid,ppe,accumDep,ppeNet,
+    totCurrA,totAssets,ap,retPayLT,accrued,totCurrL,totLiab,equity,
+    revenue,cogs,opex,taxExp,grossP,ebit,netInc};
+}
+
+function rBS(){
+  const isE=es(); const v=fsCompute(); const cons=isCons();
+  const today=new Date().toLocaleDateString(isE?'es-MX':'en-US',{year:'numeric',month:'long',day:'numeric'});
+  const balanced=Math.abs(v.totAssets-(v.totLiab+v.equity))<1;
+  const rows=[
+    {s:isE?'ACTIVOS CIRCULANTES':'CURRENT ASSETS'},
+    {l:isE?'Efectivo y Bancos':'Cash & Banks',           v:v.cash,   n:'Saldo CDB.bankConns'},
+    {l:isE?'Cuentas por Cobrar':'Accounts Receivable',  v:v.ar,     n:'CDB.invoices'},
+    ...(cons&&v.arRet>0?[{l:isE?'Retenciones x Cobrar':'Retainage Receivable',v:v.arRet,n:'1-01-02-002'}]:[]),
+    ...(cons&&v.wip>0?  [{l:isE?'WIP (Costos en Exceso)':'WIP Costs over Billings',v:v.wip,n:'1-01-03-001'}]:[]),
+    ...(v.invVal>0?     [{l:isE?'Inventario':'Inventory',v:v.invVal,n:'Al costo'}]:[]),
+    ...(v.prepaid>0?    [{l:isE?'Prepagados':'Prepaid Expenses',v:v.prepaid,n:'1-01-04'}]:[]),
+    {st:isE?'Total Activos Circulantes':'Total Current Assets', v:v.totCurrA},
+    {s:isE?'ACTIVOS NO CIRCULANTES':'NON-CURRENT ASSETS'},
+    ...(v.ppe>0?[
+      {l:isE?'PP&E (Bruto)':'PP&E (Gross)',              v:v.ppe,    n:'CDB.assets'},
+      {l:isE?'Depreciación Acumulada':'Accum. Depreciation', v:-v.accumDep, n:'CDB.assets'},
+      {st:isE?'PP&E Neto':'Net PP&E',                     v:v.ppeNet},
+    ]:[]),
+    {t:isE?'TOTAL ACTIVOS':'TOTAL ASSETS',                v:v.totAssets},
+    {s:isE?'PASIVOS CIRCULANTES':'CURRENT LIABILITIES'},
+    ...(v.ap>0?     [{l:isE?'Cuentas por Pagar':'Accounts Payable',v:v.ap,n:'CDB.journal AP'}]:[]),
+    ...(v.accrued>0?[{l:isE?'Pasivos Acumulados':'Accrued Liabilities',v:v.accrued,n:'2-01-03'}]:[]),
+    {st:isE?'Total Pasivos Circulantes':'Total Current Liabilities', v:v.totCurrL},
+    ...(cons&&v.retPayLT>0?[
+      {s:isE?'PASIVOS NO CIRCULANTES':'NON-CURRENT LIABILITIES'},
+      {l:isE?'Retenciones por Pagar LP':'Retainage Payable LT', v:v.retPayLT, n:'2-01-02-002'},
+    ]:[]),
+    {t:isE?'TOTAL PASIVOS':'TOTAL LIABILITIES',           v:v.totLiab},
+    {s:isE?'PATRIMONIO':'EQUITY'},
+    {l:isE?'Capital / Utilidades Acumuladas':'Capital / Retained Earnings', v:v.equity, n:isE?'Activos − Pasivos':'Assets − Liabilities'},
+    {t:isE?'TOTAL PASIVOS + PATRIMONIO':'TOTAL LIAB. + EQUITY', v:v.totLiab+v.equity},
+  ];
+  return`
 <div class="page-header">
   <div><div class="page-title">${isE?'Balance General':'Balance Sheet'}</div>
-  <div class="page-subtitle">${S.client} · ${isE?'Al 31 de Marzo 2026':'As of March 31, 2026'} · Dual GAAP / IFRS</div></div>
-  <div class="page-actions">
-    <button class="btn btn-ghost btn-sm">↓ ${isE?'Exportar PDF':'Export PDF'}</button>
-    <button class="btn btn-ghost btn-sm">↓ Excel</button>
-    <div class="tab-bar"><button class="tab active">GAAP</button><button class="tab">IFRS</button><button class="tab">Dual</button></div>
-  </div>
+  <div class="page-subtitle">${S.client} · ${isE?'Al':'As of'} ${today} · ${isE?'Calculado de CDB en tiempo real':'Computed from CDB in real-time'}</div></div>
+  <div class="page-actions"><span class="badge ${balanced?'b-ok':'b-no'}">${balanced?(isE?'✓ BALANCEADO':'✓ BALANCED'):(isE?'⚠ REVISAR':'⚠ CHECK')}</span></div>
 </div>
-<div class="card">
-  <div style="overflow-x:auto">
-  <table class="dt">
-    <thead><tr>
-      <th style="width:40%">${isE?'Concepto':'Account'}</th>
-      <th class="num">US GAAP</th>
-      <th class="num">IFRS (NIIF)</th>
-      <th class="num">${isE?'Diferencia':'Difference'}</th>
-    </tr></thead>
-    <tbody>
-    ${rows.map(r=>{
-      if(r.type==='section')return`<tr><td colspan="4" class="fs-section">${r.label}</td></tr>`;
-      if(r.type==='subtotal')return`<tr class="fs-subtotal"><td style="padding-left:24px">${r.label}</td><td class="num">${fmt(r.gaap)}</td><td class="num">${fmt(r.ifrs)}</td><td class="num ${r.gaap-r.ifrs!==0?'gold':''}">${r.gaap-r.ifrs!==0?fmt(r.gaap-r.ifrs):'—'}</td></tr>`;
-      if(r.type==='total')return`<tr class="dt total"><td>${r.label}</td><td class="num">${fmt(r.gaap)}</td><td class="num">${fmt(r.ifrs)}</td><td class="num">${r.gaap-r.ifrs!==0?fmt(r.gaap-r.ifrs):'—'}</td></tr>`;
-      const diff=r.gaap-r.ifrs;
-      return`<tr><td style="padding-left:24px">${r.label}${r.note?` <span class="badge b-gold" style="font-size:9px">${r.note}</span>`:''}</td>
-        <td class="num mono">${r.gaap?fmt(r.gaap):r.gaap===0&&r.ifrs!==0?'—':fmt(r.gaap)}</td>
-        <td class="num mono">${r.ifrs?fmt(r.ifrs):r.ifrs===0&&r.gaap!==0?'—':fmt(r.ifrs)}</td>
-        <td class="num mono ${diff!==0?'gold':''}">${diff!==0?fmt(diff):'—'}</td></tr>`;
-    }).join('')}
-    </tbody>
-  </table>
-  </div>
-  <div class="alert a-info mt2" style="font-size:11px">ⓘ ${isE?'Las diferencias GAAP/IFRS provienen de: (1) Goodwill eliminado bajo IAS 38, (2) IFRS 16 Arrendamientos capitalizados, (3) OCI por pensiones (IAS 19) y diferencias de conversión (IAS 21).':'GAAP/IFRS differences arise from: (1) Goodwill eliminated per IAS 38, (2) IFRS 16 lease capitalization, (3) OCI from pensions (IAS 19) and FX translation (IAS 21).'}</div>
-</div>`}
+${v.totAssets===0?`<div class="card"><div class="alert a-info">${isE?'No hay datos contables para este cliente. Registre facturas, activos o asientos de diario para ver el Balance General.':'No accounting data for this client. Post invoices, assets or journal entries to see the Balance Sheet.'}</div></div>`:`
+<div class="card"><div style="overflow-x:auto"><table class="dt">
+  <thead><tr>
+    <th style="min-width:260px">${isE?'Concepto':'Line Item'}</th>
+    <th class="num">$</th><th style="font-size:10px;color:var(--stone)">Ref</th>
+  </tr></thead>
+  <tbody>
+  ${rows.map(r=>{
+    if(r.s) return`<tr style="background:var(--navy)"><td colspan="3" style="color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;padding:8px 12px">${r.s}</td></tr>`;
+    if(r.t) return`<tr style="background:var(--stone-pale);font-weight:700;border-top:2px solid var(--navy)"><td style="font-size:13px">${r.t}</td><td class="num mono bold" style="font-size:14px;color:var(--navy)">${fmt(Math.abs(r.v))}</td><td></td></tr>`;
+    if(r.st)return`<tr style="background:rgba(11,31,58,.04);font-weight:600"><td style="padding-left:20px">${r.st}</td><td class="num mono bold ${r.v>=0?'green':'red'}">${fmt(Math.abs(r.v))}</td><td></td></tr>`;
+    return`<tr><td style="padding-left:24px;font-size:13px">${r.l}</td><td class="num mono ${(r.v||0)<0?'red':'green'}">${fmt(Math.abs(r.v||0))}</td><td style="font-size:10px;color:var(--stone)">${r.n||''}</td></tr>`;
+  }).join('')}
+  </tbody>
+</table></div></div>`}`;
+}
 
-// ══════════════════════════════════════════════════════
-// MODULE: P&L
-// ══════════════════════════════════════════════════════
-function rPL(){const isE=es();return`
+function rPL(){
+  const isE=es(); const v=fsCompute();
+  const today=new Date().toLocaleDateString(isE?'es-MX':'en-US',{year:'numeric',month:'long',day:'numeric'});
+  const gmPct=v.revenue>0?((v.grossP/v.revenue)*100).toFixed(1):'—';
+  const nmPct=v.revenue>0?((v.netInc/v.revenue)*100).toFixed(1):'—';
+  const rows=[
+    {s:isE?'INGRESOS':'REVENUE'},
+    {l:isE?'Ingresos por Ventas / Contratos':'Sales / Contract Revenue', v:v.revenue, n:'4-01'},
+    {t:isE?'TOTAL INGRESOS':'TOTAL REVENUE', v:v.revenue},
+    {s:isE?'COSTO DE VENTAS':'COST OF GOODS SOLD'},
+    ...(v.cogs>0?[{l:isE?'Costos Directos':'Direct Costs', v:v.cogs, n:'5-01'}]:[]),
+    {st:isE?'UTILIDAD BRUTA':'GROSS PROFIT', v:v.grossP},
+    {s:isE?'GASTOS OPERATIVOS':'OPERATING EXPENSES'},
+    ...(v.opex>0?[{l:isE?'Gastos Generales y Admin.':'General & Admin.', v:v.opex, n:'6-01/6-02/6-03'}]:[]),
+    {st:isE?'UTILIDAD OPERATIVA (EBIT)':'OPERATING INCOME (EBIT)', v:v.ebit},
+    ...(v.taxExp>0?[
+      {s:isE?'IMPUESTOS':'TAXES'},
+      {l:isE?'Impuesto Sobre la Renta':'Income Tax', v:v.taxExp, n:'7-01'},
+    ]:[]),
+    {t:isE?'UTILIDAD NETA':'NET INCOME', v:v.netInc},
+  ];
+  return`
 <div class="page-header">
-  <div><div class="page-title">${isE?'Estado de Resultados':'Profit & Loss Statement'}</div>
-  <div class="page-subtitle">${S.client} · ${isE?'Enero – Marzo 2026 (Q1) · Comparativo YTD':'January – March 2026 (Q1) · YTD Comparative'}</div></div>
-  <div class="page-actions">
-    <div class="tab-bar">
-      <button class="tab active">Q1 2026</button>
-      <button class="tab">Q1 2025</button>
-      <button class="tab">${isE?'Por Proyecto':'By Project'}</button>
-    </div>
-    <button class="btn btn-ghost btn-sm">↓ PDF</button>
-  </div>
+  <div><div class="page-title">${isE?'Estado de Resultados':'Profit & Loss'}</div>
+  <div class="page-subtitle">${S.client} · ${isE?'Al':'As of'} ${today} · ${isE?'Período acumulado':'Cumulative period'}</div></div>
 </div>
-<div class="card">
-  <div style="overflow-x:auto">
-  <table class="dt">
-    <thead><tr>
-      <th style="width:40%">${isE?'Concepto':'Account'}</th>
-      <th class="num">Q1 2026</th>
-      <th class="num">Q1 2025</th>
-      <th class="num">$ ${isE?'Var.':'Var.'}</th>
-      <th class="num">% ${isE?'Var.':'Var.'}</th>
-      <th class="num">% ${isE?'Margen':'Margin'}</th>
-    </tr></thead>
-    <tbody>
-    ${[
-      {type:'section',label:isE?'INGRESOS POR CONTRATOS':'CONTRACT REVENUE'},
-      {label:isE?'Ingresos Reconocidos — Construcción (ASC 606)':'Recognized Revenue — Construction (ASC 606)',a:1647320,b:1420000},
-      {label:isE?'Órdenes de Cambio Aprobadas':'Approved Change Order Revenue',a:200000,b:140000},
-      {label:isE?'Servicios de Consultoría':'Consulting Services',a:0,b:25000},
-      {type:'subtotal',label:isE?'INGRESOS TOTALES':'TOTAL REVENUE',a:1847320,b:1585000},
-      {type:'section',label:isE?'COSTO DE OBRA (COGS)':'COST OF REVENUE (COGS)'},
-      {label:isE?'Materiales Directos':'Direct Materials',a:487320,b:410000},
-      {label:isE?'Mano de Obra Directa':'Direct Labor',a:312400,b:285000},
-      {label:isE?'Subcontratistas':'Subcontractors',a:284500,b:240000},
-      {label:isE?'Equipo en Obra':'On-site Equipment',a:98700,b:82000},
-      {label:isE?'Overhead de Obra':'Construction Overhead',a:124800,b:108000},
-      {type:'subtotal',label:isE?'COSTO DE OBRA TOTAL':'TOTAL COGS',a:1307720,b:1125000},
-      {type:'subtotal',label:isE?'UTILIDAD BRUTA':'GROSS PROFIT',a:539600,b:460000,bold:true},
-      {type:'section',label:isE?'GASTOS OPERATIVOS':'OPERATING EXPENSES'},
-      {label:isE?'Gastos Generales y Admin.':'General & Administrative',a:87400,b:82000},
-      {label:isE?'Nómina Administrativa':'Administrative Payroll',a:124200,b:118000},
-      {label:isE?'Depreciación (Libro, SL)':'Depreciation (Book, SL)',a:62400,b:58000},
-      {label:isE?'Seguros y Fianzas':'Insurance & Bonds',a:48200,b:44000},
-      {label:isE?'Honorarios Profesionales':'Professional Fees',a:32100,b:30000},
-      {label:isE?'Total Gastos Operativos':'Total Operating Expenses',a:354300,b:332000,type:'subtotal'},
-      {type:'subtotal',label:isE?'EBITDA':'EBITDA',a:247700,b:186000,bold:true},
-      {type:'section',label:isE?'OTROS INGRESOS/GASTOS':'OTHER INCOME / EXPENSE'},
-      {label:isE?'Intereses y Gastos Financieros':'Interest & Finance Charges',a:-24400,b:-22000},
-      {label:isE?'Ajuste MACRS vs Libro (Tax)':'MACRS vs Book Timing Adj. (Tax)',a:14210,b:12000},
-      {type:'total',label:isE?'UTILIDAD NETA':'NET INCOME',a:284510,b:218000},
-    ].map(r=>{
-      if(r.type==='section')return`<tr><td colspan="6" class="fs-section">${r.label}</td></tr>`;
-      const diff=r.a-(r.b||0);const pct=r.b?((diff/r.b)*100).toFixed(1):0;const margin=r.a&&r.type==='subtotal'?(r.a/1847320*100).toFixed(1):null;
-      if(r.type==='total')return`<tr class="dt total"><td>${r.label}</td><td class="num">${fmt(r.a)}</td><td class="num">${fmt(r.b)}</td><td class="num">${fmtN(diff)}</td><td class="num" style="color:${diff>=0?'var(--success)':'var(--danger)'}">${diff>=0?'+':''}${pct}%</td><td class="num" style="color:var(--gold)">${margin?margin+'%':'—'}</td></tr>`;
-      if(r.type==='subtotal')return`<tr class="fs-subtotal"><td style="padding-left:r.indent?'24px':'0'">${r.label}</td><td class="num">${fmt(r.a)}</td><td class="num">${fmt(r.b)}</td><td class="num">${fmtN(diff)}</td><td class="num" style="color:${diff>=0?'var(--success)':'var(--danger)'}">${diff>=0?'+':''}${pct}%</td><td class="num gold">${margin?margin+'%':'—'}</td></tr>`;
-      return`<tr><td style="padding-left:24px">${r.label}</td><td class="num mono">${fmt(r.a)}</td><td class="num mono stone">${fmt(r.b||0)}</td><td class="num mono">${fmtN(diff)}</td><td class="num" style="font-size:11px;color:${diff>=0?'var(--success)':'var(--danger)'}">${diff>=0?'+':''}${pct}%</td><td class="num">—</td></tr>`;
-    }).join('')}
-    </tbody>
-  </table>
-  </div>
-  <div class="g3 mt2">
-    ${[['Gross Margin',`${(539600/1847320*100).toFixed(1)}%`,'success'],[isE?'Margen Neto':'Net Margin',`${(284510/1847320*100).toFixed(1)}%`,'info'],['EBITDA Margin',`${(247700/1847320*100).toFixed(1)}%`,'warning']].map(([l,v,c])=>`
-    <div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div></div>`).join('')}
-  </div>
-</div>`}
+<div class="g3" style="margin-bottom:0">
+  ${[[isE?'Ingresos':'Revenue',fmt(v.revenue),'navy'],[isE?'Margen Bruto':'Gross Margin',gmPct+'%','success'],[isE?'Utilidad Neta':'Net Income',fmt(v.netInc),v.netInc>=0?'gold':'danger']].map(([l,v2,c])=>`<div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div><div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:20px">${v2}</div></div>`).join('')}
+</div>
+${v.revenue===0?`<div class="card"><div class="alert a-info">${isE?'No hay ingresos registrados. Emita facturas de venta o registre asientos en cuentas 4-01 (Ingresos).':'No revenue recorded. Issue invoices or post entries to account 4-01 (Revenue).'}</div></div>`:`
+<div class="card"><div style="overflow-x:auto"><table class="dt">
+  <thead><tr>
+    <th style="min-width:260px">${isE?'Concepto':'Line Item'}</th>
+    <th class="num">$</th><th class="num">% ${isE?'Ing.':'Rev.'}</th>
+  </tr></thead>
+  <tbody>
+  ${rows.map(r=>{
+    const pct=v.revenue>0?((Math.abs(r.v||0)/v.revenue)*100).toFixed(1)+'%':'—';
+    if(r.s) return`<tr style="background:var(--navy)"><td colspan="3" style="color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;padding:8px 12px">${r.s}</td></tr>`;
+    if(r.t) return`<tr style="background:var(--stone-pale);font-weight:700;border-top:2px solid var(--navy)"><td>${r.t}</td><td class="num mono bold" style="color:${(r.v||0)>=0?'var(--success)':'var(--danger)'}">${fmt(r.v||0)}</td><td class="num" style="font-size:12px">${pct}</td></tr>`;
+    if(r.st)return`<tr style="background:rgba(11,31,58,.04);font-weight:600"><td>${r.st}</td><td class="num mono bold ${(r.v||0)>=0?'green':'red'}">${fmt(r.v||0)}</td><td class="num" style="font-size:11px">${pct}</td></tr>`;
+    return`<tr><td style="padding-left:24px;font-size:13px">${r.l}</td><td class="num mono">${fmt(r.v||0)}</td><td class="num" style="font-size:11px;color:var(--stone)">${r.n||pct}</td></tr>`;
+  }).join('')}
+  </tbody>
+</table></div></div>`}`;
+}
 
-// ══════════════════════════════════════════════════════
-// MODULE: CASH FLOW
-// ══════════════════════════════════════════════════════
-function rCF(){const isE=es();return`
+function rCF(){
+  const isE=es(); const v=fsCompute();
+  const today=new Date().toLocaleDateString(isE?'es-MX':'en-US',{year:'numeric',month:'long',day:'numeric'});
+  const cfOps=(DB.journal||[]).filter(j=>j.type==='in'||j.type==='out').reduce((s,j)=>j.type==='in'?s+j.amt:s-j.amt,0);
+  const endCash=Math.max(0,v.cash);
+  const row=(label,val,indent)=>`<tr><td style="padding-left:${indent?24:0}px;font-size:${indent?13:14}px">${label}</td><td class="num mono ${val>=0?'green':'red'}">${val===0?'—':fmt(val)}</td></tr>`;
+  const sec=(label)=>`<tr style="background:var(--navy)"><td colspan="2" style="color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;padding:8px 12px">${label}</td></tr>`;
+  const tot=(label,val)=>`<tr style="background:rgba(11,31,58,.04);font-weight:600"><td>${label}</td><td class="num mono bold ${val>=0?'green':'red'}">${fmt(val)}</td></tr>`;
+  return`
 <div class="page-header">
-  <div><div class="page-title">${isE?'Estado de Flujo de Efectivo':'Statement of Cash Flows'}</div>
-  <div class="page-subtitle">${S.client} · Q1 2026 · ${isE?'Método Indirecto (GAAP / NIIF)':'Indirect Method (GAAP / IFRS)'}</div></div>
-  <div class="page-actions">
-    <div class="tab-bar"><button class="tab active">${isE?'Indirecto':'Indirect'}</button><button class="tab">${isE?'Directo':'Direct'}</button></div>
-    <button class="btn btn-ghost btn-sm">↓ PDF</button>
-  </div>
+  <div><div class="page-title">${isE?'Flujo de Efectivo':'Cash Flow Statement'}</div>
+  <div class="page-subtitle">${S.client} · ${isE?'Al':'As of'} ${today} · ${isE?'Método Indirecto':'Indirect Method'}</div></div>
 </div>
-<div class="card">
-  <table class="dt">
-    <thead><tr>
-      <th style="width:50%">${isE?'Concepto':'Description'}</th>
-      <th class="num">Q1 2026</th>
-      <th class="num">Q1 2025</th>
-    </tr></thead>
-    <tbody>
-    ${[
-      {type:'section',label:isE?'ACTIVIDADES OPERATIVAS':'OPERATING ACTIVITIES'},
-      {label:isE?'Utilidad Neta del Período':'Net Income',a:284510,b:218000},
-      {type:'section',label:isE?'Ajustes (no efectivo):':'Adjustments for non-cash items:'},
-      {label:isE?'+ Depreciación y Amortización':'+ Depreciation & Amortization',a:62400,b:58000},
-      {label:isE?'+ Amortización Goodwill (GAAP)':'+ Goodwill Amortization (GAAP)',a:0,b:0},
-      {label:isE?'Cambios en Capital de Trabajo:':'Changes in Working Capital:'},
-      {label:isE?'  (Aumento) Cuentas por Cobrar':'  (Increase) Accounts Receivable',a:-184200,b:-142000},
-      {label:isE?'  (Aumento) WIP — Costos Sobre Facturación':'  (Increase) WIP Cost Over Billings',a:-47320,b:-38000},
-      {label:isE?'  Disminución en Inventario':'  Decrease in Materials Inventory',a:12400,b:8000},
-      {label:isE?'  Aumento en Cuentas por Pagar':'  Increase in Accounts Payable',a:98400,b:82000},
-      {label:isE?'  Aumento Retenciones por Pagar':'  Increase Retainage Payable',a:18200,b:14000},
-      {type:'subtotal',label:isE?'FLUJO NETO DE ACTIVIDADES OPERATIVAS':'NET CASH FROM OPERATIONS',a:244390,b:200000},
-      {type:'section',label:isE?'ACTIVIDADES DE INVERSIÓN':'INVESTING ACTIVITIES'},
-      {label:isE?'Compra Maquinaria y Equipo':'Purchase Equipment & Machinery',a:-42000,b:-68000},
-      {label:isE?'Mejoras a Propiedades':'Leasehold Improvements',a:0,b:-15000},
-      {type:'subtotal',label:isE?'FLUJO NETO DE INVERSIÓN':'NET CASH FROM INVESTING',a:-42000,b:-83000},
-      {type:'section',label:isE?'ACTIVIDADES DE FINANCIAMIENTO':'FINANCING ACTIVITIES'},
-      {label:isE?'Préstamos Recibidos':'Proceeds from Borrowings',a:200000,b:150000},
-      {label:isE?'Pagos de Deuda':'Debt Repayments',a:-80000,b:-65000},
-      {label:isE?'Distribuciones a Socios':'Owner Distributions / Draws',a:-120000,b:-100000},
-      {type:'subtotal',label:isE?'FLUJO NETO DE FINANCIAMIENTO':'NET CASH FROM FINANCING',a:0,b:-15000},
-      {type:'total',label:isE?'AUMENTO NETO EN EFECTIVO':'NET INCREASE IN CASH',a:202390,b:102000},
-      {label:isE?'Saldo Inicial de Efectivo':'Beginning Cash Balance',a:340410,b:298000},
-      {type:'total',label:isE?'SALDO FINAL DE EFECTIVO':'ENDING CASH BALANCE',a:542800,b:400000},
-    ].map(r=>{
-      if(r.type==='section')return`<tr><td colspan="3" class="fs-section">${r.label}</td></tr>`;
-      if(r.type==='subtotal')return`<tr class="fs-subtotal"><td>${r.label}</td><td class="num">${fmtN(r.a)}</td><td class="num stone mono">${fmt(r.b)}</td></tr>`;
-      if(r.type==='total')return`<tr class="dt total"><td>${r.label}</td><td class="num">${fmt(r.a)}</td><td class="num stone mono">${fmt(r.b)}</td></tr>`;
-      if(!r.a&&!r.b)return`<tr><td colspan="3" style="font-size:11px;color:var(--stone);padding:4px 12px">${r.label}</td></tr>`;
-      return`<tr><td style="padding-left:24px">${r.label}</td><td class="num mono">${fmtN(r.a)}</td><td class="num stone mono">${fmt(r.b)}</td></tr>`;
-    }).join('')}
-    </tbody>
-  </table>
-  <div class="g3 mt2">
-    ${[['Operating CF','$244,390','success'],['Investing CF','($42,000)','danger'],['Financing CF','$0','stone']].map(([l,v,c])=>`
-    <div class="kpi-card"><div class="kpi-accent" style="background:var(--${c})"></div><div class="kpi-label">${l}</div><div class="kpi-value" style="font-size:18px">${v}</div></div>`).join('')}
-  </div>
-</div>`}
+${endCash===0&&cfOps===0&&v.ppe===0?`<div class="card"><div class="alert a-info">${isE?'No hay movimientos de efectivo. Registre transacciones en el Libro de Caja o conecte cuentas bancarias.':'No cash movements. Record transactions in the Cash Book or connect bank accounts.'}</div></div>`:`
+<div class="card"><div style="overflow-x:auto"><table class="dt" style="width:100%">
+  <thead><tr><th style="min-width:280px">${isE?'Concepto':'Item'}</th><th class="num">$</th></tr></thead>
+  <tbody>
+    ${sec(isE?'A. ACTIVIDADES OPERATIVAS':'A. OPERATING ACTIVITIES')}
+    ${row(isE?'Utilidad Neta':'Net Income',v.netInc,true)}
+    ${v.ar>0?row(isE?'(Aumento) en Cuentas por Cobrar':'(Increase) in Accounts Receivable',-v.ar,true):'<tr><td></td><td></td></tr>'}
+    ${v.ap>0?row(isE?'Aumento en Cuentas por Pagar':'Increase in Accounts Payable',v.ap,true):'<tr><td></td><td></td></tr>'}
+    ${tot(isE?'Efectivo Neto — Operaciones':'Net Cash from Operations',cfOps)}
+    ${sec(isE?'B. ACTIVIDADES DE INVERSIÓN':'B. INVESTING ACTIVITIES')}
+    ${v.ppe>0?row(isE?'Adquisición Activos Fijos':'Fixed Asset Acquisitions',-v.ppe,true):'<tr><td style=\"padding-left:24px\">'+(isE?'Sin inversiones':'No investments')+'</td><td class=\"num stone\">—</td></tr>'}
+    ${tot(isE?'Efectivo Neto — Inversión':'Net Cash from Investing',v.ppe>0?-v.ppe:0)}
+    ${sec(isE?'C. ACTIVIDADES DE FINANCIAMIENTO':'C. FINANCING ACTIVITIES')}
+    <tr><td style="padding-left:24px">${isE?'Sin transacciones registradas':'No transactions recorded'}</td><td class="num stone">—</td></tr>
+    ${tot(isE?'Efectivo Neto — Financiamiento':'Net Cash from Financing',0)}
+    <tr style="background:var(--stone-pale);font-weight:700;border-top:2px solid var(--navy)">
+      <td>${isE?'VARIACIÓN NETA EN EFECTIVO':'NET CHANGE IN CASH'}</td>
+      <td class="num mono bold ${endCash>=0?'green':'red'}" style="font-size:15px">${fmt(endCash)}</td>
+    </tr>
+    <tr style="font-weight:700;border-top:2px solid var(--navy)">
+      <td style="font-size:14px">${isE?'SALDO FINAL DE EFECTIVO':'ENDING CASH BALANCE'}</td>
+      <td class="num mono bold" style="font-size:15px;color:var(--navy)">${fmt(endCash)}</td>
+    </tr>
+  </tbody>
+</table></div></div>`}`;
+}
 
-// ══════════════════════════════════════════════════════
-// MODULE: STATEMENT OF EQUITY (SOCE)
-// ══════════════════════════════════════════════════════
-function rSOCE(){const isE=es();return`
-<div class="page-header">
-  <div><div class="page-title">${isE?'Estado de Cambios en el Patrimonio':'Statement of Changes in Equity'}</div>
-  <div class="page-subtitle">${S.client} · ${isE?'Q1 2026 — GAAP + IFRS (OCI)':'Q1 2026 — GAAP + IFRS (OCI)'}</div></div>
-  <div class="page-actions"><button class="btn btn-ghost btn-sm">↓ PDF</button></div>
-</div>
-<div class="card">
-  <div style="overflow-x:auto">
-  <table class="dt">
-    <thead><tr>
-      <th style="width:30%">${isE?'Concepto':'Description'}</th>
-      <th class="num">${isE?'Capital Pagado':'Paid-in Capital'}</th>
-      <th class="num">${isE?'Utilidades Retenidas':'Retained Earnings'}</th>
-      <th class="num">OCI (IFRS)</th>
-      <th class="num">${isE?'Distribuciones':'Distributions'}</th>
-      <th class="num bold">${isE?'TOTAL':'TOTAL'}</th>
-    </tr></thead>
-    <tbody>
-      <tr class="fs-subtotal"><td>${isE?'Saldo al 31 Dic 2025':'Balance Dec 31, 2025'}</td><td class="num">$1,800,000</td><td class="num">$2,135,590</td><td class="num stone">($310,900)</td><td class="num">($120,000)</td><td class="num bold">$3,504,690</td></tr>
-      <tr><td style="padding-left:16px">${isE?'Utilidad Neta Q1 2026':'Net Income Q1 2026'}</td><td class="num">—</td><td class="num green">$284,510</td><td class="num">—</td><td class="num">—</td><td class="num green">$284,510</td></tr>
-      <tr><td style="padding-left:16px">OCI — ${isE?'Pensiones (IAS 19)':'Pensions (IAS 19)'}</td><td class="num">—</td><td class="num">—</td><td class="num red">($18,200)</td><td class="num">—</td><td class="num red">($18,200)</td></tr>
-      <tr><td style="padding-left:16px">OCI — ${isE?'Diferencia de Cambio (IAS 21)':'FX Translation (IAS 21)'}</td><td class="num">—</td><td class="num">—</td><td class="num green">$12,400</td><td class="num">—</td><td class="num green">$12,400</td></tr>
-      <tr><td style="padding-left:16px">${isE?'Distribuciones del Período':'Period Distributions'}</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num red">($120,000)</td><td class="num red">($120,000)</td></tr>
-      <tr class="dt total"><td>${isE?'SALDO AL 31 MAR 2026':'BALANCE MAR 31, 2026'}</td><td class="num">$1,800,000</td><td class="num">${fmt(2135590+284510)}</td><td class="num">${fmt(-310900-18200+12400)}</td><td class="num">($120,000)</td><td class="num">${fmt(3504690+284510-18200+12400-120000)}</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <div class="alert a-info mt2" style="font-size:11px">ⓘ OCI (${isE?'Otro Resultado Integral':'Other Comprehensive Income'}) ${isE?'es exclusivo del reporte IFRS. Bajo GAAP, las partidas OCI se reportan en estado separado de Comprehensive Income.':'is IFRS-specific. Under GAAP, OCI items are reported in a separate Comprehensive Income statement.'}</div>
-</div>`}
-
-// ══════════════════════════════════════════════════════
-// MODULE: JOB COST / PROJECT ACCOUNTING
-// ══════════════════════════════════════════════════════
-// ══════════════════════════════════════════════════════
-// JOB COST DATA MODEL — Sub-ledger by project
-// ══════════════════════════════════════════════════════
-const PROJECTS = [
-  {
-    id:'PRJ-001', name:'Riverside Plaza Mixed-Use', pm:'Carlos Rivera',
-    owner:'Summit Properties LLC', startDate:'2024-09-01', endDate:'2026-08-31',
-    contract:4385000, orig:4200000, retPct:10,
-    phases:[
-      { id:'PH-01', name_en:'Phase 1 — Excavation & Foundation', name_es:'Fase 1 — Excavación y Cimentación',
-        budgets:{ mat:320000, labor:180000, sub:260000, equip:42000, oh:18000 },
-        actuals:{ mat:308400, labor:174200, sub:254000, equip:39800, oh:22000 }, pct:100, status:'complete' },
-      { id:'PH-02', name_en:'Phase 2 — Structural Frame', name_es:'Fase 2 — Estructura',
-        budgets:{ mat:480000, labor:220000, sub:380000, equip:96000, oh:64000 },
-        actuals:{ mat:461000, labor:208000, sub:340000, equip:78200, oh:58000 }, pct:85, status:'active' },
-      { id:'PH-03', name_en:'Phase 3 — Building Envelope', name_es:'Fase 3 — Cerramientos',
-        budgets:{ mat:240000, labor:120000, sub:420000, equip:80000, oh:120000 },
-        actuals:{ mat:198000, labor:86000, sub:240000, equip:48000, oh:48000 }, pct:62, status:'active' },
-      { id:'PH-04', name_en:'Phase 4 — MEP Rough-in', name_es:'Fase 4 — MEP Instalaciones',
-        budgets:{ mat:120000, labor:80000, sub:480000, equip:60000, oh:100000 },
-        actuals:{ mat:42000, labor:30000, sub:172400, equip:18000, oh:88000 }, pct:42, status:'active' },
-      { id:'PH-05', name_en:'Phase 5 — Finishes & Closeout', name_es:'Fase 5 — Acabados y Cierre',
-        budgets:{ mat:180000, labor:140000, sub:120000, equip:25000, oh:40000 },
-        actuals:{ mat:0, labor:0, sub:0, equip:0, oh:0 }, pct:0, status:'pending' },
-    ],
-    billings:[
-      { no:'AIA-001', date:'2024-11', amount:820000, ret:82000, net:738000, status:'paid' },
-      { no:'AIA-002', date:'2025-01', amount:680000, ret:68000, net:612000, status:'paid' },
-      { no:'AIA-003', date:'2025-04', amount:740000, ret:74000, net:666000, status:'paid' },
-      { no:'AIA-004', date:'2025-08', amount:616000, ret:61600, net:554400, status:'paid' },
-      { no:'AIA-005', date:'2026-02', amount:524000, ret:52400, net:471600, status:'outstanding' },
-    ],
-    cos:[
-      { no:'CO-001', date:'2025-03', desc_en:'Electrical spec upgrade', desc_es:'Actualización espec. eléctricas', amount:125000, approved:true },
-      { no:'CO-002', date:'2025-11', desc_en:'Façade material substitution', desc_es:'Sustitución material fachada', amount:60000, approved:true },
-    ],
-    subledger:[
-      { date:'2025-12-10', ref:'SL-4821', acct:'5-01-01-001', desc_en:'Concrete mix delivery PRJ-001/PH-02', desc_es:'Entrega concreto PRJ-001/F2', cat:'mat', amount:48200 },
-      { date:'2025-12-12', ref:'SL-4822', acct:'5-01-02-001', desc_en:'Field crew labor week 51', desc_es:'Nómina cuadrilla semana 51', cat:'labor', amount:18400 },
-      { date:'2025-12-14', ref:'SL-4823', acct:'5-01-03-001', desc_en:'Elite MEP invoice #0412', desc_es:'Factura Elite MEP #0412', cat:'sub', amount:84500 },
-      { date:'2025-12-15', ref:'SL-4824', acct:'5-01-04-001', desc_en:'Crane rental week 51-52', desc_es:'Renta grúa semanas 51-52', cat:'equip', amount:12400 },
-      { date:'2025-12-18', ref:'SL-4825', acct:'5-02-01-001', desc_en:'Site supervision Dec', desc_es:'Supervisión obra Dic', cat:'oh', amount:9800 },
-    ]
-  },
-  {
-    id:'PRJ-002', name:'Harbor View Tower', pm:'Diana Reyes',
-    owner:'Oceanic Dev. Group', startDate:'2025-03-01', endDate:'2027-06-30',
-    contract:8220000, orig:7800000, retPct:10,
-    phases:[
-      { id:'PH-01', name_en:'Phase 1 — Demolition & Site Prep', name_es:'Fase 1 — Demolición y Preparación',
-        budgets:{ mat:80000, labor:120000, sub:140000, equip:28000, oh:12000 },
-        actuals:{ mat:82000, labor:124000, sub:138000, equip:26000, oh:12000 }, pct:100, status:'complete' },
-      { id:'PH-02', name_en:'Phase 2 — Deep Foundation (Piles)', name_es:'Fase 2 — Cimentación Profunda (Pilotes)',
-        budgets:{ mat:420000, labor:280000, sub:840000, equip:180000, oh:100000 },
-        actuals:{ mat:398000, labor:264000, sub:782000, equip:162000, oh:96000 }, pct:90, status:'active' },
-      { id:'PH-03', name_en:'Phase 3 — Structural Frame', name_es:'Fase 3 — Estructura',
-        budgets:{ mat:840000, labor:480000, sub:760000, equip:200000, oh:120000 },
-        actuals:{ mat:420000, labor:240000, sub:380000, equip:100000, oh:60000 }, pct:50, status:'active' },
-      { id:'PH-04', name_en:'Phase 4 — MEP Systems', name_es:'Fase 4 — Sistemas MEP',
-        budgets:{ mat:480000, labor:280000, sub:740000, equip:120000, oh:180000 },
-        actuals:{ mat:0, labor:0, sub:0, equip:0, oh:0 }, pct:0, status:'pending' },
-      { id:'PH-05', name_en:'Phase 5 — Façade & Curtainwall', name_es:'Fase 5 — Fachada y Muro Cortina',
-        budgets:{ mat:620000, labor:160000, sub:340000, equip:40000, oh:40000 },
-        actuals:{ mat:0, labor:0, sub:0, equip:0, oh:0 }, pct:0, status:'pending' },
-      { id:'PH-06', name_en:'Phase 6 — Interior Finishes', name_es:'Fase 6 — Acabados Interiores',
-        budgets:{ mat:520000, labor:340000, sub:240000, equip:20000, oh:80000 },
-        actuals:{ mat:0, labor:0, sub:0, equip:0, oh:0 }, pct:0, status:'pending' },
-    ],
-    billings:[
-      { no:'AIA-001', date:'2025-05', amount:1200000, ret:120000, net:1080000, status:'paid' },
-      { no:'AIA-002', date:'2025-08', amount:1400000, ret:140000, net:1260000, status:'paid' },
-      { no:'AIA-003', date:'2025-11', amount:900000, ret:90000, net:810000, status:'outstanding' },
-    ],
-    cos:[
-      { no:'CO-001', date:'2025-07', desc_en:'Soil remediation unforeseen', desc_es:'Remediación suelo imprevista', amount:280000, approved:true },
-      { no:'CO-002', date:'2025-10', desc_en:'Structural rebar upgrade', desc_es:'Mejora en acero estructural', amount:140000, approved:true },
-    ],
-    subledger:[
-      { date:'2025-12-08', ref:'SL-4830', acct:'5-01-01-001', desc_en:'Rebar delivery T15 PRJ-002/PH-03', desc_es:'Entrega varilla PRJ-002/F3', cat:'mat', amount:84200 },
-      { date:'2025-12-09', ref:'SL-4831', acct:'5-01-02-001', desc_en:'Concrete crew labor', desc_es:'Nómina cuadrilla concreto', cat:'labor', amount:32800 },
-      { date:'2025-12-11', ref:'SL-4832', acct:'5-01-03-002', desc_en:'Rodriguez Concrete W-9 BLOCKED', desc_es:'Rodriguez Concrete W-9 BLOQUEADO', cat:'sub', amount:68400, blocked:true },
-    ]
-  },
-  {
-    id:'PRJ-003', name:'Metro Line Extension', pm:'Tom Walsh',
-    owner:'City Transit Authority', startDate:'2024-06-01', endDate:'2026-04-30',
-    contract:1950000, orig:1950000, retPct:10,
-    phases:[
-      { id:'PH-01', name_en:'Phase 1 — Civil & Earthworks', name_es:'Fase 1 — Civil y Movimiento de Tierra',
-        budgets:{ mat:280000, labor:180000, sub:120000, equip:80000, oh:40000 },
-        actuals:{ mat:284000, labor:186000, sub:118000, equip:84000, oh:42000 }, pct:100, status:'complete' },
-      { id:'PH-02', name_en:'Phase 2 — Track & Infrastructure', name_es:'Fase 2 — Vía e Infraestructura',
-        budgets:{ mat:380000, labor:220000, sub:240000, equip:120000, oh:60000 },
-        actuals:{ mat:386000, labor:228000, sub:248000, equip:126000, oh:64000 }, pct:100, status:'complete' },
-      { id:'PH-03', name_en:'Phase 3 — Electrical & Signaling', name_es:'Fase 3 — Eléctrico y Señalización',
-        budgets:{ mat:120000, labor:80000, sub:160000, equip:40000, oh:30000 },
-        actuals:{ mat:126000, labor:84000, sub:162000, equip:42000, oh:32000 }, pct:95, status:'active' },
-    ],
-    billings:[
-      { no:'AIA-001', date:'2024-10', amount:600000, ret:60000, net:540000, status:'paid' },
-      { no:'AIA-002', date:'2025-02', amount:580000, ret:58000, net:522000, status:'paid' },
-      { no:'AIA-003', date:'2025-07', amount:500000, ret:50000, net:450000, status:'paid' },
-      { no:'AIA-004', date:'2025-12', amount:270000, ret:27000, net:243000, status:'outstanding' },
-    ],
-    cos:[],
-    subledger:[
-      { date:'2025-12-16', ref:'SL-4840', acct:'5-01-01-001', desc_en:'Signal cable materials', desc_es:'Materiales cable señalización', cat:'mat', amount:14200 },
-      { date:'2025-12-17', ref:'SL-4841', acct:'5-01-02-001', desc_en:'Electrician crew', desc_es:'Cuadrilla electricistas', cat:'labor', amount:9800 },
-    ]
-  }
-];
 
 // Active project view state
 let activeProjectId = 'PRJ-001';
@@ -5778,36 +5613,51 @@ function rerenderGL(){
 
 
   } else if(glView === 'trial'){
-    // Trial balance computed from COA_DATA balances
-    const trialData = [
-      {acct:'1-01-01',name:isE?'Efectivo y Equivalentes':'Cash & Equivalents',  dr:629800,   cr:0},
-      {acct:'1-01-02',name:isE?'Cuentas / Retenciones x Cobrar':'AR & Retainage Rec.',dr:1309318, cr:0},
-      {acct:'1-01-03',name:isE?'WIP / Inventario / Prepagados':'WIP / Inventory / Prepaid',  dr:282020,   cr:0},
-      {acct:'1-02-01',name:isE?'PP&E Neto':'Net PP&E',                          dr:886400,   cr:0},
-      {acct:'1-02-04',name:isE?'Intangibles / Goodwill':'Intangibles / Goodwill',dr:362000,   cr:0},
-      {acct:'1-02-05',name:isE?'Activos de Contrato LP':'Contract Assets LT',   dr:3120000,  cr:0},
-      {acct:'2-01-01',name:isE?'Cuentas por Pagar':'Accounts Payable',          dr:0,        cr:602600},
-      {acct:'2-01-02',name:isE?'Pasivos de Contrato / Retenciones':'Contract Liabilities / Retainage',dr:0,cr:305250},
-      {acct:'2-01-03',name:isE?'Gastos Acumulados':'Accrued Liabilities',       dr:0,        cr:159630},
-      {acct:'2-02-01',name:isE?'Deuda LP / ISR Diferido':'LT Debt / DTL',       dr:0,        cr:1248700},
-      {acct:'3-01-02',name:isE?'Capital / Utilidades Retenidas':'Capital / Retained Earnings',dr:0,cr:4100100},
-      {acct:'4-01-01',name:isE?'Ingresos por Contratos':'Contract Revenue',     dr:0,        cr:1847320},
-      {acct:'5-01-00',name:isE?'Costos Directos (COGS)':'Direct Costs (COGS)',  dr:1307720,  cr:0},
-      {acct:'6-01-00',name:isE?'Gastos Operativos':'Operating Expenses',        dr:354300,   cr:0},
-      {acct:'7-01-01',name:isE?'Impuesto sobre la Renta':'Income Tax',          dr:84610,    cr:0},
-    ];
+    // Compute trial balance from live CDB journal entries
+    const jnl = (DB.journal||[]);
+    // Aggregate by account code
+    const acctMap = {};
+    jnl.forEach(j=>{
+      if(!j.dr||!j.cr||!j.amt) return;
+      if(!acctMap[j.dr]) acctMap[j.dr]={dr:0,cr:0};
+      if(!acctMap[j.cr]) acctMap[j.cr]={dr:0,cr:0};
+      acctMap[j.dr].dr += j.amt;
+      acctMap[j.cr].cr += j.amt;
+    });
+    // Build rows: net each account (Dr-side or Cr-side)
+    const trialData = Object.entries(acctMap).map(([code,v])=>{
+      const net = v.dr - v.cr;
+      // Find label from COA
+      const coa = (typeof COA_DATA!=='undefined'?COA_DATA:[]).find(c=>c.code===code)||{};
+      const name = isE?(coa.name_es||code):(coa.name_en||code);
+      return {
+        acct: code,
+        name,
+        dr: net>0?net:0,
+        cr: net<0?Math.abs(net):0,
+      };
+    }).filter(r=>r.dr!==0||r.cr!==0)
+      .sort((a,b)=>a.acct.localeCompare(b.acct));
+
     const totDr = trialData.reduce((s,r)=>s+r.dr,0);
     const totCr = trialData.reduce((s,r)=>s+r.cr,0);
+    const isBalanced = Math.abs(totDr-totCr) < 1;
+    const asOf = new Date().toLocaleDateString(isE?'es-MX':'en-US',{year:'numeric',month:'long',day:'numeric'});
+
     el.innerHTML = `
     <div class="card">
       <div class="card-header">
-        <div><div class="card-title">${isE?'Balanza de Comprobación — Al 31 Mar 2026':'Trial Balance — As of March 31, 2026'}</div>
-        <div class="card-sub">${glStd==='ifrs'?'IFRS (NIIF)':glStd==='gaap'?'US GAAP':'Dual GAAP + IFRS'}</div></div>
-        <span class="badge ${Math.abs(totDr-totCr)<1?'b-ok':'b-no'}">${Math.abs(totDr-totCr)<1?(isE?'BALANCEADA':'BALANCED'):(isE?'DESBALANCEADA':'UNBALANCED')}</span>
+        <div>
+          <div class="card-title">${isE?'Balanza de Comprobación':'Trial Balance'} — ${S.client}</div>
+          <div class="card-sub">${isE?'Al':'As of'} ${asOf} · ${glStd==='ifrs'?'IFRS (NIIF)':glStd==='gaap'?'US GAAP':'Dual GAAP + IFRS'} · ${trialData.length} ${isE?'cuentas':'accounts'}</div>
+        </div>
+        <span class="badge ${isBalanced?'b-ok':'b-no'}">${isBalanced?(isE?'✓ BALANCEADA':'✓ BALANCED'):(isE?'✗ DESBALANCEADA':'✗ UNBALANCED')}</span>
       </div>
+      ${trialData.length===0?`<div class="alert a-info">${isE?'No hay asientos de diario para este cliente. La balanza estará disponible una vez se registren transacciones.':'No journal entries for this client. The trial balance will be available once transactions are posted.'}</div>`:`
       <div style="overflow-x:auto"><table class="dt">
         <thead><tr>
-          <th>${isE?'Código':'Code'}</th><th>${isE?'Cuenta':'Account'}</th>
+          <th>${isE?'Código':'Code'}</th>
+          <th>${isE?'Cuenta':'Account'}</th>
           <th class="num">${isE?'Saldo Débito':'Debit Balance'}</th>
           <th class="num">${isE?'Saldo Crédito':'Credit Balance'}</th>
         </tr></thead>
@@ -5822,129 +5672,119 @@ function rerenderGL(){
         <tfoot>
           <tr style="background:var(--navy);color:#fff;font-weight:700">
             <td colspan="2">TOTAL</td>
-            <td class="num" style="font-family:var(--font-mono);color:var(--success-light)">${fmt(totDr)}</td>
+            <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(totDr)}</td>
             <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(totCr)}</td>
           </tr>
+          ${!isBalanced?`<tr style="background:var(--danger);color:#fff">
+            <td colspan="2">${isE?'DIFERENCIA':'DIFFERENCE'}</td>
+            <td class="num" colspan="2" style="font-family:var(--font-mono)">${fmt(Math.abs(totDr-totCr))}</td>
+          </tr>`:''}
         </tfoot>
-      </table></div>
+      </table></div>`}
     </div>`;
 
   } else if(glView === 'aged_ar'){
-    const arRows = [
-      {client:'Summit Properties LLC (Riverside)',inv:'AIA-005',due:'2026-02-28',cur:471600,d30:0,d60:0,d90:0,d91:0,ret:52400},
-      {client:'Oceanic Dev. Group (Harbor)',inv:'AIA-003',due:'2026-01-15',cur:0,d30:0,d60:810000,d90:0,d91:0,ret:90000},
-      {client:'City Transit Auth. (Metro)',inv:'AIA-004',due:'2026-03-01',cur:243000,d30:0,d60:0,d90:0,d91:0,ret:27000},
-    ];
-    const cols = [isE?'Corriente (0-30d)':'Current (0-30d)',isE?'31-60 días':'31-60 days',isE?'61-90 días':'61-90 days',isE?'91+ días':'91+ days',isE?'Retención LP':'Retainage LT'];
+    // Live AR aging from CDB.invoices
+    const cons=isCons();
+    const arRows=(DB.invoices||[]).filter(i=>i.status!=='draft').map(i=>{
+      const bal=i.balance??i.net??0;
+      const age=(new Date()-new Date(i.due))/864e5;
+      return {
+        client:i.client||'—', inv:i.id, due:i.due||'—',
+        cur:bal>0&&age<=0?bal:0, d30:bal>0&&age>0&&age<=30?bal:0,
+        d60:bal>0&&age>30&&age<=60?bal:0, d90:bal>0&&age>60&&age<=90?bal:0,
+        d91:bal>0&&age>90?bal:0,
+        ret:cons?(i.ret||0):0, blocked:false,
+      };
+    });
+    const cols=[isE?'Corriente (0-30d)':'Current (0-30d)',isE?'31-60 días':'31-60 days',isE?'61-90 días':'61-90 days',isE?'91+ días':'91+ days',cons?(isE?'Retención LP':'Retainage LT'):''];
+    const asOf=new Date().toLocaleDateString(isE?'es-MX':'en-US',{year:'numeric',month:'short',day:'numeric'});
     el.innerHTML = `
     <div class="card">
       <div class="card-header">
-        <div><div class="card-title">${isE?'Reporte de Antigüedad de AR — Cuentas por Cobrar':'AR Aging Report — Accounts Receivable'}</div>
-        <div class="card-sub">${isE?'Al 31-Mar-2026. La columna "Retención LP" NO afecta el flujo de caja corriente.':'As of 31-Mar-2026. "Retainage LT" column does NOT affect current cash flow.'}</div></div>
-        <span class="badge b-info">${isE?'Balance total:':'Total balance:'} ${fmt(arRows.reduce((s,r)=>s+r.cur+r.d30+r.d60+r.d90+r.d91+r.ret,0))}</span>
+        <div><div class="card-title">${isE?'Antigüedad de Cuentas por Cobrar':'AR Aging Report'} — ${S.client}</div>
+        <div class="card-sub">${isE?'Al':'As of'} ${asOf}${cons?' · '+isE?'Retención LP no es corriente':'Retainage LT is non-current':''}</div></div>
+        <span class="badge b-info">${fmt(arRows.reduce((s,r)=>s+r.cur+r.d30+r.d60+r.d90+r.d91+(cons?r.ret:0),0))}</span>
       </div>
+      ${arRows.length===0?`<div class="alert a-info">${isE?'No hay facturas AR para este cliente.':'No AR invoices for this client.'}</div>`:`
       <div style="overflow-x:auto"><table class="dt">
         <thead><tr>
-          <th>${isE?'Cliente / Proyecto':'Client / Project'}</th>
-          <th>${isE?'Factura':'Invoice'}</th>
-          <th>${isE?'Vencimiento':'Due Date'}</th>
-          ${cols.map(c=>`<th class="num">${c}</th>`).join('')}
-          <th class="num">${isE?'Total':'Total'}</th>
+          <th>${isE?'Cliente':'Client'}</th><th>${isE?'Factura':'Invoice'}</th><th>${isE?'Vencimiento':'Due'}</th>
+          ${cols.filter(Boolean).map(c=>`<th class="num">${c}</th>`).join('')}
+          <th class="num">Total</th>
         </tr></thead>
         <tbody>
         ${arRows.map(r=>{
-          const total = r.cur+r.d30+r.d60+r.d90+r.d91+r.ret;
+          const total=r.cur+r.d30+r.d60+r.d90+r.d91+(cons?r.ret:0);
           return `<tr>
-            <td style="font-weight:500;font-size:12.5px">${r.client}</td>
-            <td><span class="badge b-neu" style="font-size:10px;font-family:var(--font-mono)">${r.inv}</span></td>
+            <td style="font-weight:500">${r.client}</td>
+            <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${r.inv}</code></td>
             <td class="mono" style="font-size:11px">${r.due}</td>
             <td class="num mono green bold">${r.cur?fmt(r.cur):'—'}</td>
             <td class="num mono ${r.d30?'warning':''}">${r.d30?fmt(r.d30):'—'}</td>
             <td class="num mono ${r.d60?'danger':''} bold">${r.d60?fmt(r.d60):'—'}</td>
             <td class="num mono ${r.d90?'danger':''}">${r.d90?fmt(r.d90):'—'}</td>
             <td class="num mono ${r.d91?'danger':''}">${r.d91?fmt(r.d91):'—'}</td>
-            <td class="num mono gold bold" style="border-left:2px solid var(--warning-light)">${r.ret?fmt(r.ret):'—'}</td>
+            ${cons?`<td class="num mono gold bold">${r.ret?fmt(r.ret):'—'}</td>`:''}
             <td class="num mono bold">${fmt(total)}</td>
           </tr>`;
         }).join('')}
         </tbody>
-        <tfoot>
-          <tr style="background:var(--navy);color:#fff;font-weight:700">
-            <td colspan="3">TOTAL</td>
-            ${['cur','d30','d60','d90','d91','ret'].map(f=>`<td class="num" style="font-family:var(--font-mono);color:${f==='ret'?'var(--gold-light)':f==='d60'||f==='d90'||f==='d91'?'#f0a8a8':'#a8f0c6'}">${fmt(arRows.reduce((s,r)=>s+r[f],0))}</td>`).join('')}
-            <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(arRows.reduce((s,r)=>s+r.cur+r.d30+r.d60+r.d90+r.d91+r.ret,0))}</td>
-          </tr>
-        </tfoot>
-      </table></div>
-      <div class="alert a-info mt2" style="font-size:11px">
-        ⚑ ${isE?'El total AR incluye $169,400 de retenciones por cobrar clasificadas como activo NO corriente (1-01-02-002). El flujo de caja operativo solo incluye $714,600 como cobrable inmediato.':'Total AR includes $169,400 retainage receivable classified as NON-current asset (1-01-02-002). Operating cash flow only includes $714,600 as immediately collectible.'}
-      </div>
+        <tfoot><tr style="background:var(--navy);color:#fff;font-weight:700">
+          <td colspan="3">TOTAL</td>
+          ${['cur','d30','d60','d90','d91'].map(f=>`<td class="num" style="font-family:var(--font-mono);color:${f==='cur'?'#a8f0c6':f==='d60'||f==='d90'||f==='d91'?'#f0a8a8':'var(--warning-light)'}">${fmt(arRows.reduce((s,r)=>s+r[f],0))}</td>`).join('')}
+          ${cons?`<td class="num" style="font-family:var(--font-mono);color:var(--gold-light)">${fmt(arRows.reduce((s,r)=>s+(r.ret||0),0))}</td>`:''}
+          <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(arRows.reduce((s,r)=>s+r.cur+r.d30+r.d60+r.d90+r.d91+(cons?r.ret:0),0))}</td>
+        </tr></tfoot>
+      </table></div>`}
     </div>`;
 
   } else if(glView === 'aged_ap'){
-    const apRows = (DB.journal||[]).filter(j=>j.apEntry===true).map(j=>{
+    const apRows=(DB.journal||[]).filter(j=>j.apEntry===true).map(j=>{
       const bal=Math.max(0,(j.amt||0)-(j.paid||0));
       const age=j.due?(new Date()-new Date(j.due))/864e5:0;
-      return {
-        vendor:j.vendor||'—', inv:j.id, proj:j.proj||'ALL', due:j.due||'—',
-        cur: bal>0&&age<=0?bal:0,
-        d30: bal>0&&age>0&&age<=30?bal:0,
-        d60: bal>0&&age>30&&age<=60?bal:0,
-        d90: bal>0&&age>60&&age<=90?bal:0,
-        d91: bal>0&&age>90?bal:0,
-        ret:0, blocked:false,
-      };
+      return {vendor:j.vendor||'—',inv:j.id,proj:j.proj||'ALL',due:j.due||'—',
+        cur:bal>0&&age<=0?bal:0,d30:bal>0&&age>0&&age<=30?bal:0,
+        d60:bal>0&&age>30&&age<=60?bal:0,d90:bal>0&&age>60&&age<=90?bal:0,
+        d91:bal>0&&age>90?bal:0};
     });
-    el.innerHTML = `
+    const asOf=new Date().toLocaleDateString(isE?'es-MX':'en-US',{year:'numeric',month:'short',day:'numeric'});
+    el.innerHTML=`
     <div class="card">
       <div class="card-header">
-        <div><div class="card-title">${isE?'Reporte de Antigüedad de AP — Cuentas por Pagar':'AP Aging Report — Accounts Payable'}</div>
-        <div class="card-sub">${isE?'La columna Retención LP muestra obligaciones NO corrientes (pago al cierre de obra).':'Retainage LT column shows NON-current obligations (due at project closeout).'}</div></div>
-        <span class="badge b-no">2 ${isE?'Pagos Bloqueados':'Payments Blocked'}</span>
+        <div><div class="card-title">${isE?'Antigüedad de AP':'AP Aging'} — ${S.client}</div>
+        <div class="card-sub">${isE?'Al':'As of'} ${asOf}</div></div>
+        <span class="badge b-no">${fmt(apRows.reduce((s,r)=>s+r.cur+r.d30+r.d60+r.d90+r.d91,0))}</span>
       </div>
+      ${apRows.length===0?`<div class="alert a-info">${isE?'No hay entradas AP para este cliente.':'No AP entries for this client.'}</div>`:`
       <div style="overflow-x:auto"><table class="dt">
         <thead><tr>
-          <th>${isE?'Proveedor / Sub':'Vendor / Sub'}</th>
-          <th>${isE?'Factura':'Invoice'}</th>
-          <th>${isE?'Proyecto':'Project'}</th>
-          <th>${isE?'Vencimiento':'Due'}</th>
-          <th class="num">${isE?'Corriente':'Current'}</th>
-          <th class="num">1-30 ${isE?'días':'days'}</th>
-          <th class="num">31-60 ${isE?'días':'days'}</th>
-          <th class="num">91+ ${isE?'días':'days'}</th>
-          <th class="num" style="border-left:2px solid var(--warning-light)">${isE?'Retención LP':'Retainage LT'}</th>
-          <th>${isE?'Estado':'Status'}</th>
+          <th>${isE?'Proveedor':'Vendor'}</th><th>${isE?'Factura':'Invoice'}</th><th>${isE?'Vence':'Due'}</th>
+          <th class="num">${isE?'Corriente':'Current'}</th><th class="num">1-30d</th>
+          <th class="num">31-60d</th><th class="num">61-90d</th><th class="num">91+d</th><th class="num">Total</th>
         </tr></thead>
         <tbody>
-        ${apRows.map(r=>`<tr ${r.blocked?'style="background:var(--danger-light)"':''}>
-          <td style="font-weight:500">${r.vendor}</td>
-          <td><code style="font-size:10px;background:rgba(11,31,58,.06);padding:1px 5px;border-radius:3px">${r.inv}</code></td>
-          <td><span class="badge b-neu" style="font-size:9px">${r.proj}</span></td>
-          <td class="mono" style="font-size:10px">${r.due}</td>
-          <td class="num mono ${r.cur&&!r.blocked?'green':r.cur&&r.blocked?'red':''} bold">${r.cur?fmt(r.cur):'—'}</td>
-          <td class="num mono ${r.d30?'warning':''}">${r.d30?fmt(r.d30):'—'}</td>
-          <td class="num mono ${r.d60?'danger':''} bold">${r.d60?fmt(r.d60):'—'}</td>
-          <td class="num mono ${r.d91?'danger':''}">${r.d91?fmt(r.d91):'—'}</td>
-          <td class="num mono gold bold" style="border-left:2px solid var(--warning-light)">${r.ret?fmt(r.ret):'—'}</td>
-          <td>${r.blocked?'<span class="badge b-no" style="font-size:9px">🚫 BLOCKED</span>':'<span class="badge b-ok" style="font-size:9px">OK</span>'}</td>
-        </tr>`).join('')}
+        ${apRows.map(r=>{
+          const t=r.cur+r.d30+r.d60+r.d90+r.d91;
+          return `<tr>
+            <td style="font-weight:500">${r.vendor}</td>
+            <td><code style="font-size:10px">${r.inv}</code></td>
+            <td class="mono" style="font-size:11px">${r.due}</td>
+            <td class="num mono green bold">${r.cur?fmt(r.cur):'—'}</td>
+            <td class="num mono ${r.d30?'warning':''}">${r.d30?fmt(r.d30):'—'}</td>
+            <td class="num mono ${r.d60?'danger':''}">${r.d60?fmt(r.d60):'—'}</td>
+            <td class="num mono ${r.d90?'danger':''}">${r.d90?fmt(r.d90):'—'}</td>
+            <td class="num mono ${r.d91?'danger':''}">${r.d91?fmt(r.d91):'—'}</td>
+            <td class="num mono bold">${fmt(t)}</td>
+          </tr>`;
+        }).join('')}
         </tbody>
-        <tfoot>
-          <tr style="background:var(--navy);color:#fff;font-weight:700">
-            <td colspan="4">TOTAL</td>
-            <td class="num" style="font-family:var(--font-mono);color:#a8f0c6">${fmt(apRows.reduce((s,r)=>s+r.cur,0))}</td>
-            <td class="num" style="font-family:var(--font-mono);color:var(--warning-light)">${fmt(apRows.reduce((s,r)=>s+r.d30,0))}</td>
-            <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(apRows.reduce((s,r)=>s+r.d60,0))}</td>
-            <td class="num" style="font-family:var(--font-mono);color:#f0a8a8">${fmt(apRows.reduce((s,r)=>s+r.d91,0))}</td>
-            <td class="num" style="font-family:var(--font-mono);color:var(--gold-light);border-left:2px solid rgba(255,255,255,.1)">${fmt(apRows.reduce((s,r)=>s+r.ret,0))}</td>
-            <td></td>
-          </tr>
-        </tfoot>
-      </table></div>
-      <div class="g2 mt2">
-        <div class="alert a-danger" style="font-size:11px">🚫 ${isE?'$353,700 bloqueados (Rodriguez Concrete + SteelPro). No liberables hasta W-9 y COI en regla. Guardián 21 alertó al socio.':'$353,700 blocked (Rodriguez Concrete + SteelPro). Not releasable until W-9 and COI are current. Guardián 21 alerted Partner.'}</div>
-        <div class="alert a-warn" style="font-size:11px">⚑ ${isE?'$56,650 en retenciones por pagar LP: NO aparecen como obligación corriente en el flujo de caja. Exigibles al cierre de cada obra.':'$56,650 in LT retainage payable: do NOT appear as current obligation in cash flow. Due at each project closeout.'}</div>
-      </div>
+        <tfoot><tr style="background:var(--navy);color:#fff;font-weight:700">
+          <td colspan="3">TOTAL</td>
+          ${['cur','d30','d60','d90','d91'].map(f=>`<td class="num" style="font-family:var(--font-mono);color:${f==='cur'?'#a8f0c6':f==='d30'?'var(--warning-light)':'#f0a8a8'}">${fmt(apRows.reduce((s,r)=>s+r[f],0))}</td>`).join('')}
+          <td class="num" style="font-family:var(--font-mono);color:var(--gold)">${fmt(apRows.reduce((s,r)=>s+r.cur+r.d30+r.d60+r.d90+r.d91,0))}</td>
+        </tr></tfoot>
+      </table></div>`}
     </div>`;
   }
 }
@@ -6497,7 +6337,7 @@ ${totOverdue>0?`<div class="alert a-danger">⚠ ${isE?`${fmt(totOverdue)} en fac
       <td class="mono" style="font-size:11px;color:${inv.status==='overdue'?'var(--danger)':'var(--stone)'}">${inv.due}</td>
       <td><span class="badge ${statusBadge(inv.status)}" style="font-size:10px">${statusLabel(inv.status)}</span></td>
       <td style="display:flex;gap:4px">
-        <button class="btn btn-sm btn-ghost" onclick="openModal(modalEditInvoice('${inv.id}'))" title="${isE?'Editar':'Edit'}">✏️</button>
+        <button class="btn btn-sm btn-ghost" onclick="openEditInvoice('${inv.id}')" title="${isE?'Editar':'Edit'}">✏️</button>
         <button class="btn btn-sm btn-ghost" onclick="deleteInvoice('${inv.id}')" title="${isE?'Eliminar':'Delete'}">🗑</button>
       </td>
     </tr>`).join('')}
@@ -6731,7 +6571,7 @@ ${allAR.length===0?`<div class="alert a-info" style="margin-top:20px;text-align:
       <td>${paid?`<span class="badge b-ok" style="font-size:10px">✓ ${isE?'Pagada':'Paid'}</span>`:ov?`<span class="badge b-no" style="font-size:10px">⚠ ${isE?'Vencida':'Overdue'}</span>`:`<span class="badge b-info" style="font-size:10px">${isE?'Pendiente':'Pending'}</span>`}</td>
       <td style="display:flex;gap:4px">
         ${!paid?`<button class="btn btn-sm btn-ghost" onclick="openModal(modalRegisterPayment('${r.id}','${r.client}',${r.balance}))" title="${isE?'Cobrar':'Collect'}">💰</button>`:''}
-        <button class="btn btn-sm btn-ghost" onclick="openModal(modalEditInvoice('${r.id}'))" title="${isE?'Editar':'Edit'}">✏️</button>
+        <button class="btn btn-sm btn-ghost" onclick="openEditInvoice('${r.id}')" title="${isE?'Editar':'Edit'}">✏️</button>
         <button class="btn btn-sm btn-ghost" onclick="deleteInvoice('${r.id}')" title="${isE?'Eliminar':'Delete'}" style="color:var(--danger)">🗑</button>
       </td>
     </tr>`;
@@ -8869,17 +8709,13 @@ function saveNewUser() {
     displayName: `${first} ${last}`,
   };
 
-  // ── Direct localStorage save (no async) ──
+  // ── Save global registry only (users/clients); per-client data saved via CDB ──
   try {
     localStorage.setItem('21stones_db', JSON.stringify({
-      clients:  DB.clients,
-      users:    DB.users,
-      subs:     DB.subs,
-      cos:      DB.cos,
-      assets:   DB.assets,
-      journal:  DB.journal,
-      lang:     S.lang,
-      projects: PROJECTS,
+      clients: DB.clients,
+      users:   DB.users,
+      lang:    S.lang,
+      sectors: SECTORS,
     }));
     localStorage.setItem(CREDS_KEY, JSON.stringify(CREDS));
   } catch(e) {
