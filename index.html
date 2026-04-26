@@ -464,10 +464,15 @@ By signing, I affirm: (1) Strict confidentiality of all client financial data ac
         <div class="sb-client-card">
           <div class="scc-label" id="sb-client-lbl">Empresa Activa</div>
           <select class="scc-sel" id="client-sel" onchange="switchClient()">
-            <option>Skyline Builders Inc.</option>
-            <option>Oceanic Dev. Group</option>
-            <option>Rivera & Associates</option>
-            <option>NovaTech Solutions</option>
+            <option value="CLT-001">Skyline Builders Inc.</option>
+            <option value="CLT-002">Oceanic Dev. Group</option>
+            <option value="CLT-003">Rivera &amp; Associates</option>
+            <option value="CLT-004">NovaTech Solutions</option>
+            <option value="CLT-005">AurumPeak Mining Corp.</option>
+            <option value="CLT-006">FleetRun Delivery Co.</option>
+            <option value="CLT-007">SunShine Mining Inc.</option>
+            <option value="CLT-008">Delivery Fast &amp; Eficiente Corp.</option>
+            <option value="CLT-009">Horizon Construction LLC</option>
           </select>
         </div>
       </div>
@@ -977,13 +982,15 @@ DB = new Proxy(_DB_GLOBAL, {
 
 // ── STORAGE ENGINE ──────────────────────────────────────────
 // Uses window.storage (Claude artifacts) with localStorage fallback
-const STORE_KEY = '21stones_db';
+const STORE_KEY    = '21stones_db';
+const DB_VERSION   = 'v9.0';  // increment when companies are added — forces localStorage reset
 
 function dbSaveSync() {
   // 1. Save global registry (clients + users)
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       clients: DB.clients, users: DB.users, lang: S.lang, sectors: SECTORS,
+      dbVersion: DB_VERSION,
     }));
   } catch(e) {}
   // 2. Save active client's CDB (per-client isolated storage)
@@ -1017,8 +1024,33 @@ async function dbLoad() {
   }
   if (!raw) return; // first run — use defaults
   try {
+    // VERSION CHECK: if stored version doesn't match current, wipe stale data
+    const versionCheck = JSON.parse(raw);
+    if (versionCheck.dbVersion !== DB_VERSION) {
+      // New companies or schema changes — clear stale localStorage
+      try { localStorage.removeItem(STORE_KEY); } catch(e){}
+      // Also clear all per-client CDBs to avoid stale data
+      try {
+        Object.keys(localStorage).filter(k=>k.startsWith('21stones_cdb_'))
+          .forEach(k=>localStorage.removeItem(k));
+      } catch(e){}
+      console.log('[21Stones] DB version updated to '+DB_VERSION+' — cache cleared');
+      return; // use fresh defaults
+    }
+  } catch(e){}
+  try {
     const saved = JSON.parse(raw);
-    if (saved.clients?.length) DB.clients = saved.clients;
+    if (saved.clients?.length) {
+      // NEVER replace system clients with stale saved data.
+      // Keep all 9 hardcoded system clients, only add user-created extras.
+      const systemIds = DB.clients.map(c=>c.id);
+      const userCreated = saved.clients.filter(c=>!systemIds.includes(c.id));
+      if (userCreated.length > 0) DB.clients = [...DB.clients, ...userCreated];
+      // If stale data had fewer companies, clear it so it gets re-saved correctly
+      if (saved.clients.length < DB.clients.length) {
+        try { localStorage.removeItem(STORE_KEY); } catch(e){}
+      }
+    }
     if (saved.users?.length)   DB.users   = saved.users;
     // Only restore global-level data (client registry + users)
     // Per-client data is loaded separately via loadClientDB()
@@ -1798,7 +1830,7 @@ function saveNewClient() {
 
   // ── Save the GLOBAL client registry ──
   try {
-    localStorage.setItem('21stones_db', JSON.stringify({clients:DB.clients,users:DB.users,lang:S.lang,sectors:SECTORS}));
+    localStorage.setItem('21stones_db', JSON.stringify({clients:DB.clients,users:DB.users,lang:S.lang,sectors:SECTORS,dbVersion:DB_VERSION}));
   } catch(e) { console.error('save failed:', e); }
 
   // ── Initialize CDB for this new client ──
@@ -1845,7 +1877,10 @@ function rebuildClientSelector() {
 // ── NEXT ID HELPERS ──
 function nextId(prefix, arr) {
   const nums = arr.map(x => parseInt((x.id||'').replace(prefix+'-',''))||0);
-  return `${prefix}-${String(Math.max(0,...nums)+1).padStart(3,'0')}`;
+  const next = Math.max(0,...nums) + 1;
+  // Dynamic padding: 3 digits up to 999, 4 digits up to 9999, etc.
+  const pad  = Math.max(3, String(next).length);
+  return `${prefix}-${String(next).padStart(pad,'0')}`;
 }
 function nextPrjId() {
   // Find highest PRJ-XXX in PROJECTS
@@ -2456,17 +2491,33 @@ function nav(mod){
 }
 function switchClient(){
   const sel=document.getElementById('client-sel');
-  const newName=sel?.value;
-  if(!newName||newName===S.client) return;
-  // Save current client's CDB
+  const selVal=sel?.value; // now contains CLT-00X id
+  if(!selVal) return;
+  const newC=DB.clients.find(c=>c.id===selVal||c.name===selVal);
+  if(!newC||newC.name===S.client) return;
+  // Save current client's CDB before switching
   const oldC=DB.clients.find(c=>c.name===S.client);
   if(oldC) saveClientDB(oldC.id);
-  // Switch
-  S.client=newName;
-  const newC=DB.clients.find(c=>c.name===newName);
-  if(newC){ S.clientId=newC.id; loadClientDB(newC.id); }
-  log(S.user?.toUpperCase()||'U','Client switch: '+S.client,'low');
-  S.mod='dashboard'; renderMod('dashboard');
+  // Switch to new company
+  S.client=newC.name;
+  const newName=newC.name; // keep for compatibility
+  if(newC){
+    S.clientId=newC.id;
+    loadClientDB(newC.id);
+    // Build COA if missing
+    if(!DB.coa||DB.coa.length===0){
+      const coaType=newC.coaType||getSectorCOAType(newC.sector||'');
+      DB.coa=buildClientCOA(coaType);
+    }
+  }
+  // Update sidebar visibility (construction / mining / delivery sections)
+  updateConstructionSidebar();
+  log(S.user?.toUpperCase()||'U','Company switch → '+S.client,'low');
+  // Always go to dashboard on company switch
+  S.mod='dashboard';
+  renderMod('dashboard');
+  // Show confirmation banner
+  gMsg('✓ '+(es()?'Empresa activa':'Active company')+': '+S.client);
 }
 const CONSTRUCTION_SECTORS = [
   'Construction', 'Contracting', 'Real Estate Development',
@@ -8704,11 +8755,216 @@ ${highCount>0?`
 // ══════════════════════════════════════════════════════
 // MODULE: CLIENTS — Client management hub
 // ══════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════════════
+// CLIENT LIFECYCLE MANAGEMENT
+// archive → keeps data in separate file
+// delete  → removes demo/test clients permanently
+// restore → brings archived client back
+// ══════════════════════════════════════════════════════════════════
+
+const ARCHIVE_KEY = '21stones_archived_clients';
+
+function getArchivedClients() {
+  try {
+    const raw = localStorage.getItem(ARCHIVE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch(e) { return []; }
+}
+
+function saveArchivedClients(list) {
+  try { localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list)); } catch(e){}
+}
+
+// ── ARCHIVE (former client — keeps all data) ──────────────────────
+function archiveClient(clientId) {
+  const isE = es();
+  const client = DB.clients.find(c => c.id === clientId);
+  if (!client) return;
+
+  const isSystem = ['CLT-001','CLT-002','CLT-003','CLT-004','CLT-005',
+                    'CLT-006','CLT-007','CLT-008','CLT-009'].includes(clientId);
+  const confirmMsg = isE
+    ? `¿Archivar "${client.name}"?\n\nLa empresa dejará de aparecer como activa pero TODA SU INFORMACIÓN se conservará en el archivo de clientes anteriores. Puede restaurarla en cualquier momento.`
+    : `Archive "${client.name}"?\n\nThe company will no longer appear as active but ALL DATA will be preserved in the former clients archive. You can restore it at any time.`;
+
+  if (!confirm(confirmMsg)) return;
+
+  // Save current CDB snapshot into archive
+  const cdbKey  = '21stones_cdb_' + clientId;
+  const cdbData = localStorage.getItem(cdbKey) || '{}';
+
+  const archived = getArchivedClients();
+  archived.push({
+    ...client,
+    status:       'archived',
+    archivedDate: new Date().toISOString().slice(0,10),
+    archivedBy:   S.user,
+    cdbSnapshot:  cdbData,
+  });
+  saveArchivedClients(archived);
+
+  // Remove from active list
+  DB.clients = DB.clients.filter(c => c.id !== clientId);
+  dbSaveSync();
+
+  // If this was the active client, switch to first available
+  if (S.client === client.name) {
+    const first = DB.clients.find(c => c.status === 'active');
+    if (first) {
+      S.client = first.name;
+      loadClientDB(first.id);
+    }
+  }
+
+  rebuildClientSelector();
+  updateConstructionSidebar();
+  renderMod('clients');
+  gMsg('📦 ' + (isE ? `"${client.name}" archivada correctamente` : `"${client.name}" archived successfully`));
+}
+
+// ── DELETE (demo/test clients — permanent) ────────────────────────
+function deleteClientPermanent(clientId) {
+  const isE  = es();
+  const client = DB.clients.find(c => c.id === clientId);
+  if (!client) return;
+
+  const isDemoClient = client.notes?.toLowerCase().includes('demo') ||
+                       client.notes?.toLowerCase().includes('prueba') ||
+                       client.notes?.toLowerCase().includes('test') ||
+                       client.notes?.toLowerCase().includes('example') ||
+                       client.created >= '2026-01-01'; // created during test sessions
+
+  const warningMsg = isE
+    ? `⚠️ ELIMINAR PERMANENTEMENTE "${client.name}"?\n\nEsta acción NO se puede deshacer. Se eliminarán:\n• Todos los asientos de diario\n• Todas las facturas y estados financieros\n• Todos los proyectos y activos\n• El plan de cuentas\n• Todos los datos de la empresa\n\nEscriba "ELIMINAR" para confirmar:`
+    : `⚠️ PERMANENTLY DELETE "${client.name}"?\n\nThis action CANNOT be undone. This will delete:\n• All journal entries\n• All invoices and financial statements\n• All projects and assets\n• Chart of accounts\n• All company data\n\nType "DELETE" to confirm:`;
+
+  const confirmWord = isE ? 'ELIMINAR' : 'DELETE';
+  const userInput = prompt(warningMsg);
+  if (userInput !== confirmWord) {
+    if (userInput !== null) gMsg(isE ? '❌ Eliminación cancelada' : '❌ Deletion cancelled');
+    return;
+  }
+
+  // Remove CDB from localStorage
+  try { localStorage.removeItem('21stones_cdb_' + clientId); } catch(e){}
+
+  // Remove from active list
+  DB.clients = DB.clients.filter(c => c.id !== clientId);
+  dbSaveSync();
+
+  // Switch active client if needed
+  if (S.client === client.name) {
+    const first = DB.clients.find(c => c.status === 'active');
+    if (first) {
+      S.client = first.name;
+      loadClientDB(first.id);
+    }
+  }
+
+  rebuildClientSelector();
+  updateConstructionSidebar();
+  renderMod('clients');
+  gMsg('🗑️ ' + (isE ? `"${client.name}" eliminada permanentemente` : `"${client.name}" permanently deleted`));
+}
+
+// ── RESTORE archived client ───────────────────────────────────────
+function restoreClient(clientId) {
+  const isE   = es();
+  const archived = getArchivedClients();
+  const client   = archived.find(c => c.id === clientId);
+  if (!client) return;
+
+  // Check for id conflict
+  if (DB.clients.find(c => c.id === clientId)) {
+    gMsg(isE ? '⚠ Ya existe un cliente activo con ese ID' : '⚠ An active client with that ID already exists');
+    return;
+  }
+
+  // Restore CDB snapshot
+  if (client.cdbSnapshot) {
+    try { localStorage.setItem('21stones_cdb_' + clientId, client.cdbSnapshot); } catch(e){}
+  }
+
+  // Add back to active clients
+  const { cdbSnapshot, archivedDate, archivedBy, ...activeClient } = client;
+  activeClient.status = 'active';
+  activeClient.restoredDate = new Date().toISOString().slice(0,10);
+  DB.clients.push(activeClient);
+  dbSaveSync();
+
+  // Remove from archive
+  const newArchive = archived.filter(c => c.id !== clientId);
+  saveArchivedClients(newArchive);
+
+  rebuildClientSelector();
+  renderMod('clients');
+  gMsg('✅ ' + (isE ? `"${client.name}" restaurada` : `"${client.name}" restored`));
+}
+
+// ── EXPORT archived clients as JSON file ──────────────────────────
+function exportArchivedClients() {
+  const isE     = es();
+  const archived = getArchivedClients();
+  if (!archived.length) {
+    gMsg(isE ? 'No hay clientes archivados' : 'No archived clients');
+    return;
+  }
+
+  const exportData = {
+    exported:      new Date().toISOString(),
+    exportedBy:    S.user,
+    system:        '21 Stones Accounting ERP',
+    totalArchived: archived.length,
+    clients:       archived.map(c => ({
+      ...c,
+      cdbSnapshot: undefined, // strip raw data from export summary
+    })),
+  };
+
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], {type:'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `21stones_archived_clients_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  gMsg(isE
+    ? `📁 ${archived.length} cliente(s) archivado(s) exportado(s)`
+    : `📁 ${archived.length} archived client(s) exported`);
+}
+
+// ── EXPORT full CDB of archived client ───────────────────────────
+function exportArchivedClientData(clientId) {
+  const isE    = es();
+  const client = getArchivedClients().find(c => c.id === clientId);
+  if (!client) return;
+
+  let cdbData = {};
+  try { cdbData = JSON.parse(client.cdbSnapshot || '{}'); } catch(e){}
+
+  const exportData = {
+    exported:   new Date().toISOString(),
+    client:     { id:client.id, name:client.name, sector:client.sector,
+                  archivedDate:client.archivedDate },
+    data:       cdbData,
+  };
+
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], {type:'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `21stones_${client.id}_${client.name.replace(/[^a-z0-9]/gi,'_')}_archive.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  gMsg(isE ? `📁 Datos de "${client.name}" exportados` : `📁 "${client.name}" data exported`);
+}
+
 function rClients(){
   const isE=es();
-  const active=DB.clients.filter(c=>c.status==='active');
+  const active   = DB.clients.filter(c=>c.status==='active');
+  const archived = getArchivedClients();
 
-  // ── Sector icon & color helpers ─────────────────────────────────
   const SECT_ICON={
     'Construction & Contracting':'🏗️','Real Estate Development':'🏢',
     'Professional Services':'💼','Technology':'💻','Healthcare':'🏥',
@@ -8728,195 +8984,203 @@ function rClients(){
   const sIcon  = s => SECT_ICON[s]  || '🏛️';
   const sColor = s => SECT_COLOR[s] || '#607D8B';
 
-  // ── Portfolio-level KPIs ─────────────────────────────────────────
-  const totBanks   = active.reduce((t,c)=>{ const d=DEMO_DATA[c.id]||{}; return t+(d.bankConns||[]).reduce((s,b)=>s+b.bal,0);},0);
-  const totAssets  = active.reduce((t,c)=>{ const d=DEMO_DATA[c.id]||{}; return t+(d.assets||[]).reduce((s,a)=>s+a.cost,0);},0);
-  const totJournal = active.reduce((t,c)=>{ const d=DEMO_DATA[c.id]||{}; return t+(d.journal||[]).length;},0);
-  const totProj    = active.reduce((t,c)=>{ const d=DEMO_DATA[c.id]||{}; return t+(d.projects||[]).length;},0);
-  const totInv     = active.reduce((t,c)=>{ const d=DEMO_DATA[c.id]||{}; return t+(d.invoices||[]).reduce((s,i)=>s+i.gross,0);},0);
-  const totSubs    = active.reduce((t,c)=>{ const d=DEMO_DATA[c.id]||{}; return t+(d.subs||[]).length;},0);
+  // ── Portfolio KPIs ───────────────────────────────────────────────
+  const totBanks  = active.reduce((t,c)=>{ const d=DEMO_DATA[c.id]||{}; return t+(d.bankConns||[]).reduce((s,b)=>s+b.bal,0);},0);
+  const totAssets = active.reduce((t,c)=>{ const d=DEMO_DATA[c.id]||{}; return t+(d.assets||[]).reduce((s,a)=>s+a.cost,0);},0);
+  const totJrn    = active.reduce((t,c)=>{ const d=DEMO_DATA[c.id]||{}; return t+(d.journal||[]).length;},0);
+  const totProj   = active.reduce((t,c)=>{ const d=DEMO_DATA[c.id]||{}; return t+(d.projects||[]).length;},0);
+  const totSubs   = active.reduce((t,c)=>{ const d=DEMO_DATA[c.id]||{}; return t+(d.subs||[]).length;},0);
 
   // ── Sector distribution ──────────────────────────────────────────
   const bySector={};
   active.forEach(c=>{ bySector[c.sector]=(bySector[c.sector]||0)+1; });
+
   const sectorBars = Object.entries(bySector).map(([s,n])=>`
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-      <div style="width:22px;text-align:center;font-size:14px">${sIcon(s)}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+      <span style="font-size:13px">${sIcon(s)}</span>
       <div style="flex:1">
-        <div style="font-size:11px;color:var(--navy);font-weight:500;margin-bottom:2px">${s}</div>
-        <div style="height:5px;border-radius:3px;background:${sColor(s)};width:${Math.round(n/active.length*100)}%"></div>
+        <div style="font-size:10.5px;color:var(--navy);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s}</div>
+        <div style="height:4px;border-radius:2px;background:${sColor(s)};width:${Math.round(n/active.length*100)}%;margin-top:2px"></div>
       </div>
-      <div style="font-size:13px;font-weight:700;color:${sColor(s)};min-width:20px;text-align:right">${n}</div>
+      <span style="font-size:12px;font-weight:700;color:${sColor(s)}">${n}</span>
     </div>`).join('');
 
-  // ── Client cards ─────────────────────────────────────────────────
-  const clientCards = active.map(c=>{
-    const dd      = DEMO_DATA[c.id]||{};
-    const projs   = dd.projects||[];
-    const banks   = dd.bankConns||[];
-    const assets  = dd.assets||[];
-    const jrn     = dd.journal||[];
-    const inv     = dd.invoices||[];
-    const sbs     = dd.subs||[];
-    const bankBal = banks.reduce((t,b)=>t+b.bal,0);
-    const color   = sColor(c.sector);
-    const icon    = sIcon(c.sector);
-    const stdBadge= c.std?.includes('Dual')?'b-gold':c.std?.includes('IFRS')?'b-ok':'b-info';
-    const stdLabel= c.std?.includes('Dual')?'DUAL':c.std?.includes('IFRS')?'IFRS':'GAAP';
+  // ── Client card builder ──────────────────────────────────────────
+  const buildCard = c => {
+    const dd     = DEMO_DATA[c.id]||{};
+    const projs  = dd.projects||[];
+    const banks  = dd.bankConns||[];
+    const assets = dd.assets||[];
+    const jrn    = dd.journal||[];
+    const inv    = dd.invoices||[];
+    const sbs    = dd.subs||[];
+    const bal    = banks.reduce((t,b)=>t+b.bal,0);
+    const color  = sColor(c.sector);
+    const icon   = sIcon(c.sector);
+    const stdB   = c.std?.includes('Dual')?'b-gold':c.std?.includes('IFRS')?'b-ok':'b-info';
+    const stdL   = c.std?.includes('Dual')?'DUAL':c.std?.includes('IFRS')?'IFRS':'GAAP';
 
-    // Project summary rows
-    const projRows = projs.slice(0,6).map(p=>{
+    const projRows = projs.slice(0,4).map(p=>{
       const pct = p.pctCostComplete||p.pct||0;
-      const statColor = p.status==='producing'?'var(--info)':p.status==='exploration'?'var(--warning)':p.status==='complete'?'var(--success)':'var(--gold)';
-      const contractAmt = p.contract||p.ytdRevenue||0;
-      return`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04);font-size:11.5px">
-        <div style="width:6px;height:6px;border-radius:50%;background:${statColor};flex-shrink:0"></div>
-        <div style="flex:1;color:var(--navy);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div>
-        ${contractAmt>0?`<div style="font-family:var(--font-mono);color:var(--stone);font-size:10.5px">${contractAmt>=1e9?'$'+(contractAmt/1e9).toFixed(1)+'B':contractAmt>=1e6?'$'+(contractAmt/1e6).toFixed(0)+'M':contractAmt>=1e3?'$'+(contractAmt/1e3).toFixed(0)+'K':''}</div>`:''}
-        ${pct>0?`<div style="font-size:10px;color:${statColor};font-weight:600">${typeof pct==='number'?pct.toFixed(0):pct}%</div>`:`<span class="badge b-neu" style="font-size:9px;padding:1px 5px">${p.status||'active'}</span>`}
+      const sc  = p.status==='producing'?'var(--info)':p.status==='exploration'?'var(--warning)':p.status==='complete'?'var(--success)':'var(--gold)';
+      const amt = p.contract||p.ytdRevenue||0;
+      return`<div style="display:flex;align-items:center;gap:7px;padding:4px 0;border-bottom:1px solid rgba(0,0,0,.03);font-size:11px">
+        <div style="width:5px;height:5px;border-radius:50%;background:${sc};flex-shrink:0"></div>
+        <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--navy);font-weight:500">${p.name}</div>
+        ${amt>0?`<span style="font-family:var(--font-mono);color:var(--stone);font-size:10px">${amt>=1e9?'$'+(amt/1e9).toFixed(1)+'B':amt>=1e6?'$'+(amt/1e6).toFixed(0)+'M':''}</span>`:''}
+        ${pct>0?`<span style="font-size:10px;color:${sc};font-weight:600">${typeof pct==='number'?pct.toFixed(0):pct}%</span>`:`<span class="badge b-neu" style="font-size:9px">${p.status||'active'}</span>`}
       </div>`;
     }).join('');
-    const moreProjs = projs.length>6?`<div style="font-size:10.5px;color:var(--stone);padding-top:4px">+${projs.length-6} more…</div>`:'';
+    const moreP = projs.length>4?`<div style="font-size:10px;color:var(--stone);padding-top:3px">+${projs.length-4} ${isE?'más':'more'}…</div>`:'';
 
-    // Notes block
-    const notesBlock = c.notes?`
-      <div style="font-size:11px;color:var(--stone);background:rgba(0,0,0,.02);border-left:3px solid ${color}40;padding:6px 10px;border-radius:0 4px 4px 0;margin-bottom:10px;line-height:1.6">${c.notes}</div>`:'';
+    // Sector-specific quick nav
+    const sectorMods=[
+      'bs','pl','cf','gl','ar','ap',
+      ...(c.sector.includes('Construction')?['jobcost','wip','subs']:[]),
+      ...(c.sector.includes('Mining')?['mineops','reserves','aro']:[]),
+      ...(c.sector.includes('Delivery')?['deliverysim']:[]),
+    ];
 
-    return`
-    <div class="card" style="cursor:default;border-top:4px solid ${color};transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 20px rgba(0,0,0,.12)'" onmouseout="this.style.boxShadow=''">
-
-      <!-- CARD HEADER -->
-      <div style="padding:16px 18px 12px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+    return`<div class="card" style="border-top:4px solid ${color}">
+      <div style="padding:14px 16px 10px">
+        <!-- Header row -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
           <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              <span style="font-size:20px">${icon}</span>
-              <span style="font-size:10.5px;font-weight:600;color:${color};background:${color}18;border:1px solid ${color}30;padding:2px 8px;border-radius:10px">${c.sector}</span>
-              <span class="badge ${stdBadge}" style="font-size:9.5px">${stdLabel}</span>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap">
+              <span style="font-size:18px">${icon}</span>
+              <span style="font-size:10px;font-weight:600;color:${color};background:${color}18;border:1px solid ${color}30;padding:2px 7px;border-radius:10px">${c.sector}</span>
+              <span class="badge ${stdB}" style="font-size:9px">${stdL}</span>
+              <code style="font-size:9.5px;background:var(--stone-pale);padding:1px 5px;border-radius:3px;color:var(--stone)">${c.id}</code>
             </div>
-            <div style="font-size:16px;font-weight:700;color:var(--navy);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</div>
-            <div style="font-size:10.5px;color:var(--stone);display:flex;flex-wrap:wrap;gap:4px;align-items:center">
-              <code style="background:var(--stone-pale);padding:1px 5px;border-radius:3px">${c.id}</code>
-              <span>·</span><span>${c.ein||''}</span>
-              <span>·</span><span>${c.type||''}</span>
-              ${c.addr?`<span>·</span><span>📍 ${c.addr}</span>`:''}
-            </div>
+            <div style="font-size:15px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</div>
+            <div style="font-size:10px;color:var(--stone);margin-top:2px">${c.addr||''}</div>
           </div>
-          <!-- Actions -->
+          <!-- Action buttons -->
           <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
-            <button class="btn btn-navy btn-sm" style="font-size:11px;padding:5px 10px" onclick="S.client='${c.name}';loadClientDB('${c.id}');rebuildClientSelector();updateConstructionSidebar();nav('dashboard')">
+            <button class="btn btn-navy btn-sm" style="font-size:11px;padding:5px 10px"
+              onclick="S.client='${c.name}';loadClientDB('${c.id}');rebuildClientSelector();updateConstructionSidebar();nav('dashboard')">
               ${isE?'Abrir →':'Open →'}
             </button>
-            <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:5px 10px" onclick="S.client='${c.name}';loadClientDB('${c.id}');rebuildClientSelector();nav('gl')">
-              ${isE?'Mayor':'GL'}
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 8px;color:var(--warning)"
+              onclick="archiveClient('${c.id}')">
+              📦 ${isE?'Archivar':'Archive'}
+            </button>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 8px;color:var(--danger)"
+              onclick="deleteClientPermanent('${c.id}')">
+              🗑️ ${isE?'Eliminar':'Delete'}
             </button>
           </div>
         </div>
 
         <!-- KPI strip -->
-        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px">
-          ${[
-            [isE?'Proyectos':'Projects', projs.length, color],
-            [isE?'Asientos':'Journal',   jrn.length,   'var(--navy)'],
-            [isE?'Facturas':'Invoices',  inv.length,    'var(--info)'],
-            [isE?'Activos':'Assets',     assets.length, 'var(--success)'],
-            [isE?'Subs':'Subs',          sbs.length,    'var(--warning)'],
-          ].map(([l,v,col])=>`<div style="background:var(--stone-pale);border-radius:var(--radius);padding:6px;text-align:center">
-            <div style="font-size:17px;font-weight:700;color:${col};font-family:var(--font-mono)">${v}</div>
-            <div style="font-size:9px;color:var(--stone);text-transform:uppercase;letter-spacing:.4px">${l}</div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:10px">
+          ${[[isE?'Proyectos':'Projects',projs.length,color],[isE?'Asientos':'Journal',jrn.length,'var(--navy)'],[isE?'Facturas':'Invoices',inv.length,'var(--info)'],[isE?'Activos':'Assets',assets.length,'var(--success)'],[isE?'Subs':'Subs',sbs.length,'var(--warning)']].map(([l,v,col])=>`
+          <div style="background:var(--stone-pale);border-radius:var(--radius);padding:5px;text-align:center">
+            <div style="font-size:16px;font-weight:700;color:${col};font-family:var(--font-mono)">${v}</div>
+            <div style="font-size:9px;color:var(--stone);text-transform:uppercase">${l}</div>
           </div>`).join('')}
         </div>
       </div>
 
-      <!-- DIVIDER -->
-      <div style="height:1px;background:var(--stone-pale)"></div>
+      <!-- Body -->
+      <div style="padding:0 16px 12px;border-top:1px solid var(--stone-pale)">
+        ${bal>0?`<div style="display:flex;justify-content:space-between;align-items:center;background:var(--navy);color:#fff;border-radius:var(--radius);padding:6px 11px;margin:10px 0 8px;font-size:11.5px">
+          <span style="color:rgba(255,255,255,.55)">🏦 ${isE?'Saldo bancario':'Bank balance'}</span>
+          <span style="font-family:var(--font-mono);font-weight:700;color:var(--gold)">${bal>=1e9?'$'+(bal/1e9).toFixed(2)+'B':bal>=1e6?'$'+(bal/1e6).toFixed(1)+'M':'$'+bal.toLocaleString()}</span>
+        </div>`:'<div style="margin-top:8px"></div>'}
 
-      <!-- CARD BODY -->
-      <div style="padding:12px 18px 14px">
-        ${notesBlock}
-
-        <!-- COA & Standards -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;font-size:11px">
-          <div style="color:var(--stone)">${isE?'Plan de Cuentas':'COA'}: <strong style="color:var(--navy)">${(c.coa||'').split('(')[0].trim()}</strong></div>
-          <div style="color:var(--stone)">${isE?'Normas':'Standards'}: <strong style="color:var(--navy)">${c.std||'—'}</strong></div>
-          <div style="color:var(--stone)">${isE?'Sistema Ant.':'Prev. System'}: <strong style="color:var(--navy)">${c.prev||'—'}</strong></div>
-          <div style="color:var(--stone)">${isE?'Año Fiscal':'Fiscal Year'}: <strong style="color:var(--navy)">${c.fy||'Dec 31'}</strong></div>
-        </div>
-
-        <!-- Bank balance -->
-        ${bankBal>0?`<div style="display:flex;justify-content:space-between;align-items:center;background:var(--navy);color:#fff;border-radius:var(--radius);padding:7px 12px;margin-bottom:10px;font-size:12px">
-          <span style="color:rgba(255,255,255,.6)">🏦 ${isE?'Saldo Bancario Total':'Total Bank Balance'}</span>
-          <span style="font-family:var(--font-mono);font-weight:700;color:var(--gold)">${bankBal>=1e9?'$'+(bankBal/1e9).toFixed(2)+'B':bankBal>=1e6?'$'+(bankBal/1e6).toFixed(1)+'M':bankBal>=1e3?'$'+(bankBal/1e3).toFixed(0)+'K':'$'+bankBal.toLocaleString()}</span>
-        </div>`:''}
-
-        <!-- Projects / Operations -->
         ${projs.length>0?`
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--stone);margin-bottom:5px">${isE?'Proyectos / Operaciones':'Projects / Operations'}</div>
-        ${projRows}${moreProjs}`:''}
+        <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--stone);margin-bottom:4px">${isE?'Proyectos / Operaciones':'Projects / Operations'}</div>
+        ${projRows}${moreP}
+        `:''}
 
-        <!-- Quick nav buttons -->
-        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:12px">
-          ${['bs','pl','cf','gl','ar','ap',
-             ...(c.sector.includes('Construction')?['jobcost','wip','subs']:[]),
-             ...(c.sector.includes('Mining')?['mineops','reserves','depletion']:[]),
-             ...(c.sector.includes('Delivery')?['deliverysim']:[]),
-          ].map(mod=>`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px"
-              onclick="S.client='${c.name}';loadClientDB('${c.id}');rebuildClientSelector();updateConstructionSidebar();nav('${mod}')">
-              ${mod.toUpperCase()}</button>`).join('')}
+        <!-- Quick nav -->
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:10px">
+          ${sectorMods.map(mod=>`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px"
+            onclick="S.client='${c.name}';loadClientDB('${c.id}');rebuildClientSelector();updateConstructionSidebar();nav('${mod}')">${mod.toUpperCase()}</button>`).join('')}
         </div>
       </div>
     </div>`;
-  }).join('');
+  };
+
+  // ── Archived clients panel ───────────────────────────────────────
+  const archivedPanel = archived.length > 0 ? `
+  <div class="card" style="border-top:4px solid var(--stone)">
+    <div class="card-header" style="background:var(--stone-pale)">
+      <div>
+        <div class="card-title">📦 ${isE?'Empresas Anteriores (Archivadas)':'Former Companies (Archived)'}</div>
+        <div class="card-sub">${isE?`${archived.length} empresa(s) archivada(s) — datos preservados`:`${archived.length} archived company(ies) — data preserved`}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="exportArchivedClients()">
+        ⬇️ ${isE?'Exportar archivo':'Export archive'}
+      </button>
+    </div>
+    <div style="padding:0 16px 14px">
+      ${archived.map(c=>`
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--stone-pale)">
+        <span style="font-size:20px">${sIcon(c.sector)}</span>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600;color:var(--navy)">${c.name}</div>
+          <div style="font-size:10.5px;color:var(--stone)">${c.id} · ${c.sector} · ${isE?'Archivado':'Archived'}: ${c.archivedDate||'—'} ${isE?'por':'by'} ${c.archivedBy||'—'}</div>
+        </div>
+        <div style="display:flex;gap:5px">
+          <button class="btn btn-ghost btn-sm" style="font-size:10.5px;color:var(--success)"
+            onclick="restoreClient('${c.id}')">↩️ ${isE?'Restaurar':'Restore'}</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:10.5px"
+            onclick="exportArchivedClientData('${c.id}')">📁 ${isE?'Exportar datos':'Export data'}</button>
+        </div>
+      </div>`).join('')}
+    </div>
+  </div>` : '';
 
   return`
 <div class="page-header">
   <div>
-    <div class="page-title">${isE?'Empresas Registradas — Sistema Integral':'Registered Companies — Integrated System'}</div>
-    <div class="page-subtitle">${isE?`${active.length} empresas · Acceso directo a todos los módulos · GAAP + IFRS`:`${active.length} companies · Direct access to all modules · GAAP + IFRS`}</div>
+    <div class="page-title">${isE?'Empresas Registradas':'Registered Companies'}</div>
+    <div class="page-subtitle">${isE?`${active.length} empresa(s) activa(s) · Clientes ilimitados · GAAP + IFRS`:`${active.length} active company(ies) · Unlimited clients · GAAP + IFRS`}</div>
   </div>
   <div class="page-actions">
     ${S.role==='A'?`<button class="btn btn-navy btn-sm" onclick="openNewClientModal()">+ ${isE?'Nueva Empresa':'New Company'}</button>`:''}
+    ${archived.length>0?`<button class="btn btn-ghost btn-sm" onclick="document.getElementById('archived-panel').scrollIntoView({behavior:'smooth'})">📦 ${archived.length} ${isE?'Archivadas':'Archived'}</button>`:''}
   </div>
 </div>
 
-<!-- PORTFOLIO SUMMARY BAR -->
-<div style="background:var(--navy);border-radius:var(--radius-lg);padding:18px 24px;margin-bottom:0;display:grid;grid-template-columns:repeat(6,1fr);gap:16px">
-  ${[
-    [isE?'Empresas':'Companies',    active.length,                        '#C9A84C'],
-    [isE?'Proyectos':'Projects',    totProj,                              '#a8f0c6'],
-    [isE?'Asientos':'Journal Ent.', totJournal,                           '#90CAF9'],
-    [isE?'Activos':'Fixed Assets',  '$'+(totAssets>=1e9?(totAssets/1e9).toFixed(1)+'B':totAssets>=1e6?(totAssets/1e6).toFixed(0)+'M':'—'), '#FFE082'],
-    [isE?'Subcontr.':'Subcontractors',totSubs,                            '#FFCCBC'],
-    [isE?'Saldo Total':'Bank Total', totBanks>=1e9?'$'+(totBanks/1e9).toFixed(1)+'B':totBanks>=1e6?'$'+(totBanks/1e6).toFixed(0)+'M':'$'+totBanks.toLocaleString(),'#a8f0c6'],
-  ].map(([l,v,col])=>`<div style="text-align:center">
-    <div style="font-family:var(--font-mono);font-size:22px;font-weight:700;color:${col}">${v}</div>
-    <div style="font-size:10px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.8px;margin-top:3px">${l}</div>
+<!-- Portfolio summary -->
+<div style="background:var(--navy);border-radius:var(--radius-lg);padding:16px 20px;display:grid;grid-template-columns:repeat(6,1fr);gap:14px">
+  ${[[isE?'Empresas Activas':'Active Companies',active.length,'#C9A84C'],[isE?'Archivadas':'Archived',archived.length,'#90CAF9'],[isE?'Proyectos':'Projects',totProj,'#a8f0c6'],[isE?'Asientos':'Journal Entries',totJrn,'#FFE082'],[isE?'Subcontr.':'Subcontractors',totSubs,'#FFCCBC'],[isE?'Saldo Total':'Total Balance',totBanks>=1e9?'$'+(totBanks/1e9).toFixed(1)+'B':totBanks>=1e6?'$'+(totBanks/1e6).toFixed(0)+'M':'$'+totBanks.toLocaleString(),'#a8f0c6']].map(([l,v,col])=>`
+  <div style="text-align:center">
+    <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:${col}">${v}</div>
+    <div style="font-size:9.5px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.7px;margin-top:2px">${l}</div>
   </div>`).join('')}
 </div>
 
-<!-- SECTOR DISTRIBUTION + CLIENT GRID -->
-<div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start">
+<!-- Main grid: sidebar + cards -->
+<div style="display:grid;grid-template-columns:200px 1fr;gap:14px;align-items:start">
 
-  <!-- SECTOR PANEL -->
-  <div class="card" style="position:sticky;top:16px">
-    <div class="card-header"><div class="card-title">${isE?'Sectores':'Sectors'}</div></div>
-    <div style="padding:4px 16px 14px">${sectorBars}</div>
-    <div style="padding:0 16px 14px;display:flex;flex-direction:column;gap:5px">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--stone);margin-bottom:4px">${isE?'Accesos Rápidos':'Quick Access'}</div>
-      ${active.map(c=>`<button style="text-align:left;background:none;border:1px solid var(--stone-pale);border-radius:var(--radius);padding:5px 10px;cursor:pointer;font-size:11.5px;color:var(--navy);font-weight:500;transition:all .15s"
-        onmouseover="this.style.background='var(--stone-pale)';this.style.borderColor='var(--gold)'"
-        onmouseout="this.style.background='';this.style.borderColor='var(--stone-pale)'"
+  <!-- Sector sidebar -->
+  <div class="card" style="position:sticky;top:14px">
+    <div class="card-header"><div class="card-title" style="font-size:12px">${isE?'Sectores':'Sectors'}</div></div>
+    <div style="padding:4px 14px 10px">${sectorBars}</div>
+    <div style="border-top:1px solid var(--stone-pale);padding:10px 14px">
+      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--stone);margin-bottom:6px">${isE?'Acceso Rápido':'Quick Access'}</div>
+      ${active.map(c=>`
+      <button style="width:100%;text-align:left;background:none;border:1px solid var(--stone-pale);border-radius:var(--radius);padding:5px 8px;cursor:pointer;font-size:11px;color:var(--navy);font-weight:500;margin-bottom:3px;display:flex;align-items:center;gap:5px;overflow:hidden;transition:all .15s"
+        onmouseover="this.style.background='var(--stone-pale)';this.style.borderColor='${sColor(c.sector)}'"
+        onmouseout="this.style.background='none';this.style.borderColor='var(--stone-pale)'"
         onclick="S.client='${c.name}';loadClientDB('${c.id}');rebuildClientSelector();updateConstructionSidebar();nav('dashboard')">
-        ${sIcon(c.sector)} ${c.name.length>22?c.name.slice(0,22)+'…':c.name}
+        <span>${sIcon(c.sector)}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name.length>18?c.name.slice(0,18)+'…':c.name}</span>
       </button>`).join('')}
+      <button class="btn btn-navy btn-sm" style="width:100%;margin-top:6px;font-size:11px"
+        onclick="openNewClientModal()">+ ${isE?'Nueva':'New'}</button>
     </div>
   </div>
 
-  <!-- CLIENT CARDS GRID -->
-  <div style="display:flex;flex-direction:column;gap:14px">
-    ${clientCards}
+  <!-- Client cards -->
+  <div style="display:flex;flex-direction:column;gap:12px">
+    ${active.map(buildCard).join('')}
+    ${archived.length>0?`<div id="archived-panel">${archivedPanel}</div>`:''}
   </div>
-
 </div>`;
 }
 function rSales(){
