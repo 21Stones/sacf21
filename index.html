@@ -1861,16 +1861,25 @@ function saveNewClient() {
 function rebuildClientSelector() {
   const sel = document.getElementById('client-sel');
   if (!sel) return;
-  sel.innerHTML = DB.clients
-    .filter(c=>c.status==='active')
-    .map(c=>`<option value="${c.name}">${c.name}</option>`)
-    .join('');
-  // restore current client if it still exists
-  const opt = Array.from(sel.options).find(o=>o.value===S.client);
-  if (opt) sel.value = S.client;
-  else { sel.selectedIndex = 0; S.client = sel.value; }
-  // update client options in user-assignment modals
-  const usrClients = DB.clients.filter(c=>c.status==='active').map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const active = DB.clients.filter(c=>c.status==='active');
+  // value = client ID (CLT-XXX), label = client name
+  sel.innerHTML = active.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  // Restore selection for current active client
+  const cur = active.find(c=>c.name===S.client || c.id===S.clientId);
+  if (cur) {
+    sel.value  = cur.id;
+    S.client   = cur.name;
+    S.clientId = cur.id;
+  } else if (active.length > 0) {
+    sel.value  = active[0].id;
+    S.client   = active[0].name;
+    S.clientId = active[0].id;
+  }
+  // Update label with count
+  const lbl = document.getElementById('sb-client-lbl');
+  if (lbl) lbl.textContent = (es()?'Empresa Activa':'Active Company')+' ('+active.length+')';
+  // Update user-assignment modals
+  const usrClients = active.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
   document.querySelectorAll('.dynamic-client-opts').forEach(el => el.innerHTML = usrClients);
 }
 
@@ -2490,33 +2499,29 @@ function nav(mod){
   renderMod(mod);
 }
 function switchClient(){
-  const sel=document.getElementById('client-sel');
-  const selVal=sel?.value; // now contains CLT-00X id
-  if(!selVal) return;
-  const newC=DB.clients.find(c=>c.id===selVal||c.name===selVal);
-  if(!newC||newC.name===S.client) return;
-  // Save current client's CDB before switching
-  const oldC=DB.clients.find(c=>c.name===S.client);
-  if(oldC) saveClientDB(oldC.id);
-  // Switch to new company
-  S.client=newC.name;
-  const newName=newC.name; // keep for compatibility
-  if(newC){
-    S.clientId=newC.id;
-    loadClientDB(newC.id);
-    // Build COA if missing
-    if(!DB.coa||DB.coa.length===0){
-      const coaType=newC.coaType||getSectorCOAType(newC.sector||'');
-      DB.coa=buildClientCOA(coaType);
-    }
+  const sel = document.getElementById('client-sel');
+  if (!sel) return;
+  const selVal = sel.value; // CLT-XXX id
+  if (!selVal) return;
+  // Find by ID first, fallback to name
+  const newC = DB.clients.find(c=>c.id===selVal) || DB.clients.find(c=>c.name===selVal);
+  if (!newC || newC.id === S.clientId) return; // no change
+  // Save current CDB
+  const oldC = DB.clients.find(c=>c.id===S.clientId);
+  if (oldC) saveClientDB(oldC.id);
+  // Switch
+  S.client   = newC.name;
+  S.clientId = newC.id;
+  loadClientDB(newC.id);
+  // Build COA if missing
+  if (!DB.coa || DB.coa.length===0) {
+    DB.coa = buildClientCOA(newC.coaType || getSectorCOAType(newC.sector||''));
   }
-  // Update sidebar visibility (construction / mining / delivery sections)
+  // Update UI
   updateConstructionSidebar();
   log(S.user?.toUpperCase()||'U','Company switch → '+S.client,'low');
-  // Always go to dashboard on company switch
   S.mod='dashboard';
   renderMod('dashboard');
-  // Show confirmation banner
   gMsg('✓ '+(es()?'Empresa activa':'Active company')+': '+S.client);
 }
 const CONSTRUCTION_SECTORS = [
