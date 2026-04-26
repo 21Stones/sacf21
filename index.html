@@ -462,7 +462,7 @@ By signing, I affirm: (1) Strict confidentiality of all client financial data ac
     <div class="sidebar">
       <div style="padding:12px 12px 0">
         <div class="sb-client-card">
-          <div class="scc-label" id="sb-client-lbl">Active Client</div>
+          <div class="scc-label" id="sb-client-lbl">Empresa Activa</div>
           <select class="scc-sel" id="client-sel" onchange="switchClient()">
             <option>Skyline Builders Inc.</option>
             <option>Oceanic Dev. Group</option>
@@ -474,7 +474,7 @@ By signing, I affirm: (1) Strict confidentiality of all client financial data ac
       <div class="sb-section">
         <div class="sb-sec-title" id="sbt-core">Core</div>
         <div class="nav-item active" onclick="nav('dashboard')"><span class="nav-icon">◈</span><span id="sn-dash">Dashboard</span></div>
-        <div class="nav-item" onclick="nav('clients')"><span class="nav-icon">🏢</span><span id="sn-clients">Clientes</span></div>
+        <div class="nav-item" onclick="nav('clients')"><span class="nav-icon">🏛️</span><span id="sn-clients">Empresas</span></div>
         <div class="nav-item" onclick="nav('coa')"><span class="nav-icon">📋</span><span id="sn-coa">Chart of Accounts</span></div>
         <div class="nav-item" onclick="nav('gl')"><span class="nav-icon">📒</span><span id="sn-gl">General Ledger</span></div>
         <div class="nav-item" onclick="nav('cashbook')"><span class="nav-icon">💵</span><span id="sn-cash">Libro de Caja</span></div>
@@ -1859,27 +1859,27 @@ const T={
     signIn:'Sign In →',roleLabel:'Access Level',uidLabel:'User ID',pwdLabel:'Password',
     ndaH:'Ethics & Confidentiality Agreement',ndaSub:'Required for Levels B & C.',ndaBtn:'✍ Sign & Enter',
     obTitle:'New Client Onboarding',obSub:'Auto-suggestions enabled',obCreate:'Create Client Profile →',obSkip:'Manual Entry',
-    activeClient:'Active Client',
+    activeClient:'Active Company',
     dashboard:'Dashboard',clients:'Clients',coa:'Chart of Accounts',gl:'General Ledger',treasury:'Treasury & Cash',
     cashbook:'Cash Book',bankconn:'Bank Connections',bankfeed:'Bank Feeds',inventory:'Inventory',
     assets:'Fixed Assets',bs:'Balance Sheet',pl:'P&L Statement',
     cf:'Cash Flow',soce:'Stmt of Equity',jobcost:'Job Cost / Projects',revengine:'Revenue Engine',wip:'WIP / ASC 606',
     budget:'Live Budget',subs:'Subcontractors',security:'Security & Users',audit:'Master Audit Log',
     sales:'Sales / Invoicing',ar:'Accounts Receivable',ap:'Accounts Payable',purchases:'Purchases / POs',
-    core:'Core',billing:'Sales & Collections',fsTitle:'Financial Statements',construction:'Construction',mining:'Mining',delivery:'Delivery',administration:'Administration',
+    companies:'Companies',core:'Core',billing:'Sales & Collections',fsTitle:'Financial Statements',construction:'Construction',mining:'Mining',delivery:'Delivery',administration:'Administration',
   },
   es:{
     signIn:'Ingresar →',roleLabel:'Nivel de Acceso',uidLabel:'ID de Usuario',pwdLabel:'Contraseña',
     ndaH:'Acuerdo de Ética y Confidencialidad',ndaSub:'Requerido niveles B y C.',ndaBtn:'✍ Firmar e Ingresar',
     obTitle:'Alta de Nuevo Cliente',obSub:'Sugerencias automáticas activas',obCreate:'Crear Perfil de Cliente →',obSkip:'Entrada Manual',
-    activeClient:'Cliente Activo',
+    activeClient:'Empresa Activa',
     dashboard:'Tablero',clients:'Clientes',coa:'Plan de Cuentas',gl:'Mayor General',treasury:'Tesorería',
     cashbook:'Libro de Caja',bankconn:'Conexión Bancaria',bankfeed:'Feeds Bancarios',inventory:'Inventarios',
     assets:'Activos Fijos',bs:'Balance General',pl:'Estado de Resultados',
     cf:'Flujo de Efectivo',soce:'Estado de Capital',jobcost:'Costo por Proyecto',revengine:'Motor de Ingresos',wip:'WIP / NIIF 15',
     budget:'Presupuesto Vivo',subs:'Subcontratistas',security:'Seguridad y Usuarios',audit:'Bitácora Maestra',
     sales:'Ventas / Facturación',ar:'Cuentas por Cobrar',ap:'Cuentas por Pagar',purchases:'Compras / Órdenes de Compra',
-    core:'Núcleo',billing:'Ventas y Cobranza',fsTitle:'Estados Financieros',construction:'Construcción',mining:'Minería',delivery:'Delivery',administration:'Administración',
+    companies:'Empresas',core:'Núcleo',billing:'Ventas y Cobranza',fsTitle:'Estados Financieros',construction:'Construcción',mining:'Minería',delivery:'Delivery',administration:'Administración',
   }
 };
 const t=k=>T[S.lang][k]||k;
@@ -1892,7 +1892,7 @@ function applyI18n(){
     'nda-h':'ndaH','nda-sub':'ndaSub','nda-btn':'ndaBtn',
     'ob-title':'obTitle','ob-sub':'obSub','ob-create':'obCreate','ob-skip':'obSkip',
     'sb-client-lbl':'activeClient','lang-ind':null,
-    'sn-dash':'dashboard','sn-clients':'clients','sn-coa':'coa','sn-gl':'gl','sn-tres':'treasury',
+    'sn-dash':'dashboard','sn-clients':'companies','sn-coa':'coa','sn-gl':'gl','sn-tres':'treasury',
     'sn-cash':'cashbook','sn-bankconn':'bankconn','sn-bank':'bankfeed','sn-inv':'inventory',
     'sn-assets':'assets','sn-bs':'bs','sn-pl':'pl',
     'sn-cf':'cf','sn-soce':'soce','sn-jc':'jobcost','sn-rev':'revengine','sn-wip':'wip',
@@ -2701,7 +2701,7 @@ ${alertCount>0?`<div class="alert a-warn" style="display:flex;align-items:center
 <div class="card">
   <div class="card-header">
     <div>
-      <div class="card-title">${isE?'Clientes Activos — Detalle Completo':'Active Clients — Full Detail'}</div>
+      <div class="card-title">${isE?'Empresas Activas — Detalle Completo':'Registered Companies — Full Detail'}</div>
       <div class="card-sub">${activeClients.length} ${isE?'clientes registrados':'registered clients'}</div>
     </div>
     ${S.role==='A'?`<button class="btn btn-navy btn-sm" onclick="openNewClientModal()">+ ${isE?'Agregar Cliente':'Add Client'}</button>`:''}
@@ -8871,7 +8871,7 @@ function rClients(){
   return`
 <div class="page-header">
   <div>
-    <div class="page-title">${isE?'Sistema Integral — Todas las Empresas':'Integrated System — All Companies'}</div>
+    <div class="page-title">${isE?'Empresas Registradas — Sistema Integral':'Registered Companies — Integrated System'}</div>
     <div class="page-subtitle">${isE?`${active.length} empresas · Acceso directo a todos los módulos · GAAP + IFRS`:`${active.length} companies · Direct access to all modules · GAAP + IFRS`}</div>
   </div>
   <div class="page-actions">
@@ -8920,7 +8920,7 @@ function rClients(){
 </div>`;
 }
 function rSales(){
-  const isE=es();
+  const isE=es(); // Clientes AR de la empresa activa — NOT the 9 companies
   const cons=isCons(); // retainage only for construction sectors
 
   // Read invoices from active client's CDB only (no global seeded data)
